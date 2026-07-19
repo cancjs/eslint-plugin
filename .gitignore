@@ -2,3 +2,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+
+# Typed fixture projects ship hand-written @cancjs/* stubs under a node_modules dir so type-aware
+# rule tests resolve them like real installs. These are source, not installed deps: keep them.
+!tests/fixtures/projects/*/node_modules/
+!tests/fixtures/projects/*/node_modules/**
