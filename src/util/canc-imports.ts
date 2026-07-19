@@ -272,6 +272,12 @@ export function isCancCtorIdent(node: TSESTree.Node | null | undefined, context:
  return refersTo(node, context, 'CancelablePromise');
 }
 
+/** Is `node` a reference to the LazyPromise constructor? */
+export function isLazyCtorIdent(node: TSESTree.Node | null | undefined, context: Context): boolean {
+ const names = getCancSettings(context).lazyTypeNames;
+ return names.some((name) => refersTo(node, context, name));
+}
+
 export type CoroutineFn = 'cancAsync' | 'cancIterAsync';
 
 /** Is `node` a reference to the given coroutine driver function? */
@@ -309,7 +315,7 @@ const HELPER_NAMES = new Set([
  'cancForAwait',
  'cancIterForAwait',
  'cancIterDelegate',
- // toolbox wrappers (R29)
+ // toolbox wrappers
  'cancelify',
  'promisify',
  'promisifyAll',
