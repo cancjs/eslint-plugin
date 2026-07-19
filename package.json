@@ -4,13 +4,13 @@
  "type": "module",
  "exports": {
  ".": {
- "types": "./dist/index.d.ts",
- "import": "./dist/index.js",
+ "types": "./dist/index.d.mts",
+ "import": "./dist/index.mjs",
  "require": "./dist/index.cjs"
  },
  "./native": {
- "types": "./dist/native.d.ts",
- "import": "./dist/native.js",
+ "types": "./dist/native.d.mts",
+ "import": "./dist/native.mjs",
  "require": "./dist/native.cjs"
  }
  },
