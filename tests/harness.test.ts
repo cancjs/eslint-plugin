@@ -1,4 +1,5 @@
 import type { TSESLint } from '@typescript-eslint/utils';
+
 import { ruleTester } from './setup.js';
 
 // Trivial inline rule (no createRule) proving the RuleTester + vitest wiring works:

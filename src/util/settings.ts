@@ -41,7 +41,7 @@ const DEFAULT_SETTINGS: ResolvedCancSettings = {
 };
 
 export function getCancSettings(
- context: TSESLint.RuleContext<string, unknown[]>
+ context: TSESLint.RuleContext<string, unknown[]>,
 ): ResolvedCancSettings {
  const settings = context.settings.canc as CancSettings | undefined;
 
@@ -51,18 +51,21 @@ export function getCancSettings(
 
  return {
  sources: settings.sources ? [...DEFAULT_SOURCES, ...settings.sources] : DEFAULT_SOURCES,
- cancelableTypeNames: settings.cancelableTypeNames
- ? [...DEFAULT_SETTINGS.cancelableTypeNames, ...settings.cancelableTypeNames]
+ cancelableTypeNames:
+ settings.cancelableTypeNames ?
+ [...DEFAULT_SETTINGS.cancelableTypeNames, ...settings.cancelableTypeNames]
  : DEFAULT_SETTINGS.cancelableTypeNames,
- lazyTypeNames: settings.lazyTypeNames
- ? [...DEFAULT_SETTINGS.lazyTypeNames, ...settings.lazyTypeNames]
+ lazyTypeNames:
+ settings.lazyTypeNames ?
+ [...DEFAULT_SETTINGS.lazyTypeNames, ...settings.lazyTypeNames]
  : DEFAULT_SETTINGS.lazyTypeNames,
  structuralDetection:
- settings.structuralDetection !== undefined
- ? settings.structuralDetection
+ settings.structuralDetection !== undefined ?
+ settings.structuralDetection
  : DEFAULT_SETTINGS.structuralDetection,
- boundaryFunctions: settings.boundaryFunctions
- ? [...DEFAULT_SETTINGS.boundaryFunctions, ...settings.boundaryFunctions]
+ boundaryFunctions:
+ settings.boundaryFunctions ?
+ [...DEFAULT_SETTINGS.boundaryFunctions, ...settings.boundaryFunctions]
  : DEFAULT_SETTINGS.boundaryFunctions,
  };
 }

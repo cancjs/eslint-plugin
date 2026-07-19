@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
 import type { TSESLint } from '@typescript-eslint/utils';
-import { getCancSettings } from '../src/util/settings';
+import { describe, expect, it } from 'vitest';
+
+import { getCancSettings } from '../src/util/settings.js';
 
 describe('settings', () => {
  it('default sources include @cancjs/promise', () => {

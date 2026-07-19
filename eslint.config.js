@@ -1,7 +1,7 @@
 // @ts-check
 import eslintJs from '@eslint/js';
-import format from 'eslint-plugin-format';
 import eslintPluginEslintPlugin from 'eslint-plugin-eslint-plugin';
+import format from 'eslint-plugin-format';
 import eslintPluginImportX from 'eslint-plugin-import-x';
 import eslintPluginSimpleImportSort from 'eslint-plugin-simple-import-sort';
 import tseslint from 'typescript-eslint';
@@ -13,11 +13,14 @@ export default tseslint.config(
 
  eslintJs.configs.recommended,
 
- ...tseslint.configs.recommendedTypeChecked,
  {
+ files: ['**/*.ts'],
+ extends: [...tseslint.configs.recommendedTypeChecked],
  languageOptions: {
  parserOptions: {
- projectService: true,
+ projectService: {
+ allowDefaultProject: ['*.js', '*.ts'],
+ },
  tsconfigRootDir: import.meta.dirname,
  },
  },
@@ -66,12 +69,30 @@ export default tseslint.config(
  },
 
  {
- files: ['**/*.{ts,js,mjs,cjs}'],
+ files: ['**/*.ts'],
  plugins: { format },
  rules: {
  'format/prettier': [
  'error',
  {
+ parser: 'typescript',
+ endOfLine: 'auto',
+ singleQuote: true,
+ printWidth: 100,
+ singleAttributePerLine: true,
+ experimentalTernaries: true,
+ },
+ ],
+ },
+ },
+ {
+ files: ['**/*.{js,mjs,cjs}'],
+ plugins: { format },
+ rules: {
+ 'format/prettier': [
+ 'error',
+ {
+ parser: 'babel',
  endOfLine: 'auto',
  singleQuote: true,
  printWidth: 100,
@@ -83,6 +104,7 @@ export default tseslint.config(
  },
  {
  files: ['**/*.md'],
+ languageOptions: { parser: format.parserPlain },
  plugins: { format },
  rules: { 'format/prettier': ['error', { printWidth: 100, parser: 'markdown' }] },
  },

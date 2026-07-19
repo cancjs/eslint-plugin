@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import tseslintParser from '@typescript-eslint/parser';
 import { RuleTester } from '@typescript-eslint/rule-tester';
 import { afterAll, describe, it } from 'vitest';
@@ -22,7 +23,10 @@ export interface RuleTesterOptions {
  types?: boolean;
 }
 
-export function ruleTester({ typeScript = true, types = true }: RuleTesterOptions = {}): RuleTester {
+export function ruleTester({
+ typeScript = true,
+ types = true,
+}: RuleTesterOptions = {}): RuleTester {
  if (!typeScript) {
  return new RuleTester({
  languageOptions: {
@@ -34,8 +38,9 @@ export function ruleTester({ typeScript = true, types = true }: RuleTesterOption
  return new RuleTester({
  languageOptions: {
  parser: tseslintParser,
- parserOptions: types
- ? {
+ parserOptions:
+ types ?
+ {
  projectService: {
  allowDefaultProject: ['*.ts*'],
  defaultProject: 'tsconfig.json',
