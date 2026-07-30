@@ -197,14 +197,32 @@ export default defineConfig(
 		},
 	},
 
-	// Markdown. proseWrap stays at its default (preserve), so prose is never rewrapped; this only
-	// normalises list markers, headings, fences and tables.
+	// Markdown. Two separate jobs here: the markdown rules check document structure (heading
+	// levels, link and image validity, table shape), and prettier normalises the surrounding
+	// layout (list markers, headings, fences, tables).
+	//
+	// proseWrap stays at its default (preserve), so prose is never rewrapped.
+	//
+	// embeddedLanguageFormatting off leaves fenced code blocks exactly as written. Rule docs are
+	// full of deliberately-bad snippets showing what a rule flags, and reformatting those would
+	// change the very thing being demonstrated.
+	//
+	// The language stays gfm rather than the commonmark that markdown/recommended sets, because
+	// the rule docs use tables.
 	{
 		files: ['**/*.md'],
 		language: 'markdown/gfm',
+		extends: [markdown.configs.recommended],
 		plugins: { markdown, prettier },
 		rules: {
-			'prettier/prettier': ['error', { endOfLine: 'auto', parser: 'markdown' }],
+			'prettier/prettier': [
+				'error',
+				{
+					endOfLine: 'auto',
+					parser: 'markdown',
+					embeddedLanguageFormatting: 'off',
+				},
+			],
 		},
 	},
 
