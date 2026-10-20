@@ -19,6 +19,7 @@ import eslintPluginEslintPlugin from 'eslint-plugin-eslint-plugin';
 import importX from 'eslint-plugin-import-x';
 import prettier from 'eslint-plugin-prettier';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 // Shared verbatim with the monorepo config; change them in both or in neither.
@@ -28,7 +29,8 @@ const prettierCodeOptions = {
 	printWidth: 120,
 	singleAttributePerLine: true,
 	experimentalTernaries: true,
-	useTabs: true,
+	useTabs: false,
+	tabWidth: 2,
 };
 
 // JSON keeps spaces. npm rewrites package.json when it touches it and preserves whatever indent
@@ -45,13 +47,23 @@ const prettierJsonOptions = {
 
 export default defineConfig(
 	// Fixtures hold deliberately-bad code and are linted only through the integration harness.
-	globalIgnores(['dist/**', 'coverage/**', 'tests/fixtures/**', '**/package-lock.json']),
+	globalIgnores(['dist/**', 'coverage/**', 'tests/fixtures/**', '**/package-lock.json', '**/~~*', '**/*~~']),
 
 	// Presets must stay scoped to JS/TS. Unscoped they also apply to the JSON and markdown blocks
 	// below, and core rules crash on those languages' ASTs.
 	{
 		files: ['**/*.{ts,js,mjs,cjs}'],
 		extends: [eslintJs.configs.recommended],
+		languageOptions: {
+			globals: {
+				...globals.node,
+			},
+		},
+		rules: {
+			eqeqeq: ['error', 'always', { null: 'ignore' }],
+			'max-depth': ['error', 8],
+			'prefer-const': 'warn',
+		},
 	},
 
 	// TypeScript sources.
@@ -77,6 +89,17 @@ export default defineConfig(
 			'@typescript-eslint/no-import-type-side-effects': 'error',
 			'@typescript-eslint/no-misused-promises': 'error',
 			'@typescript-eslint/no-redundant-type-constituents': 'warn',
+			'@typescript-eslint/no-restricted-types': [
+				'error',
+				{
+					types: {
+						String: { message: 'Use `string` instead.', fixWith: 'string' },
+						Number: { message: 'Use `number` instead.', fixWith: 'number' },
+						Boolean: { message: 'Use `boolean` instead.', fixWith: 'boolean' },
+						Symbol: { message: 'Use `symbol` instead.', fixWith: 'symbol' },
+					},
+				},
+			],
 			'@typescript-eslint/no-unnecessary-boolean-literal-compare': 'error',
 			'@typescript-eslint/no-unnecessary-condition': 'warn',
 			'@typescript-eslint/no-unnecessary-parameter-property-assignment': 'error',
@@ -221,6 +244,7 @@ export default defineConfig(
 					endOfLine: 'auto',
 					parser: 'markdown',
 					embeddedLanguageFormatting: 'off',
+					singleQuote: true,
 				},
 			],
 		},
