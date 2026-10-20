@@ -121,13 +121,11 @@ function collectFromRequire(
 
   const id = declarator.id;
 
-  // const ns = require('...')
   if (id.type === AST_NODE_TYPES.Identifier) {
     bindings.set(id.name, { source, exported: '*', namespace: true });
     return;
   }
 
-  // const { x, y: z } = require('...')
   if (id.type === AST_NODE_TYPES.ObjectPattern) {
     for (const property of id.properties) {
       if (
@@ -176,20 +174,25 @@ function resolveBinding(node: TSESTree.Identifier, context: Context): CancBindin
 
   const variable = findVariable(node, context);
   if (!variable) {
-    // No resolvable variable (e.g. the identifier is a property key). Fall back
-    // to the name-based binding; callers gate property/member positions.
+    // fall back to name binding when identifier lacks a resolvable variable
     return binding;
   }
 
-  const fromTrackedDecl = variable.defs.some(
-    (def) =>
-      // ESM import specifier
+  const sources = new Set(getCancSettings(context).sources);
+  const fromTrackedDecl = variable.defs.some((def) => {
+    if (
       def.node.type === AST_NODE_TYPES.ImportSpecifier ||
       def.node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-      def.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier ||
-      // require() destructure / namespace binding
-      def.node.type === AST_NODE_TYPES.VariableDeclarator,
-  );
+      def.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+    ) {
+      return true;
+    }
+    if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
+      const src = requireSource(def.node.init);
+      return src !== undefined && sources.has(src);
+    }
+    return false;
+  });
 
   return fromTrackedDecl ? binding : undefined;
 }
@@ -206,6 +209,31 @@ function findVariable(node: TSESTree.Identifier, context: Context): TSESLint.Sco
   return undefined;
 }
 
+function canonMatches(binding: CancBinding, exported: string): boolean {
+  if (binding.exported === 'default') {
+    return exported === 'CancelablePromise' && binding.source === '@cancjs/promise';
+  }
+  if (binding.exported === exported) {
+    return true;
+  }
+  // Short export aliases in @cancjs/coroutine
+  if (binding.source === '@cancjs/coroutine') {
+    if (exported === 'cancAsync' && binding.exported === 'async') return true;
+    if (exported === 'cancAwait' && binding.exported === 'await') return true;
+    if (exported === 'cancForAwait' && binding.exported === 'forAwait') return true;
+    if (exported === 'cancThrow' && binding.exported === 'throw') return true;
+  }
+  // Short export aliases in @cancjs/coroutine/gen
+  if (binding.source === '@cancjs/coroutine/gen') {
+    if (exported === 'cancGenAsync' && binding.exported === 'async') return true;
+    if (exported === 'cancGenAwait' && binding.exported === 'await') return true;
+    if (exported === 'cancGenForAwait' && binding.exported === 'forAwait') return true;
+    if (exported === 'cancGenDelegate' && binding.exported === 'delegate') return true;
+    if (exported === 'cancGenThrow' && binding.exported === 'throw') return true;
+  }
+  return false;
+}
+
 /** Does this identifier reference a given exported name from a canc source? */
 function bindingMatches(node: TSESTree.Node | null | undefined, context: Context, exported: string): boolean {
   if (node?.type !== AST_NODE_TYPES.Identifier) {
@@ -215,31 +243,42 @@ function bindingMatches(node: TSESTree.Node | null | undefined, context: Context
   if (binding === undefined || binding.namespace) {
     return false;
   }
-  // A default import binds an arbitrary local name to the module's default
-  // export; the source module (not the local name) determines identity. canc
-  // packages expose named exports, so a default binding is treated as matching
-  // whatever marker is being queried against its source.
-  return binding.exported === 'default' || binding.exported === exported;
+  return canonMatches(binding, exported);
 }
 
 /**
  * Does this identifier reference a namespace member of a canc source, i.e.
- * `ns.<member>` where `ns` is a tracked namespace import? Returns the source of
- * the namespace when matched.
+ * `ns.<member>` where `ns` is a tracked namespace import? Returns true when matched.
  */
 function namespaceMemberMatches(node: TSESTree.Node | null | undefined, context: Context, member: string): boolean {
   if (node?.type !== AST_NODE_TYPES.MemberExpression || node.computed) {
     return false;
   }
-  if (
-    node.object.type !== AST_NODE_TYPES.Identifier ||
-    node.property.type !== AST_NODE_TYPES.Identifier ||
-    node.property.name !== member
-  ) {
+  if (node.object.type !== AST_NODE_TYPES.Identifier || node.property.type !== AST_NODE_TYPES.Identifier) {
     return false;
   }
   const binding = resolveBinding(node.object, context);
-  return binding?.namespace === true;
+  if (!binding?.namespace) {
+    return false;
+  }
+  const propName = node.property.name;
+  if (propName === member) {
+    return true;
+  }
+  if (binding.source === '@cancjs/coroutine') {
+    if (member === 'cancAsync' && propName === 'async') return true;
+    if (member === 'cancAwait' && propName === 'await') return true;
+    if (member === 'cancForAwait' && propName === 'forAwait') return true;
+    if (member === 'cancThrow' && propName === 'throw') return true;
+  }
+  if (binding.source === '@cancjs/coroutine/gen') {
+    if (member === 'cancGenAsync' && propName === 'async') return true;
+    if (member === 'cancGenAwait' && propName === 'await') return true;
+    if (member === 'cancGenForAwait' && propName === 'forAwait') return true;
+    if (member === 'cancGenDelegate' && propName === 'delegate') return true;
+    if (member === 'cancGenThrow' && propName === 'throw') return true;
+  }
+  return false;
 }
 
 /**
@@ -248,7 +287,7 @@ function namespaceMemberMatches(node: TSESTree.Node | null | undefined, context:
  * expression node itself (an Identifier for named forms, a MemberExpression for
  * namespace forms).
  */
-function refersTo(node: TSESTree.Node | null | undefined, context: Context, exported: string): boolean {
+export function refersTo(node: TSESTree.Node | null | undefined, context: Context, exported: string): boolean {
   return bindingMatches(node, context, exported) || namespaceMemberMatches(node, context, exported);
 }
 
@@ -263,7 +302,7 @@ export function isLazyCtorIdent(node: TSESTree.Node | null | undefined, context:
   return names.some((name) => refersTo(node, context, name));
 }
 
-export type CoroutineFn = 'cancAsync' | 'cancIterAsync';
+export type CoroutineFn = 'cancAsync' | 'cancGenAsync';
 
 /** Is `node` a reference to the given coroutine driver function? */
 export function isCoroutineFnIdent(
@@ -279,36 +318,151 @@ export function isCancAwaitIdent(node: TSESTree.Node | null | undefined, context
   return refersTo(node, context, 'cancAwait');
 }
 
-/** Is `node` a reference to the `cancIterAwait` step marker (iter dialect)? */
-export function isCancIterAwaitIdent(node: TSESTree.Node | null | undefined, context: Context): boolean {
-  return refersTo(node, context, 'cancIterAwait');
+/** Is `node` a reference to the `cancGenAwait` step marker (gen dialect)? */
+export function isCancGenAwaitIdent(node: TSESTree.Node | null | undefined, context: Context): boolean {
+  return refersTo(node, context, 'cancGenAwait');
 }
 
-/** Is `node` a reference to the raw `awaited` iter marker? */
-export function isAwaitedIdent(node: TSESTree.Node | null | undefined, context: Context): boolean {
-  return refersTo(node, context, 'awaited');
+/** Is `node` a reference to the `withFailure` helper? */
+export function isWithFailureIdent(node: TSESTree.Node | null | undefined, context: Context): boolean {
+  return refersTo(node, context, 'withFailure');
 }
 
 const HELPER_NAMES = new Set([
-  // coroutine stream helpers
+  // coroutine stream, throw and failure helpers
   'cancForAwait',
-  'cancIterForAwait',
-  'cancIterDelegate',
-  // toolbox wrappers
+  'cancGenForAwait',
+  'cancGenDelegate',
+  'cancThrow',
+  'cancGenThrow',
+  'IterationError',
+  'withFailure',
+  'BreakError',
+  'isBreakError',
+  'asyncMethod',
+  'bindMethod',
+  'catchErrors',
+  'suppressErrors',
+  'createIsError',
+  'isErrorOf',
+  // promise error, boundary and signal exports
+  'CancelError',
+  'isCancelError',
+  'isCancPromise',
+  'AbortError',
+  'isAbortError',
+  'TimeoutError',
+  'isTimeoutError',
+  'AggregateError',
+  'isAggregateError',
+  'catchCancel',
+  'suppressCancel',
+  'catchAbort',
+  'suppressAbort',
+  'catchTimeout',
+  'suppressTimeout',
+  'createCatchError',
+  'createSuppressError',
+  'makeCancelable',
+  'createCancelSignal',
+  'isCancelSignal',
+  // toolbox lazy, wrapper and utility exports
+  'lazy',
+  'createLazyPromise',
+  'isLazyPromise',
   'cancelify',
   'promisify',
   'promisifyAll',
   'createAbortSignal',
+  'toAbortSignal',
+  'withSignal',
+  'SupersededError',
+  'isSupersededError',
+  'defer',
+  'delay',
+  'fromAbortSignal',
+  'limit',
+  'map',
+  'minDelay',
+  'retry',
+  'timeout',
+  'waitFor',
+  'debounce',
+  'throttle',
 ]);
 
 /**
- * Is `node` a reference to a named canc helper? Covers the coroutine stream
- * helpers (cancForAwait / cancIterForAwait / cancIterDelegate) and the toolbox
- * wrappers (cancelify / promisify / promisifyAll / createAbortSignal).
+ * Is `node` a reference to a named canc helper? Covers coroutine stream/throw/failure
+ * helpers and toolbox wrappers.
  */
 export function isHelperIdent(node: TSESTree.Node | null | undefined, context: Context, name: string): boolean {
   if (!HELPER_NAMES.has(name)) {
     return false;
   }
   return refersTo(node, context, name);
+}
+
+/**
+ * Is `node` a call expression to a throw helper (`cancThrow`, `canc.throw`, `cancGenThrow`, `cancGen.throw`)?
+ * Rename and shadowing aware. Returns `{ dialect: 'canc' | 'cancGen' }` or `null`.
+ */
+export function isThrowHelperCall(
+  node: TSESTree.Node | null | undefined,
+  context: Context,
+): { dialect: 'canc' | 'cancGen' } | null {
+  if (node?.type !== AST_NODE_TYPES.CallExpression) {
+    return null;
+  }
+  const callee = node.callee;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    const binding = resolveBinding(callee, context);
+    if (binding && !binding.namespace) {
+      if (binding.exported === 'cancGenThrow') {
+        return { dialect: 'cancGen' };
+      }
+      if (binding.exported === 'cancThrow') {
+        return { dialect: 'canc' };
+      }
+      if (binding.exported === 'throw') {
+        if (binding.source === '@cancjs/coroutine/gen') {
+          return { dialect: 'cancGen' };
+        }
+        if (binding.source === '@cancjs/coroutine') {
+          return { dialect: 'canc' };
+        }
+      }
+    }
+  } else if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    const binding = resolveBinding(callee.object, context);
+    if (binding?.namespace) {
+      const propName = callee.property.name;
+      if (binding.source === '@cancjs/coroutine/gen' && (propName === 'throw' || propName === 'cancGenThrow')) {
+        return { dialect: 'cancGen' };
+      }
+      if (binding.source === '@cancjs/coroutine' && (propName === 'throw' || propName === 'cancThrow')) {
+        return { dialect: 'canc' };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Does `node` reference `cancForAwait.next` on a tracked `cancForAwait` binding?
+ */
+export function isCancForAwaitNext(node: TSESTree.Node | null | undefined, context: Context): boolean {
+  if (
+    node?.type !== AST_NODE_TYPES.MemberExpression ||
+    node.computed ||
+    node.property.type !== AST_NODE_TYPES.Identifier ||
+    node.property.name !== 'next'
+  ) {
+    return false;
+  }
+  return isHelperIdent(node.object, context, 'cancForAwait') || isHelperIdent(node.object, context, 'cancGenForAwait');
 }

@@ -7,18 +7,22 @@ import {
   type CancBinding,
   type CoroutineFn,
   getCancBindings,
-  isAwaitedIdent,
   isCancAwaitIdent,
   isCancCtorIdent,
-  isCancIterAwaitIdent,
+  isCancForAwaitNext,
+  isCancGenAwaitIdent,
   isCoroutineFnIdent,
   isHelperIdent,
+  isLazyCtorIdent,
+  isThrowHelperCall,
+  isWithFailureIdent,
+  refersTo,
 } from '../src/util/canc-imports.js';
 import { ruleTester } from './setup.js';
 
 const tester = ruleTester({ types: false });
 
-type Ctx = TSESLint.RuleContext<'hit', unknown[]>;
+type Ctx = TSESLint.RuleContext<'hit' | 'canc' | 'cancGen', unknown[]>;
 
 /**
  * Build a rule that reports `hit` on every callee of a CallExpression that the
@@ -49,14 +53,51 @@ function probeRule(predicate: (node: TSESTree.Node, context: Ctx) => boolean): T
 
 const ctorRule = probeRule((node, ctx) => isCancCtorIdent(node, ctx));
 const cancAwaitRule = probeRule((node, ctx) => isCancAwaitIdent(node, ctx));
-const cancIterAwaitRule = probeRule((node, ctx) => isCancIterAwaitIdent(node, ctx));
-const awaitedRule = probeRule((node, ctx) => isAwaitedIdent(node, ctx));
+const cancGenAwaitRule = probeRule((node, ctx) => isCancGenAwaitIdent(node, ctx));
 const coroutineRule = (which: CoroutineFn) => probeRule((node, ctx) => isCoroutineFnIdent(node, ctx, which));
 const helperRule = (name: string) => probeRule((node, ctx) => isHelperIdent(node, ctx, name));
+const withFailureRule = probeRule((node, ctx) => isWithFailureIdent(node, ctx));
+const lazyCtorRule = probeRule((node, ctx) => isLazyCtorIdent(node, ctx));
+const refersToRule = (exported: string) => probeRule((node, ctx) => refersTo(node, ctx, exported));
+
+const throwHelperRule: TSESLint.RuleModule<'canc' | 'cancGen', []> = {
+  meta: {
+    type: 'problem',
+    messages: { canc: 'canc', cancGen: 'cancGen' },
+    schema: [],
+  },
+  defaultOptions: [],
+  create(context) {
+    return {
+      CallExpression(node) {
+        const res = isThrowHelperCall(node, context);
+        if (res) {
+          context.report({ node, messageId: res.dialect });
+        }
+      },
+    };
+  },
+};
+
+const forAwaitNextRule: TSESLint.RuleModule<'hit', []> = {
+  meta: {
+    type: 'problem',
+    messages: { hit: 'hit' },
+    schema: [],
+  },
+  defaultOptions: [],
+  create(context) {
+    return {
+      MemberExpression(node) {
+        if (isCancForAwaitNext(node, context)) {
+          context.report({ node, messageId: 'hit' });
+        }
+      },
+    };
+  },
+};
 
 describe('canc-imports: getCancBindings', () => {
-  // Snapshot the binding map for a given source by running a rule that captures
-  // it in a Program handler, driven through a real Linter.
   function bindingsFor(code: string): Map<string, CancBinding> {
     let captured = new Map<string, CancBinding>();
     const captureRule: TSESLint.RuleModule<'x', []> = {
@@ -135,9 +176,7 @@ describe('canc-imports: getCancBindings', () => {
 describe('canc-imports: isCancCtorIdent', () => {
   tester.run('ctor', ctorRule, {
     valid: [
-      // non-canc source
       `import { CancelablePromise } from 'bluebird'; new CancelablePromise(() => {});`,
-      // shadowed by local class -> must NOT match (scope handling)
       `
  import { CancelablePromise } from '@cancjs/promise';
  function f() {
@@ -145,7 +184,6 @@ describe('canc-imports: isCancCtorIdent', () => {
  new CancelablePromise();
  }
  `,
-      // shadowed by local param
       `
  import { CancelablePromise } from '@cancjs/promise';
  function g(CancelablePromise) {
@@ -173,11 +211,6 @@ describe('canc-imports: isCancCtorIdent', () => {
         code: `const { CancelablePromise } = require('@cancjs/promise'); new CancelablePromise(() => {});`,
         errors: [{ messageId: 'hit' }],
       },
-      {
-        name: 'native subpath',
-        code: `import { CancelablePromise } from '@cancjs/promise/native'; new CancelablePromise(() => {});`,
-        errors: [{ messageId: 'hit' }],
-      },
     ],
   });
 });
@@ -186,7 +219,6 @@ describe('canc-imports: isCoroutineFnIdent', () => {
   tester.run('cancAsync', coroutineRule('cancAsync'), {
     valid: [
       `import { cancAsync } from 'other'; cancAsync(function* () {});`,
-      // namespace member of a DIFFERENT namespace-like local var (not canc)
       `const co = { cancAsync() {} }; co.cancAsync();`,
     ],
     invalid: [
@@ -200,6 +232,11 @@ describe('canc-imports: isCoroutineFnIdent', () => {
         errors: [{ messageId: 'hit' }],
       },
       {
+        name: 'namespace member co.async',
+        code: `import * as co from '@cancjs/coroutine'; co.async(function* () {});`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
         name: 'require namespace member',
         code: `const co = require('@cancjs/coroutine'); co.cancAsync(function* () {});`,
         errors: [{ messageId: 'hit' }],
@@ -207,11 +244,30 @@ describe('canc-imports: isCoroutineFnIdent', () => {
     ],
   });
 
-  tester.run('cancIterAsync', coroutineRule('cancIterAsync'), {
-    valid: [`import { cancIterAsync } from 'x'; cancIterAsync();`],
+  tester.run('cancGenAsync', coroutineRule('cancGenAsync'), {
+    valid: [
+      `import { cancGenAsync } from 'x'; cancGenAsync();`,
+      `
+ import { cancGenAsync } from '@cancjs/coroutine/gen';
+ function outer() {
+ const cancGenAsync = () => {};
+ cancGenAsync();
+ }
+ `,
+    ],
     invalid: [
       {
-        code: `import { cancIterAsync } from '@cancjs/coroutine/iter'; cancIterAsync(function* () {});`,
+        code: `import { cancGenAsync } from '@cancjs/coroutine/gen'; cancGenAsync(function* () {});`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'namespace member gen.cancGenAsync',
+        code: `import * as gen from '@cancjs/coroutine/gen'; gen.cancGenAsync(function* () {});`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'namespace member gen.async',
+        code: `import * as gen from '@cancjs/coroutine/gen'; gen.async(function* () {});`,
         errors: [{ messageId: 'hit' }],
       },
     ],
@@ -231,35 +287,244 @@ describe('canc-imports: await markers', () => {
         code: `import * as canc from '@cancjs/coroutine'; canc.cancAwait(p);`,
         errors: [{ messageId: 'hit' }],
       },
-    ],
-  });
-
-  tester.run('cancIterAwait', cancIterAwaitRule, {
-    valid: [`import { cancIterAwait } from 'x'; cancIterAwait(p);`],
-    invalid: [
       {
-        code: `import { cancIterAwait } from '@cancjs/coroutine/iter'; cancIterAwait(p);`,
+        name: 'namespace member canc.await',
+        code: `import * as canc from '@cancjs/coroutine'; canc.await(p);`,
         errors: [{ messageId: 'hit' }],
       },
     ],
   });
 
-  tester.run('awaited', awaitedRule, {
-    valid: [`import { awaited } from 'x'; awaited(p);`],
+  tester.run('cancGenAwait', cancGenAwaitRule, {
+    valid: [`import { cancGenAwait } from 'x'; cancGenAwait(p);`],
     invalid: [
       {
-        code: `import { awaited } from '@cancjs/coroutine/iter'; awaited(p);`,
+        code: `import { cancGenAwait } from '@cancjs/coroutine/gen'; cancGenAwait(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'namespace member cancGen.cancGenAwait',
+        code: `import * as cancGen from '@cancjs/coroutine/gen'; cancGen.cancGenAwait(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'namespace member cancGen.await',
+        code: `import * as cancGen from '@cancjs/coroutine/gen'; cancGen.await(p);`,
         errors: [{ messageId: 'hit' }],
       },
     ],
   });
 });
 
-describe('canc-imports: isHelperIdent', () => {
+describe('canc-imports: throw helpers', () => {
+  tester.run('isThrowHelperCall', throwHelperRule, {
+    valid: [
+      `import { cancThrow } from 'foreign'; cancThrow(new Error());`,
+      `
+ import { cancThrow } from '@cancjs/coroutine';
+ function local() {
+ function cancThrow(_e: unknown) {}
+ cancThrow(new Error());
+ }
+ `,
+      `
+ import * as canc from '@cancjs/coroutine';
+ function local() {
+ const canc = { throw(_e: unknown) {} };
+ canc.throw(new Error());
+ }
+ `,
+    ],
+    invalid: [
+      {
+        name: 'cancThrow named import',
+        code: `import { cancThrow } from '@cancjs/coroutine'; cancThrow(new Error());`,
+        errors: [{ messageId: 'canc' }],
+      },
+      {
+        name: 'canc.throw namespace call',
+        code: `import * as canc from '@cancjs/coroutine'; canc.throw(new Error());`,
+        errors: [{ messageId: 'canc' }],
+      },
+      {
+        name: 'cancGenThrow named import',
+        code: `import { cancGenThrow } from '@cancjs/coroutine/gen'; cancGenThrow(new Error());`,
+        errors: [{ messageId: 'cancGen' }],
+      },
+      {
+        name: 'cancGen.throw namespace call',
+        code: `import * as cancGen from '@cancjs/coroutine/gen'; cancGen.throw(new Error());`,
+        errors: [{ messageId: 'cancGen' }],
+      },
+      {
+        name: 'throw as t from coroutine/gen',
+        code: `import { throw as t } from '@cancjs/coroutine/gen'; t(new Error());`,
+        errors: [{ messageId: 'cancGen' }],
+      },
+      {
+        name: 'throw as t from coroutine',
+        code: `import { throw as t } from '@cancjs/coroutine'; t(new Error());`,
+        errors: [{ messageId: 'canc' }],
+      },
+    ],
+  });
+});
+
+describe('canc-imports: cancForAwait.next', () => {
+  tester.run('isCancForAwaitNext', forAwaitNextRule, {
+    valid: [`import { cancForAwait } from 'other'; cancForAwait.next;`, `const o = { next: 1 }; o.next;`],
+    invalid: [
+      {
+        name: 'named cancForAwait.next',
+        code: `import { cancForAwait } from '@cancjs/coroutine'; cancForAwait.next;`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'namespace canc.forAwait.next',
+        code: `import * as canc from '@cancjs/coroutine'; canc.forAwait.next;`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+});
+
+describe('canc-imports: failure and helper identifiers', () => {
+  tester.run('withFailure', withFailureRule, {
+    valid: [
+      `import { withFailure } from 'x'; withFailure(p);`,
+      `
+ import { withFailure } from '@cancjs/coroutine';
+ function outer(withFailure: unknown) {
+ withFailure(1);
+ }
+ `,
+    ],
+    invalid: [
+      {
+        code: `import { withFailure } from '@cancjs/coroutine'; withFailure(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'renamed withFailure',
+        code: `import { withFailure as wf } from '@cancjs/coroutine'; wf(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('cancGenForAwait', helperRule('cancGenForAwait'), {
+    valid: [`import { cancGenForAwait } from 'x'; cancGenForAwait();`],
+    invalid: [
+      {
+        code: `import { cancGenForAwait } from '@cancjs/coroutine/gen'; cancGenForAwait(s);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('cancGenDelegate', helperRule('cancGenDelegate'), {
+    valid: [`import { cancGenDelegate } from 'x'; cancGenDelegate();`],
+    invalid: [
+      {
+        code: `import { cancGenDelegate } from '@cancjs/coroutine/gen'; cancGenDelegate(s);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('BreakError', helperRule('BreakError'), {
+    valid: [`import { BreakError } from 'x'; new BreakError();`],
+    invalid: [
+      {
+        code: `import { BreakError } from '@cancjs/coroutine'; new BreakError();`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('isBreakError', helperRule('isBreakError'), {
+    valid: [`import { isBreakError } from 'x'; isBreakError(e);`],
+    invalid: [
+      {
+        code: `import { isBreakError } from '@cancjs/coroutine'; isBreakError(e);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('IterationError', helperRule('IterationError'), {
+    valid: [`import { IterationError } from 'x'; new IterationError();`],
+    invalid: [
+      {
+        code: `import { IterationError } from '@cancjs/coroutine'; new IterationError();`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('catchErrors', helperRule('catchErrors'), {
+    valid: [`import { catchErrors } from 'x'; catchErrors(p);`],
+    invalid: [
+      {
+        code: `import { catchErrors } from '@cancjs/toolbox'; catchErrors(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('suppressErrors', helperRule('suppressErrors'), {
+    valid: [`import { suppressErrors } from 'x'; suppressErrors(p);`],
+    invalid: [
+      {
+        code: `import { suppressErrors } from '@cancjs/toolbox'; suppressErrors(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('createIsError', helperRule('createIsError'), {
+    valid: [`import { createIsError } from 'x'; createIsError('x');`],
+    invalid: [
+      {
+        code: `import { createIsError } from '@cancjs/toolbox'; createIsError('x');`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('isErrorOf', helperRule('isErrorOf'), {
+    valid: [`import { isErrorOf } from 'x'; isErrorOf(e, 'x');`],
+    invalid: [
+      {
+        code: `import { isErrorOf } from '@cancjs/toolbox'; isErrorOf(e, 'x');`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('asyncMethod', helperRule('asyncMethod'), {
+    valid: [`import { asyncMethod } from 'x'; asyncMethod();`],
+    invalid: [
+      {
+        code: `import { asyncMethod } from '@cancjs/decorators'; asyncMethod();`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('bindMethod', helperRule('bindMethod'), {
+    valid: [`import { bindMethod } from 'x'; bindMethod();`],
+    invalid: [
+      {
+        code: `import { bindMethod } from '@cancjs/decorators'; bindMethod();`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
   tester.run('cancelify', helperRule('cancelify'), {
     valid: [
       `import { cancelify } from 'x'; cancelify(fn);`,
-      // wrong helper name requested
       `import { promisify } from '@cancjs/toolbox'; promisify(fn);`,
     ],
     invalid: [
@@ -287,7 +552,6 @@ describe('canc-imports: isHelperIdent', () => {
 
   tester.run('cancForAwait', helperRule('cancForAwait'), {
     valid: [
-      // shadowed by a local function declaration -> scope wins, not a match
       `
  import { cancForAwait } from '@cancjs/coroutine';
  function outer() {
@@ -299,6 +563,157 @@ describe('canc-imports: isHelperIdent', () => {
     invalid: [
       {
         code: `import { cancForAwait } from '@cancjs/coroutine'; cancForAwait(s);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+});
+
+describe('canc-imports: default import does not match non-ctor exports', () => {
+  tester.run('default import does not match lazy ctor', lazyCtorRule, {
+    valid: [`import CancelablePromise from '@cancjs/promise'; new CancelablePromise(() => {});`],
+    invalid: [],
+  });
+
+  tester.run('default import does not match cancAsync', coroutineRule('cancAsync'), {
+    valid: [`import CancelablePromise from '@cancjs/promise'; CancelablePromise(function* () {});`],
+    invalid: [],
+  });
+
+  tester.run('default import does not match cancGenAsync', coroutineRule('cancGenAsync'), {
+    valid: [`import CancelablePromise from '@cancjs/promise'; CancelablePromise(function* () {});`],
+    invalid: [],
+  });
+
+  tester.run('default import does not match cancAwait', cancAwaitRule, {
+    valid: [`import CancelablePromise from '@cancjs/promise'; CancelablePromise(p);`],
+    invalid: [],
+  });
+
+  tester.run('default import does not match cancGenAwait', cancGenAwaitRule, {
+    valid: [`import CancelablePromise from '@cancjs/promise'; CancelablePromise(p);`],
+    invalid: [],
+  });
+
+  tester.run('default import does not match withFailure', withFailureRule, {
+    valid: [`import CancelablePromise from '@cancjs/promise'; CancelablePromise(p);`],
+    invalid: [],
+  });
+
+  tester.run('default import does not match helper ident', helperRule('withFailure'), {
+    valid: [`import CancelablePromise from '@cancjs/promise'; CancelablePromise(p);`],
+    invalid: [],
+  });
+});
+
+describe('canc-imports: promise and toolbox helpers', () => {
+  tester.run('isCancelError', helperRule('isCancelError'), {
+    valid: [`import { isCancelError } from 'foreign'; isCancelError(e);`],
+    invalid: [
+      {
+        code: `import { isCancelError } from '@cancjs/promise'; isCancelError(e);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'renamed isCancelError',
+        code: `import { isCancelError as checkCancel } from '@cancjs/promise'; checkCancel(e);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('isCancPromise', helperRule('isCancPromise'), {
+    valid: [`import { isCancPromise } from 'foreign'; isCancPromise(p);`],
+    invalid: [
+      {
+        code: `import { isCancPromise } from '@cancjs/promise'; isCancPromise(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'renamed isCancPromise',
+        code: `import { isCancPromise as checkPromise } from '@cancjs/promise'; checkPromise(p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('lazy', helperRule('lazy'), {
+    valid: [`import { lazy } from 'foreign'; lazy(() => p);`],
+    invalid: [
+      {
+        code: `import { lazy } from '@cancjs/toolbox'; lazy(() => p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'renamed lazy',
+        code: `import { lazy as makeLazy } from '@cancjs/toolbox'; makeLazy(() => p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('createLazyPromise', helperRule('createLazyPromise'), {
+    valid: [`import { createLazyPromise } from 'foreign'; createLazyPromise(() => p);`],
+    invalid: [
+      {
+        code: `import { createLazyPromise } from '@cancjs/toolbox'; createLazyPromise(() => p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'renamed createLazyPromise',
+        code: `import { createLazyPromise as clp } from '@cancjs/toolbox'; clp(() => p);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+});
+
+describe('canc-imports: refersTo export detection', () => {
+  tester.run('refersTo isCancelError', refersToRule('isCancelError'), {
+    valid: [`import { isCancelError } from 'foreign'; isCancelError(e);`],
+    invalid: [
+      {
+        code: `import { isCancelError } from '@cancjs/promise'; isCancelError(e);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'namespace member canc.isCancelError',
+        code: `import * as canc from '@cancjs/promise'; canc.isCancelError(e);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('refersTo lazy', refersToRule('lazy'), {
+    valid: [`import { lazy } from 'foreign'; lazy(fn);`],
+    invalid: [
+      {
+        code: `import { lazy } from '@cancjs/toolbox'; lazy(fn);`,
+        errors: [{ messageId: 'hit' }],
+      },
+      {
+        name: 'namespace member toolbox.lazy',
+        code: `import * as tb from '@cancjs/toolbox'; tb.lazy(fn);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('refersTo createLazyPromise', refersToRule('createLazyPromise'), {
+    valid: [`import { createLazyPromise } from 'foreign'; createLazyPromise(fn);`],
+    invalid: [
+      {
+        code: `import { createLazyPromise } from '@cancjs/toolbox'; createLazyPromise(fn);`,
+        errors: [{ messageId: 'hit' }],
+      },
+    ],
+  });
+
+  tester.run('refersTo isCancPromise', refersToRule('isCancPromise'), {
+    valid: [`import { isCancPromise } from 'foreign'; isCancPromise(p);`],
+    invalid: [
+      {
+        code: `import { isCancPromise } from '@cancjs/promise'; isCancPromise(p);`,
         errors: [{ messageId: 'hit' }],
       },
     ],
