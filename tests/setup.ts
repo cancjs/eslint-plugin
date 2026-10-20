@@ -19,32 +19,32 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixtureProjectDir = path.join(__dirname, 'fixtures/projects/default');
 
 export interface RuleTesterOptions {
-	typeScript?: boolean;
-	types?: boolean;
+  typeScript?: boolean;
+  types?: boolean;
 }
 
 export function ruleTester({ typeScript = true, types = true }: RuleTesterOptions = {}): RuleTester {
-	if (!typeScript) {
-		return new RuleTester({
-			languageOptions: {
-				parser: undefined,
-			},
-		});
-	}
+  if (!typeScript) {
+    return new RuleTester({
+      languageOptions: {
+        parser: undefined,
+      },
+    });
+  }
 
-	return new RuleTester({
-		languageOptions: {
-			parser: tseslintParser,
-			parserOptions:
-				types ?
-					{
-						projectService: {
-							allowDefaultProject: ['*.ts*'],
-							defaultProject: 'tsconfig.json',
-						},
-						tsconfigRootDir: fixtureProjectDir,
-					}
-				:	{},
-		},
-	});
+  return new RuleTester({
+    languageOptions: {
+      parser: tseslintParser,
+      parserOptions:
+        types ?
+          {
+            projectService: {
+              allowDefaultProject: ['*.ts*'],
+              defaultProject: 'tsconfig.json',
+            },
+            tsconfigRootDir: fixtureProjectDir,
+          }
+        : {},
+    },
+  });
 }

@@ -3,3 +3,4 @@ import { cancAsync, cancAwait } from '@cancjs/coroutine';
 
 void cancAsync;
 void cancAwait;
+

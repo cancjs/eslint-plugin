@@ -1,28 +1,49 @@
 // Source: coroutine.md > canc/prefer-cancel-aware-wrapper (strict tier) > Incorrect
 import CancelablePromise, {
- isCancelError, isCancPromise, isAbortError,
- catchCancel, suppressCancel, makeCancelable, createCancelRef, createAbortSignal,
+  CancelError,
+  isCancelError,
+  isCancPromise,
+  catchCancel,
+  suppressCancel,
+  makeCancelable,
+  createCancelSignal,
 } from '@cancjs/promise';
 import { cancAsync, cancAwait, cancForAwait } from '@cancjs/coroutine';
-import { cancIterAsync, cancIterAwait, cancIterForAwait, cancIterDelegate, awaited } from '@cancjs/coroutine/iter';
-import { cancelify, promisify, promisifyAll } from '@cancjs/toolbox';
-import { LazyPromise } from '@cancjs/lazy-promise';
+import { cancGenAsync, cancGenAwait, cancGenForAwait, cancGenDelegate } from '@cancjs/coroutine/gen';
+import {
+  cancelify,
+  promisify,
+  promisifyAll,
+  LazyPromise,
+  createLazyPromise,
+  AbortError,
+  isAbortError,
+  TimeoutError,
+  isTimeoutError,
+  createCatchError,
+  createSuppressError,
+  catchAbort,
+  suppressAbort,
+  catchTimeout,
+  suppressTimeout,
+} from '@cancjs/toolbox';
 
 interface Result {
- id: string;
+  id: string;
 }
 declare function rawFetch(orderId: string, signal: AbortSignal): Promise<Result>;
 
 const run = cancAsync(function* (orderId: string) {
- const { signal, abort } = createAbortSignal(); // lint: hand-rolled cancel propagation
- let completed = false;
- try {
- const res = yield* cancAwait(makeCancelable(rawFetch(orderId, signal)));
- completed = true;
- return res;
- } finally {
- if (!completed) {
- abort();
- }
- }
+  const { signal, abort } = createAbortSignal(); // lint: prefer-cancel-aware-wrapper hand-rolled cancel propagation
+  let completed = false;
+  try {
+  const res = yield* cancAwait(makeCancelable(rawFetch(orderId, signal)));
+  completed = true;
+  return res;
+  } finally {
+  if (!completed) {
+  abort();
+  }
+  }
 });
+
