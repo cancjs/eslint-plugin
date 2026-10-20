@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { analyzeExecutor, type ExecutorShape } from '../src/util/executor.js';
 
 const IMPORT_CANC = `import { CancelablePromise } from '@cancjs/promise';\n`;
-const IMPORT_LAZY = `import { LazyPromise } from '@cancjs/lazy-promise';\n`;
+const IMPORT_LAZY = `import { LazyPromise } from '@cancjs/toolbox';\n`;
 
 /**
  * Run `analyzeExecutor` on the first `new` expression in `code` through a real
@@ -55,6 +55,11 @@ function fields(shape: ExecutorShape | null) {
     returnsValue: s.returnsValue,
     returnsFunction: s.returnsFunction,
     hasOptions: s.ctorOptionsNode !== undefined,
+    contextKind: s.contextKind,
+    getSignalCount: s.getSignalCalls.length,
+    signalForwarded: s.signalForwarded,
+    controllerForwarded: s.controllerForwarded ?? false,
+    asyncDriverCount: s.asyncDriverCalls?.length ?? 0,
   };
 }
 
@@ -72,9 +77,7 @@ describe('analyzeExecutor: non-tracked ctors', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // executor.md corpus shapes
-// ---------------------------------------------------------------------------
 
 describe('no-async-executor corpus', () => {
   it('Incorrect: async executor -> isAsync', () => {
@@ -344,9 +347,7 @@ describe('ctor options object', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // lazy.md corpus shapes
-// ---------------------------------------------------------------------------
 
 describe('lazy executor corpus', () => {
   it('must-consume-lazy: bare lazy ctor -> ctorKind lazy', () => {
@@ -413,6 +414,437 @@ describe('lazy executor corpus', () => {
       operationCount: 1,
       returnsValue: false,
       returnsFunction: false,
+    });
+  });
+});
+
+describe('executor context and getSignal', () => {
+  it('destructured { handleCancel } wiring', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      lateHandleCancel: false,
+      signalReadCount: 1,
+      getSignalCount: 0,
+      signalForwarded: false,
+    });
+  });
+
+  it('destructured { handleCancel: hc } rename', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel: hc }) => {
+ const controller = new AbortController();
+ hc(() => controller.abort());
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      signalReadCount: 1,
+    });
+  });
+
+  it('destructured late handleCancel reports late: true', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ openStream().then((stream) => {
+ handleCancel(() => stream.destroy());
+ readAll(stream).then(resolve, reject);
+ }, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      lateHandleCancel: true,
+    });
+  });
+
+  it('ctx identifier handleCancel member call', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, ctx) => {
+ const controller = new AbortController();
+ ctx.handleCancel(() => controller.abort());
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'identifier',
+      handleCancelCount: 1,
+      signalReadCount: 1,
+    });
+  });
+
+  it('ctx identifier getSignal forwarded directly into fetch', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, ctx) => {
+ fetch(url, { signal: ctx.getSignal() }).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'identifier',
+      getSignalCount: 1,
+      signalForwarded: true,
+    });
+  });
+
+  it('destructured getSignal forwarded directly into fetch options', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { getSignal }) => {
+ fetch(url, { signal: getSignal() }).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      getSignalCount: 1,
+      signalForwarded: true,
+    });
+  });
+
+  it('destructured getSignal assigned to variable and forwarded into fetch', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { getSignal }) => {
+ const signal = getSignal();
+ fetch(url, { signal }).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      getSignalCount: 1,
+      signalForwarded: true,
+    });
+  });
+
+  it('destructured getSignal call result discarded -> signalForwarded false', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { getSignal }) => {
+ getSignal();
+ fetch(url).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      getSignalCount: 1,
+      signalForwarded: false,
+    });
+  });
+
+  it('executor with no 3rd param -> contextKind none', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject) => {
+ fetch(url).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'none',
+      hasHandleCancelParam: false,
+      handleCancelCount: 0,
+    });
+  });
+
+  it('async executor with context', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise(async (resolve, reject, { handleCancel }) => {
+ handleCancel(() => {});
+ resolve(await fetch(url));
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      isAsync: true,
+      handleCancelCount: 1,
+    });
+  });
+
+  it('synchronous-throw executor still classifies', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ handleCancel(() => {});
+ throw new Error('immediate failure');
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+    });
+  });
+
+  it('positional legacy handleCancel parameter classifies as legacyFn', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, handleCancel) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'legacyFn',
+      handleCancelCount: 1,
+      signalReadCount: 1,
+    });
+  });
+
+  it('destructured defaults on context parameter', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel = () => {} }) => {
+ handleCancel();
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+    });
+  });
+
+  it('positional legacy hc parameter classifies as legacyFn', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, hc) => {
+ const controller = new AbortController();
+ hc(() => controller.abort());
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'legacyFn',
+      hasHandleCancelParam: true,
+      handleCancelCount: 1,
+      signalReadCount: 1,
+    });
+  });
+
+  it('positional legacy _handleCancel parameter classifies as legacyFn', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, _handleCancel) => {
+ const controller = new AbortController();
+ _handleCancel(() => controller.abort());
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'legacyFn',
+      hasHandleCancelParam: true,
+      handleCancelCount: 1,
+      signalReadCount: 1,
+    });
+  });
+
+  it('positional legacy _hc parameter classifies as legacyFn', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, _hc) => {
+ const controller = new AbortController();
+ _hc(() => controller.abort());
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'legacyFn',
+      hasHandleCancelParam: true,
+      handleCancelCount: 1,
+      signalReadCount: 1,
+    });
+  });
+
+  it('positional legacy parameter with assignment default classifies as legacyFn', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, hc = () => {}) => {
+ hc();
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'legacyFn',
+      hasHandleCancelParam: true,
+      handleCancelCount: 1,
+    });
+  });
+
+  it('named async function driver reports asyncDriverInside and asyncDriverCalls', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ async function run() {
+ resolve(await buildReport(controller.signal));
+ }
+ run().catch(reject);
+ });`;
+    const shape = shapeFor(code);
+    expect(fields(shape)).toMatchObject({
+      asyncDriverInside: true,
+      asyncDriverCount: 1,
+    });
+    expect(shape?.asyncDriverCalls).toHaveLength(1);
+  });
+
+  it('named async arrow driver reports asyncDriverInside and asyncDriverCalls', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ const run = async () => {
+ resolve(await buildReport(controller.signal));
+ };
+ run();
+ });`;
+    const shape = shapeFor(code);
+    expect(fields(shape)).toMatchObject({
+      asyncDriverInside: true,
+      asyncDriverCount: 1,
+    });
+    expect(shape?.asyncDriverCalls).toHaveLength(1);
+  });
+
+  it('async executor with named async driver exposes both', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise(async (resolve, reject, { handleCancel }) => {
+ handleCancel(() => {});
+ async function helper() {
+ await fetch(url);
+ }
+ helper();
+ resolve(await fetch(url));
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      isAsync: true,
+      asyncDriverInside: true,
+      asyncDriverCount: 1,
+    });
+  });
+
+  it('operation inside handleCancel cleanup callback is excluded from operationStarts', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ handleCancel(() => {
+ cleanupService().then(() => {});
+ });
+ fetch(url).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      operationCount: 1,
+      handleCancelCount: 1,
+    });
+  });
+
+  it('operation inside ctx.handleCancel cleanup callback is excluded from operationStarts', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, ctx) => {
+ ctx.handleCancel(async () => {
+ await closeConnection();
+ });
+ fetch(url).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'identifier',
+      operationCount: 1,
+      handleCancelCount: 1,
+    });
+  });
+
+  it('operation inside uninvoked nested function declaration is excluded from operationStarts', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject) => {
+ function unusedHelper() {
+ fetch('/aux').then(resolve);
+ }
+ fetch('/primary').then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      operationCount: 1,
+    });
+  });
+
+  it('operation inside invoked nested function declaration is included in operationStarts', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject) => {
+ function activeHelper() {
+ fetch('/primary').then(resolve);
+ }
+ activeHelper();
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      operationCount: 1,
+    });
+  });
+
+  it('destructured const { signal } = controller records signal reads', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ const { signal } = controller;
+ fetch(url, { signal }).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      signalReadCount: 1,
+      controllerForwarded: false,
+    });
+  });
+
+  it('destructured const { signal: s } = controller with rename records signal reads', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ const { signal: s } = controller;
+ fetch(url, s).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      signalReadCount: 1,
+      controllerForwarded: false,
+    });
+  });
+
+  it('destructured const { signal } = controller unused yields zero signal reads', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ const { signal } = controller;
+ fetch(url).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      signalReadCount: 0,
+      controllerForwarded: false,
+    });
+  });
+
+  it('whole-controller forwarding fn(controller) sets controllerForwarded true', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ handleCancel(() => controller.abort());
+ forwardController(url, controller).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      signalReadCount: 0,
+      controllerForwarded: true,
+    });
+  });
+
+  it('destructured late handleCancel with controller wiring', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ const controller = new AbortController();
+ setTimeout(() => {
+ handleCancel(() => controller.abort());
+ }, 100);
+ fetch(url, controller.signal).then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      contextKind: 'destructured',
+      handleCancelCount: 1,
+      lateHandleCancel: true,
+      signalReadCount: 1,
+    });
+  });
+
+  it('multiple distinct operations counted when outside cleanup callback', () => {
+    const code = `${IMPORT_CANC}
+ const p = new CancelablePromise((resolve, reject, { handleCancel }) => {
+ handleCancel(() => {});
+ fetch('/first').then(() => {});
+ fetch('/second').then(resolve, reject);
+ });`;
+    expect(fields(shapeFor(code))).toMatchObject({
+      operationCount: 2,
     });
   });
 });
