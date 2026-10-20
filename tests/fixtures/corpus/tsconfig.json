@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "@cancjs/*": [
+        "../projects/default/node_modules/@cancjs/*",
+        "../projects/default/node_modules/@cancjs/*/index.d.ts",
+        "../projects/default/node_modules/@cancjs/*.d.ts"
+      ],
+      "@cancjs/promise/dist/*": [
+        "../projects/default/node_modules/@cancjs/promise/*.d.ts"
+      ]
+    }
+  },
+  "include": ["**/*.ts"]
+}
