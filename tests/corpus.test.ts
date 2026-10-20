@@ -28,11 +28,13 @@ function findValidFixtures(): string[] {
   return findTsFiles(corpusDir).filter((f) => f.replaceAll('\\', '/').includes('/valid/'));
 }
 
-// Recommended preset does not exist yet (no rules shipped). Falling back to an empty rule set
-// keeps this test meaningful once phases 01-04 populate `plugin.configs.recommended`: the
-// aggregate then runs whatever rules recommended enables, still asserting zero diagnostics on
-// every blessed valid snippet.
-const recommendedConfig: Linter.Config = (plugin.configs?.recommended as Linter.Config | undefined) ?? {};
+// Recommended preset is a flat config array. Spreading it keeps this test meaningful
+// once phases 01-04 populate `plugin.configs.recommended`: the aggregate then runs whatever
+// rules recommended enables, still asserting zero diagnostics on every blessed valid snippet.
+const recommendedConfigs: Linter.Config[] =
+  Array.isArray(plugin.configs?.recommended) ? plugin.configs.recommended
+  : plugin.configs?.recommended ? [plugin.configs.recommended as Linter.Config]
+  : [];
 
 function buildEslint(): ESLint {
   return new ESLint({
@@ -49,8 +51,8 @@ function buildEslint(): ESLint {
           },
         },
         plugins: { canc: plugin },
-        ...recommendedConfig,
       },
+      ...recommendedConfigs,
     ],
   });
 }
