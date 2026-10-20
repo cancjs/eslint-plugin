@@ -39,6 +39,7 @@
     "format": "eslint --fix .",
     "format:src": "eslint --fix ./src",
     "format:all": "eslint --fix .",
+    "gen:stubs": "node scripts/gen-fixture-stubs.mjs",
     "docs": "eslint-doc-generator",
     "docs:check": "eslint-doc-generator --check",
     "prepublishOnly": "npm run build && npm run lint && npm run typecheck && npm run test"
