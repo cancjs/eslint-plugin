@@ -11,3 +11,4 @@ const load = canc.async(function* () {
  const user = yield* canc.await(fetchUserCancelable());
  return user;
 });
+
