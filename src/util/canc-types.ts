@@ -23,7 +23,7 @@ export function getCancServices(
 }
 
 /**
- * Turn a configured module specifier (e.g. `@cancjs/coroutine/iter`) into the package-root path
+ * Turn a configured module specifier (e.g. `@cancjs/coroutine/gen`) into the package-root path
  * segment used to recognize a symbol's declaration file (`node_modules/@cancjs/coroutine/`). Subpath
  * and `/native` suffixes collapse to the same package root, so a type declared anywhere in the
  * package still matches.

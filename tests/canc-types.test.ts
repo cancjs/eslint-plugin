@@ -72,7 +72,7 @@ const probeRule: TSESLint.RuleModule<MessageIds, []> = {
 };
 
 const importPromise = `import { CancelablePromise } from '@cancjs/promise';\n`;
-const importLazy = `import { LazyPromise } from '@cancjs/lazy-promise';\n`;
+const importLazy = `import { LazyPromise } from '@cancjs/toolbox';\n`;
 
 describe('canc-types: typed detection', () => {
   ruleTester().run('probe', probeRule, {
