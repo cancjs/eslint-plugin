@@ -65,8 +65,9 @@ function isForwardReferencedDisableComment(message: string): boolean {
   return /^Definition for rule '[^']+' was not found\.$/.test(message);
 }
 
-describe('corpus: recommended preset zero-false-positive aggregate', () => {
-  it('corpus/valid contains at least 25 fixture files', () => {
+describe('corpus: recommended preset zero-false-positive aggregate (58 valid files)', () => {
+  it('corpus/valid contains 58 fixture files (at least 25)', () => {
+    expect(findValidFixtures()).toHaveLength(58);
     expect(findValidFixtures().length).toBeGreaterThanOrEqual(25);
   });
 
