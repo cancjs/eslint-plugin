@@ -111,7 +111,7 @@ describe('engine smoke over built artifacts', () => {
   it('runs built plugin recommended config over valid corpus fixtures with zero diagnostics', async () => {
     const cjsPlugin = loadCjs(distCjsPath);
     const validFiles = findTsFiles(corpusDir).filter((f) => f.split(path.sep).includes('valid'));
-    expect(validFiles.length).toBe(101);
+    expect(validFiles.length).toBe(107);
 
     const eslint = new ESLint({
       cwd: corpusDir,

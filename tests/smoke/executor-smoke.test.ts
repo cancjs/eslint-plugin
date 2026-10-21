@@ -243,7 +243,7 @@ describe('executor rules phase smoke over built artifacts', () => {
     const validFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(validFiles.length).toBe(101);
+    expect(validFiles.length).toBe(107);
 
     const recResults = await eslintRecommended.lintFiles(validFiles);
     for (const r of recResults) {
