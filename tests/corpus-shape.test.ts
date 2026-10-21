@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest';
 
 import { CATALOG_RULE_IDS, corpusFiles, readMarkers } from './helpers/corpus.js';
 
-describe('corpus shape: 105 fixtures across 6 families', () => {
+describe('corpus shape: 136 fixtures across 6 families', () => {
   const families = ['coroutine', 'error-handling', 'executor', 'flow', 'hygiene', 'lazy'] as const;
 
-  it('prints per-family counts summing to 105 files', () => {
+  it('prints per-family counts summing to 136 files', () => {
     const allFiles = corpusFiles();
-    expect(allFiles).toHaveLength(105);
+    expect(allFiles).toHaveLength(136);
 
     const counts: Record<string, { total: number; valid: number; invalid: number }> = {};
     for (const fam of families) {
@@ -23,7 +23,7 @@ describe('corpus shape: 105 fixtures across 6 families', () => {
     const summary = families
       .map((fam) => `${fam}: ${counts[fam].total} (${counts[fam].valid} valid, ${counts[fam].invalid} invalid)`)
       .join(', ');
-    console.log(`Corpus shape: 105 files [${summary}]`);
+    console.log(`Corpus shape: 136 files [${summary}]`);
 
     expect(counts.coroutine.total).toBe(29);
     expect(counts.coroutine.valid).toBe(15);
@@ -33,9 +33,9 @@ describe('corpus shape: 105 fixtures across 6 families', () => {
     expect(counts['error-handling'].valid).toBe(6);
     expect(counts['error-handling'].invalid).toBe(6);
 
-    expect(counts.executor.total).toBe(19);
-    expect(counts.executor.valid).toBe(11);
-    expect(counts.executor.invalid).toBe(8);
+    expect(counts.executor.total).toBe(50);
+    expect(counts.executor.valid).toBe(28);
+    expect(counts.executor.invalid).toBe(22);
 
     expect(counts.flow.total).toBe(21);
     expect(counts.flow.valid).toBe(14);
@@ -50,12 +50,12 @@ describe('corpus shape: 105 fixtures across 6 families', () => {
     expect(counts.lazy.invalid).toBe(4);
 
     const sum = Object.values(counts).reduce((acc, c) => acc + c.total, 0);
-    expect(sum).toBe(105);
+    expect(sum).toBe(136);
   });
 
   it('every invalid file has at least 1 marker', () => {
     const invalidFiles = corpusFiles(undefined, 'invalid');
-    expect(invalidFiles.length).toBe(47);
+    expect(invalidFiles.length).toBe(61);
 
     const missingMarkers: string[] = [];
     for (const file of invalidFiles) {
@@ -85,7 +85,7 @@ describe('corpus shape: 105 fixtures across 6 families', () => {
 
   it('valid files carry no marker', () => {
     const validFiles = corpusFiles(undefined, 'valid');
-    expect(validFiles.length).toBe(58);
+    expect(validFiles.length).toBe(75);
 
     const spuriousMarkers: { file: string; line: number; ruleId: string }[] = [];
     for (const file of validFiles) {

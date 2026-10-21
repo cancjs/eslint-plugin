@@ -28,7 +28,7 @@ function findValidFixtures(): string[] {
   return findTsFiles(corpusDir).filter((f) => f.replaceAll('\\', '/').includes('/valid/'));
 }
 
-// Recommended preset is a flat config array. Spreading it keeps this test meaningful
+// Recommended preset is a flat config array, spreading it keeps this test meaningful
 // once phases 01-04 populate `plugin.configs.recommended`: the aggregate then runs whatever
 // rules recommended enables, still asserting zero diagnostics on every blessed valid snippet.
 const recommendedConfigs: Linter.Config[] =
@@ -59,17 +59,17 @@ function buildEslint(): ESLint {
 
 // A handful of corpus fixtures carry `eslint-disable-next-line canc/<rule-id>` comments that
 // acknowledge a defect for a rule later phases have not shipped yet (the corpus is written once,
-// ahead of the rules it documents). ESLint validates disable-comment rule names against
-// registered rules unconditionally and reports unresolved ones as a lint message. Until the
+// ahead of the rules it documents); eslint validates disable-comment rule names against
+// registered rules unconditionally and reports unresolved ones as a lint message; until the
 // referenced rule exists, that message is expected noise, not a false positive from a shipped
 // rule; ignore only this exact message shape.
 function isForwardReferencedDisableComment(message: string): boolean {
   return /^Definition for rule '[^']+' was not found\.$/.test(message);
 }
 
-describe('corpus: recommended preset zero-false-positive aggregate (58 valid files)', () => {
-  it('corpus/valid contains 58 fixture files (at least 25)', () => {
-    expect(findValidFixtures()).toHaveLength(58);
+describe('corpus: recommended preset zero-false-positive aggregate (75 valid files)', () => {
+  it('corpus/valid contains 75 fixture files (at least 25)', () => {
+    expect(findValidFixtures()).toHaveLength(75);
     expect(findValidFixtures().length).toBeGreaterThanOrEqual(25);
   });
 
