@@ -1,4 +1,5 @@
-// Source: error-handling.md > canc/prefer-is-cancel-error > Incorrect (block 3, AbortError wrong layer)
+// Source: error-handling.md > canc/prefer-is-cancel-error
+// > Incorrect (block 3, AbortError wrong layer)
 import CancelablePromise, {
   CancelError,
   isCancelError,
@@ -28,10 +29,11 @@ import {
   suppressTimeout,
 } from '@cancjs/toolbox';
 
-declare function run(): void;
+declare function run(): CancelablePromise<void>;
 
 // Awaiting a canc promise constructed with { signal }: the rejection is a CancelError,
-// the DOMException is only its cause. This check can never match.
+// the DOMException is only its cause.
+// This check can never match.
 try {
   run();
 } catch (err) {
