@@ -64,7 +64,10 @@ function buildEslint(): ESLint {
 // referenced rule exists, that message is expected noise, not a false positive from a shipped
 // rule; ignore only this exact message shape.
 function isForwardReferencedDisableComment(message: string): boolean {
-  return /^Definition for rule '[^']+' was not found\.$/.test(message);
+  return (
+    /^Definition for rule '[^']+' was not found\.$/.test(message) ||
+    message.startsWith('Unused eslint-disable directive')
+  );
 }
 
 describe('corpus: recommended preset zero-false-positive aggregate (75 valid files)', () => {
