@@ -237,13 +237,13 @@ describe('executor rules phase smoke over built artifacts', () => {
         }
       }
     }
-  });
+  }, 20000);
 
   it('reports zero false positives across valid corpus fixtures under recommended and strict presets', async () => {
     const validFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(validFiles.length).toBe(85);
+    expect(validFiles.length).toBe(101);
 
     const recResults = await eslintRecommended.lintFiles(validFiles);
     for (const r of recResults) {
@@ -289,7 +289,7 @@ describe('executor rules phase smoke over built artifacts', () => {
       });
       expect(messages, `Unexpected diagnostic under strict in ${rel}`).toEqual([]);
     }
-  });
+  }, 20000);
 
   it('reports only SYN-fallback cases for prefer-signal-over-controller without type information', async () => {
     const eslintUntyped = new ESLint({

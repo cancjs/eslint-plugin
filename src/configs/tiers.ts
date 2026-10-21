@@ -12,6 +12,7 @@ export const TIERS: Record<string, TierEntry> = {
   'handle-cancel-first': { recommended: 'error' },
   'no-async-executor': { recommended: 'error' },
   'no-executor-return': { recommended: 'error' },
+  'prefer-canc-combinators': { recommended: 'error' },
   'prefer-signal-over-controller': { recommended: 'warn', strict: 'error' },
   'require-signal-forwarding': { recommended: 'warn' },
   'valid-canc-params': { recommended: 'error' },
