@@ -1,5 +1,5 @@
 import type { ParserServicesWithTypeInformation } from '@typescript-eslint/typescript-estree';
-import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, type TSESLint, type TSESTree } from '@typescript-eslint/utils';
 import type * as ts from 'typescript';
 
 import type { ResolvedCancSettings } from './settings.js';
@@ -100,8 +100,13 @@ function matchesNominalName(
       return true;
     }
 
-    const symbol = part.getSymbol() ?? part.aliasSymbol;
-    if (typeNameMatches(symbol, names) && symbolDeclaredInCancSource(symbol, settings)) {
+    const target = 'target' in part ? (part as { target?: { symbol?: ts.Symbol } }).target : undefined;
+    const targetSymbol = target?.symbol;
+    const symbol = part.getSymbol() ?? part.aliasSymbol ?? targetSymbol;
+    const nameMatch = typeNameMatches(symbol, names) || typeNameMatches(targetSymbol, names);
+    const sourceMatch =
+      symbolDeclaredInCancSource(symbol, settings) || symbolDeclaredInCancSource(targetSymbol, settings);
+    if (nameMatch && sourceMatch) {
       return true;
     }
 
@@ -185,4 +190,71 @@ function isThenableType(type: ts.Type, checker: ts.TypeChecker): boolean {
   }
   const thenType = checker.getTypeOfSymbol(then);
   return thenType.getCallSignatures().length > 0;
+}
+
+/**
+ * Nominal check: does `type` (or any union member of it) have cancelable elements when indexed?
+ * Checks `isCancelableType` directly and on the numeric index type (array / tuple element type).
+ */
+export function typeHasCancelableElement(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  settings: ResolvedCancSettings,
+): boolean {
+  if (type.isUnion()) {
+    return type.types.some((t) => typeHasCancelableElement(t, checker, settings));
+  }
+  if (isCancelableType(type, checker, settings)) {
+    return true;
+  }
+  const numberIndex = checker.getIndexTypeOfType(type, 1 /* IndexKind.Number */);
+  if (numberIndex && isCancelableType(numberIndex, checker, settings)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Report whether an argument node (array expression or iterable expression) contains any cancelable input.
+ * Keeps rule files free of direct TypeScript checker calls (Invariant 4).
+ */
+export function hasCancelableElements(
+  argNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+
+  const checker = services.program.getTypeChecker();
+
+  if (argNode.type === AST_NODE_TYPES.ArrayExpression) {
+    if (argNode.elements.length === 0) {
+      return false;
+    }
+    for (const elem of argNode.elements) {
+      if (!elem) {
+        continue;
+      }
+      if (elem.type === AST_NODE_TYPES.SpreadElement) {
+        const spreadType = services.getTypeAtLocation(elem.argument);
+        if (typeHasCancelableElement(spreadType, checker, settings)) {
+          return true;
+        }
+      } else {
+        const isCanc =
+          isCancelableExpression(elem, context, settings) ||
+          typeHasCancelableElement(services.getTypeAtLocation(elem), checker, settings);
+        if (isCanc) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  const argType = services.getTypeAtLocation(argNode);
+  return typeHasCancelableElement(argType, checker, settings);
 }
