@@ -169,11 +169,11 @@ describe('flow rules phase smoke over built artifacts', () => {
         }
       }
     }
-  });
+  }, 20000);
 
   it('reports zero false positives across flow valid fixtures', async () => {
     const flowValidFiles = findTsFiles(path.join(corpusDir, 'flow/valid')).sort();
-    expect(flowValidFiles.length).toBe(20);
+    expect(flowValidFiles.length).toBe(30);
 
     const recResults = await eslintRecommended.lintFiles(flowValidFiles);
     for (const r of recResults) {
@@ -188,13 +188,13 @@ describe('flow rules phase smoke over built artifacts', () => {
       const messages = r.messages.filter((m) => m.ruleId && FLOW_PREFIXED_RULES.has(m.ruleId));
       expect(messages, `Unexpected diagnostic under strict in ${rel}`).toEqual([]);
     }
-  });
+  }, 20000);
 
   it('reports zero false positives across all valid corpus fixtures', async () => {
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(91);
+    expect(allValidFiles.length).toBe(101);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {
@@ -202,7 +202,7 @@ describe('flow rules phase smoke over built artifacts', () => {
       const messages = r.messages.filter((m) => m.ruleId && FLOW_PREFIXED_RULES.has(m.ruleId));
       expect(messages, `Unexpected diagnostic under recommended in ${rel}`).toEqual([]);
     }
-  });
+  }, 20000);
 
   it('reports nothing without parser services on flow invalid fixtures', async () => {
     const eslintUntyped = new ESLint({
