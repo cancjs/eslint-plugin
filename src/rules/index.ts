@@ -7,6 +7,7 @@ import handleCancelFirst from './handle-cancel-first.js';
 import noAsyncExecutor from './no-async-executor.js';
 import noExecutorReturn from './no-executor-return.js';
 import preferCancCombinators from './prefer-canc-combinators.js';
+import preferIsCancelError from './prefer-is-cancel-error.js';
 import preferSignalOverController from './prefer-signal-over-controller.js';
 import requireSignalForwarding from './require-signal-forwarding.js';
 import validCancParams from './valid-canc-params.js';
@@ -18,6 +19,7 @@ export const rules: Record<string, Rule.RuleModule | TSESLint.RuleModule<string,
   'no-async-executor': noAsyncExecutor,
   'no-executor-return': noExecutorReturn,
   'prefer-canc-combinators': preferCancCombinators,
+  'prefer-is-cancel-error': preferIsCancelError,
   'prefer-signal-over-controller': preferSignalOverController,
   'require-signal-forwarding': requireSignalForwarding,
   'valid-canc-params': validCancParams,

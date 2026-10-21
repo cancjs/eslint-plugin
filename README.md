@@ -14,8 +14,10 @@ ESLint plugin for `@cancjs/*`.
 | [`canc/no-cancelability-erasure`](docs/rules/no-cancelability-erasure.md)           | Disallow passing or returning cancelable promises where plain promises are expected         | recommended         |
 | [`canc/no-executor-return`](docs/rules/no-executor-return.md)                       | Disallow returning values from promise executors                                            | recommended         |
 | [`canc/no-multistep-executor`](docs/rules/no-multistep-executor.md)                 | Disallow starting multiple async operations in one executor                                 | recommended         |
+| [`canc/no-swallowed-cancel`](docs/rules/no-swallowed-cancel.md)                     | Ensure cancellation errors are not swallowed in catch blocks                                | recommended         |
 | [`canc/no-transform-in-executor`](docs/rules/no-transform-in-executor.md)           | Disallow transforming data before resolving in executor                                     | stylistic           |
 | [`canc/prefer-canc-combinators`](docs/rules/prefer-canc-combinators.md)             | Prefer CancelablePromise combinators over native Promise combinators with cancelable inputs | recommended         |
+| [`canc/prefer-is-cancel-error`](docs/rules/prefer-is-cancel-error.md)               | Prefer brand-checking functions over instanceof or name checks for cancellation errors      | recommended         |
 | [`canc/prefer-signal-over-controller`](docs/rules/prefer-signal-over-controller.md) | Prefer passing AbortSignal rather than whole AbortController                                | recommended, strict |
 | [`canc/require-signal-forwarding`](docs/rules/require-signal-forwarding.md)         | Require forwarding controller signal when cancel handler aborts it                          | recommended         |
 | [`canc/valid-canc-params`](docs/rules/valid-canc-params.md)                         | Enforce valid argument count and shapes for cancellable promise methods                     | recommended         |
