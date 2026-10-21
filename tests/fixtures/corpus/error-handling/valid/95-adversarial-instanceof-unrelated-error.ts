@@ -1,0 +1,38 @@
+import CancelablePromise, {
+  CancelError,
+  isCancelError,
+  isCancPromise,
+  catchCancel,
+  suppressCancel,
+  makeCancelable,
+  createCancelSignal,
+} from '@cancjs/promise';
+import { cancAsync, cancAwait, cancForAwait } from '@cancjs/coroutine';
+import { cancGenAsync, cancGenAwait, cancGenForAwait, cancGenDelegate } from '@cancjs/coroutine/gen';
+import {
+  cancelify,
+  promisify,
+  promisifyAll,
+  LazyPromise,
+  createLazyPromise,
+  AbortError,
+  isAbortError,
+  TimeoutError,
+  isTimeoutError,
+  createCatchError,
+  createSuppressError,
+  catchAbort,
+  suppressAbort,
+  catchTimeout,
+  suppressTimeout,
+} from '@cancjs/toolbox';
+
+export class DatabaseError extends Error {
+  readonly code: string = 'DB_ERROR';
+}
+
+export function handleDatabaseError(err: unknown): void {
+  if (err instanceof DatabaseError) {
+    console.error(`Database failure with code ${err.code}`);
+  }
+}

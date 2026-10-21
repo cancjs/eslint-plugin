@@ -173,7 +173,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
 
   it('reports zero false positives across error-handling valid fixtures', async () => {
     const validFiles = findTsFiles(path.join(corpusDir, 'error-handling/valid')).sort();
-    expect(validFiles.length).toBe(12);
+    expect(validFiles.length).toBe(22);
 
     const recResults = await eslintRecommended.lintFiles(validFiles);
     for (const r of recResults) {
@@ -194,7 +194,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(107);
+    expect(allValidFiles.length).toBe(117);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {
