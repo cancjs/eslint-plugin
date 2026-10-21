@@ -35,7 +35,7 @@ declare function fetchProfile(userId: string): Promise<Profile>;
 
 const profile = new CancelablePromise<Profile>((resolve, reject, { handleCancel }) => {
   const controller = new AbortController();
-  handleCancel(() => controller.abort());
-  fetchProfile('user-1').then(resolve, reject); // lint: require-signal-forwarding controller.signal never forwarded
+  handleCancel(() => controller.abort()); // lint: require-signal-forwarding:signalNotForwarded
+  fetchProfile('user-1').then(resolve, reject);
 });
 

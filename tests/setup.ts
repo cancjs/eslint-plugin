@@ -5,14 +5,26 @@ import tseslintParser from '@typescript-eslint/parser';
 import { RuleTester } from '@typescript-eslint/rule-tester';
 import { afterAll, describe, it } from 'vitest';
 
-// Wire the full RuleTester static set to vitest equivalents before any RuleTester
-// is constructed. Must happen at module load, ahead of ruleTester() calls in tests.
+import { CATALOG_RULE_IDS } from './helpers/corpus.js';
+
+// Wire vitest equivalents ahead of RuleTester construction
 RuleTester.afterAll = afterAll;
 RuleTester.it = it;
 RuleTester.itOnly = it.only;
 RuleTester.itSkip = it.skip;
 RuleTester.describe = describe;
 RuleTester.describeSkip = describe.skip;
+
+RuleTester.setDefaultConfig({
+  linterOptions: {
+    reportUnusedDisableDirectives: 'off',
+  },
+  plugins: {
+    canc: {
+      rules: Object.fromEntries(CATALOG_RULE_IDS.map((id) => [id, { create: () => ({}) }])),
+    },
+  },
+});
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

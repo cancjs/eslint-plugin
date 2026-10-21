@@ -33,13 +33,14 @@ interface Profile {
 }
 declare function fetchProfile(userId: string, controller: AbortController): Promise<Profile>;
 
-// Also correct: some APIs accept the whole controller and read `.signal` themselves. Passing the
+// Also correct: some APIs accept the whole controller and read `.signal` themselves; passing the
 // controller counts as forwarding, so canc/require-signal-forwarding does not fire.
 // (Handing out a controller gives the callee abort() over a controller it does not own, a design
 // smell that strict-tier canc/prefer-signal-over-controller flags separately; pass `.signal`.)
 const profile = new CancelablePromise<Profile>((resolve, reject, { handleCancel }) => {
   const controller = new AbortController();
   handleCancel(() => controller.abort());
+  // eslint-disable-next-line canc/prefer-signal-over-controller
   fetchProfile('user-1', controller).then(resolve, reject);
 });
 

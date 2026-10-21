@@ -69,7 +69,10 @@ function findTsFiles(dir: string): string[] {
 }
 
 function isForwardReferencedDisableComment(message: string): boolean {
-  return /^Definition for rule '[^']+' was not found\.$/.test(message);
+  return (
+    /^Definition for rule '[^']+' was not found\.$/.test(message) ||
+    message.startsWith('Unused eslint-disable directive')
+  );
 }
 
 describe('engine smoke over built artifacts', () => {
@@ -108,7 +111,7 @@ describe('engine smoke over built artifacts', () => {
   it('runs built plugin recommended config over valid corpus fixtures with zero diagnostics', async () => {
     const cjsPlugin = loadCjs(distCjsPath);
     const validFiles = findTsFiles(corpusDir).filter((f) => f.split(path.sep).includes('valid'));
-    expect(validFiles.length).toBe(58);
+    expect(validFiles.length).toBe(85);
 
     const eslint = new ESLint({
       cwd: corpusDir,

@@ -52,7 +52,19 @@ describe('rule registry and tier table', () => {
 
   describe('real registry', () => {
     it('TIERS keys match rules keys and every rule meta.docs.url ends with /<name>.md', () => {
+      const expectedRuleKeys = [
+        'executor-cancel-wiring',
+        'executor-param-names',
+        'handle-cancel-first',
+        'no-async-executor',
+        'no-executor-return',
+        'prefer-signal-over-controller',
+        'require-signal-forwarding',
+        'valid-canc-params',
+      ];
+
       expect(Object.keys(TIERS).sort()).toEqual(Object.keys(rules).sort());
+      expect(Object.keys(rules).sort()).toEqual(expectedRuleKeys);
 
       for (const [name, rule] of Object.entries(rules)) {
         const meta = (rule as { meta?: { docs?: { url?: string } } }).meta;
