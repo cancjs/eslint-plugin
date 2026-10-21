@@ -1,4 +1,4 @@
-// Source: error-handling.md > canc/no-swallowed-cancel > Correct (catchAbort and suppressTimeout boundary)
+// Source: error-handling.md > canc/no-swallowed-cancel > Correct (boundaries)
 import CancelablePromise, {
   CancelError,
   isCancelError,
