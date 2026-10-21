@@ -59,6 +59,7 @@ describe('rule registry and tier table', () => {
         'no-async-executor',
         'no-executor-return',
         'prefer-canc-combinators',
+        'prefer-is-cancel-error',
         'prefer-signal-over-controller',
         'require-signal-forwarding',
         'valid-canc-params',
