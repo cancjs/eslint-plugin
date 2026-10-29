@@ -1,8 +1,8 @@
-import type { TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
-import type ts from 'typescript';
 
 import { getCancBindings, getCoroutineContext } from '../util/canc-imports.js';
+import { getCancServices } from '../util/canc-types.js';
 import {
   type ClassMatcher,
   classMatcherSchema,
@@ -12,7 +12,7 @@ import {
   matchesType,
 } from '../util/class-matcher.js';
 import createRule from '../util/create-rule.js';
-import { isCancelErrorCtorNode, isCancelErrorType } from '../util/failure-types.js';
+import { isCancelErrorThrow } from '../util/failure-types.js';
 
 export type MessageIds = 'preferCancThrow';
 
@@ -23,6 +23,8 @@ export interface PreferCancThrowOptions {
 }
 
 export type RuleOptions = [PreferCancThrowOptions?];
+
+type Context = TSESLint.RuleContext<MessageIds, RuleOptions>;
 
 function getNearestEnclosingFunction(node: TSESTree.Node): TSESTree.FunctionLike | null {
   let curr: TSESTree.Node | undefined = node.parent;
@@ -60,46 +62,78 @@ function isCatchBindingRethrow(
   return false;
 }
 
+function isShadowed(name: string, context: Context, node: TSESTree.Node): boolean {
+  let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
+  while (scope) {
+    const variable = scope.variables.find((v) => v.name === name);
+    if (variable) {
+      return !variable.defs.some(
+        (def) =>
+          def.node.type === AST_NODE_TYPES.ImportSpecifier ||
+          def.node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+          def.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+      );
+    }
+    scope = scope.upper;
+  }
+  return false;
+}
+
 function findInScopeThrower(
   dialect: 'cancAsync' | 'cancGenAsync',
-  context: Parameters<Parameters<typeof createRule<RuleOptions, MessageIds>>[0]['create']>[0],
+  context: Context,
+  node: TSESTree.Node,
 ): string | null {
   const bindings = getCancBindings(context);
 
   if (dialect === 'cancAsync') {
     for (const [localName, binding] of bindings) {
-      if (binding.exported === 'cancThrow' || binding.exported === 'throw') {
-        return localName;
+      if (!binding.source.endsWith('/gen')) {
+        if (
+          (binding.exported === 'cancThrow' || binding.exported === 'throw') &&
+          !isShadowed(localName, context, node)
+        ) {
+          return localName;
+        }
       }
     }
     for (const [localName, binding] of bindings) {
-      if (binding.exported === 'canc' || (binding.namespace && binding.source.includes('coroutine'))) {
-        return `${localName}.throw`;
+      if (!binding.source.endsWith('/gen')) {
+        if (
+          (binding.exported === 'canc' || (binding.namespace && binding.source.includes('coroutine'))) &&
+          !isShadowed(localName, context, node)
+        ) {
+          return `${localName}.throw`;
+        }
       }
     }
     return null;
   }
 
   for (const [localName, binding] of bindings) {
-    if (binding.exported === 'cancGenThrow') {
-      return localName;
+    if (binding.source.endsWith('/gen')) {
+      if (
+        (binding.exported === 'cancGenThrow' || binding.exported === 'throw') &&
+        !isShadowed(localName, context, node)
+      ) {
+        return localName;
+      }
     }
   }
   for (const [localName, binding] of bindings) {
-    if (binding.exported === 'cancGen' || (binding.namespace && binding.source.includes('coroutine'))) {
-      return `${localName}.throw`;
+    if (binding.source.endsWith('/gen')) {
+      if (
+        (binding.exported === 'cancGen' || (binding.namespace && binding.source.endsWith('/gen'))) &&
+        !isShadowed(localName, context, node)
+      ) {
+        return `${localName}.throw`;
+      }
     }
   }
   return null;
 }
 
-function isExcludedThrow(
-  argNode: TSESTree.Expression,
-  compiledExclude: CompiledMatchers,
-  checker?: ts.TypeChecker,
-  program?: ts.Program,
-  tsNode?: ts.Node,
-): boolean {
+function isExcludedThrow(argNode: TSESTree.Expression, compiledExclude: CompiledMatchers, context: Context): boolean {
   if (compiledExclude.length === 0) {
     return false;
   }
@@ -115,29 +149,10 @@ function isExcludedThrow(
     return true;
   }
 
-  if (checker && program && tsNode) {
-    const argType = checker.getTypeAtLocation(tsNode);
-    if (matchesType(compiledExclude, argType, checker, program)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function isCancelErrorThrow(
-  argNode: TSESTree.Expression,
-  context: Parameters<Parameters<typeof createRule<RuleOptions, MessageIds>>[0]['create']>[0],
-  checker?: ts.TypeChecker,
-  tsNode?: ts.Node,
-): boolean {
-  if (isCancelErrorCtorNode(argNode, context)) {
-    return true;
-  }
-
-  if (checker && tsNode) {
-    const argType = checker.getTypeAtLocation(tsNode);
-    if (isCancelErrorType(argType, checker)) {
+  const services = getCancServices(context);
+  if (services?.program) {
+    const argType = services.getTypeAtLocation(argNode);
+    if (matchesType(compiledExclude, argType, services.program.getTypeChecker(), services.program)) {
       return true;
     }
   }
@@ -151,6 +166,7 @@ export default createRule<RuleOptions, MessageIds>({
     type: 'problem',
     docs: {
       description: 'Require yield* canc.throw(...) instead of bare throw in coroutines.',
+      requiresTypeChecking: true,
     },
     hasSuggestions: true,
     schema: [
@@ -170,7 +186,6 @@ export default createRule<RuleOptions, MessageIds>({
         additionalProperties: false,
       },
     ],
-
     defaultOptions: [
       {
         requireTypeInfo: false,
@@ -191,13 +206,11 @@ export default createRule<RuleOptions, MessageIds>({
     },
   ],
   create(context, [options]) {
-    const parserServices = context.sourceCode.parserServices;
-    if (options?.requireTypeInfo && !parserServices?.program) {
+    const services = getCancServices(context);
+    if (options?.requireTypeInfo && !services?.program) {
       return {};
     }
 
-    const program = parserServices?.program;
-    const checker = program ? program.getTypeChecker() : undefined;
     const compiledExclude = compileMatchers(options?.exclude ?? []);
     const allowCatchRethrow = options?.allowCatchRethrow !== false;
 
@@ -217,17 +230,15 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const tsNode = parserServices?.esTreeNodeToTSNodeMap?.get(node.argument);
-
-        if (isCancelErrorThrow(node.argument, context, checker, tsNode)) {
+        if (isCancelErrorThrow(node.argument, context)) {
           return;
         }
 
-        if (isExcludedThrow(node.argument, compiledExclude, checker, program ?? undefined, tsNode)) {
+        if (isExcludedThrow(node.argument, compiledExclude, context)) {
           return;
         }
 
-        const inScopeThrower = findInScopeThrower(coroutine.kind, context);
+        const inScopeThrower = findInScopeThrower(coroutine.kind, context, node);
         const defaultThrower = coroutine.kind === 'cancAsync' ? 'canc.throw' : 'cancGen.throw';
         const displayThrower = inScopeThrower ?? defaultThrower;
 

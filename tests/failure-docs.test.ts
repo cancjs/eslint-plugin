@@ -35,6 +35,16 @@ function extractSchemaOptionKeys(schema: unknown): string[] {
   return keys;
 }
 
+function extractDocOptionHeadings(content: string): string[] {
+  const optionsSection = content.split(/^## Options\s*$/m)[1];
+  if (!optionsSection) {
+    return [];
+  }
+  const nextH2 = optionsSection.split(/^## /m)[0];
+  const matches = nextH2.matchAll(/^### ([a-zA-Z0-9_$]+)\s*$/gm);
+  return Array.from(matches, (m) => m[1]);
+}
+
 describe('failure family rule documentation', () => {
   const rootDir = path.resolve(__dirname, '..');
   const docsDir = path.join(rootDir, 'docs', 'rules');
@@ -55,16 +65,23 @@ describe('failure family rule documentation', () => {
     }
   });
 
-  it('every key in rule meta.schema option properties appears in its doc page', () => {
+  it('every key in rule meta.schema option properties matches doc option headings 1-to-1', () => {
     for (const ruleName of FAILURE_RULES) {
       const pagePath = path.join(docsDir, `${ruleName}.md`);
       const content = fs.readFileSync(pagePath, 'utf8');
 
       const rule = (rules as Record<string, { meta?: { schema?: unknown } }>)[ruleName];
-      const optionKeys = extractSchemaOptionKeys(rule?.meta?.schema);
+      const schemaOptionKeys = extractSchemaOptionKeys(rule?.meta?.schema).sort();
+      const docOptionHeadings = extractDocOptionHeadings(content).sort();
 
-      for (const key of optionKeys) {
-        expect(content.includes(key), `Option '${key}' missing in doc page '${ruleName}.md'`).toBe(true);
+      expect(docOptionHeadings, `Doc page '${ruleName}.md' option headings do not match schema properties`).toEqual(
+        schemaOptionKeys,
+      );
+
+      if (schemaOptionKeys.length === 0) {
+        expect(content, `Doc page '${ruleName}.md' with empty schema must state it accepts no options`).toMatch(
+          /This rule does not accept any options\./i,
+        );
       }
     }
   });

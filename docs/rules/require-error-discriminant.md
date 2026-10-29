@@ -54,7 +54,7 @@ This rule accepts an optional configuration object:
 
 ### include
 
-Default: `[]`. An array of class matchers specifying error classes that must always be checked for discriminants, even if they are not explicitly referenced as failure types in the current file.
+Default: `[]`. An array of class matchers specifying error classes to check for discriminants (when non-empty, only classes matching `include` that are also used as failure types in the program are checked).
 
 ### exclude
 

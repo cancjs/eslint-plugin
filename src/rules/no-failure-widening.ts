@@ -1,9 +1,11 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
-import type ts from 'typescript';
 
+import { getCancBindings } from '../util/canc-imports.js';
+import { getCancServices, isCancelableType } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
-import { type FailureMembers, getFailureMembers } from '../util/failure-types.js';
+import { getFailureMembers, isWidened } from '../util/failure-types.js';
+import { getCancSettings } from '../util/settings.js';
 
 export type MessageIds = 'failureWidening';
 
@@ -15,65 +17,6 @@ export interface NoFailureWideningOptions {
 export type RuleOptions = [NoFailureWideningOptions?];
 
 type Context = TSESLint.RuleContext<MessageIds, RuleOptions>;
-
-function isClassOrSubclass(t: ts.Type, h: ts.Type, checker: ts.TypeChecker): boolean {
-  if (t === h) {
-    return true;
-  }
-  const symT = (t as { symbol?: ts.Symbol }).symbol;
-  const symH = (h as { symbol?: ts.Symbol }).symbol;
-  if (symT && symH && symT === symH) {
-    return true;
-  }
-  if (t.isClassOrInterface()) {
-    const baseTypes = checker.getBaseTypes(t);
-    for (const base of baseTypes) {
-      if (isClassOrSubclass(base, h, checker)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function getBrandName(t: ts.Type, checker: ts.TypeChecker): string | undefined {
-  const brandProp = t.getProperty('_cancErrorBrand');
-  if (brandProp) {
-    const decl = brandProp.valueDeclaration ?? brandProp.declarations?.[0];
-    const brandType = decl ? checker.getTypeOfSymbolAtLocation(brandProp, decl) : undefined;
-    if (brandType?.isStringLiteral()) {
-      return brandType.value;
-    }
-  }
-  return undefined;
-}
-
-function failureMatches(source: ts.Type, target: ts.Type, checker: ts.TypeChecker): boolean {
-  if (isClassOrSubclass(source, target, checker)) {
-    return true;
-  }
-  const srcBrand = getBrandName(source, checker);
-  const tgtBrand = getBrandName(target, checker);
-  if (srcBrand && tgtBrand && srcBrand === tgtBrand) {
-    return true;
-  }
-  return false;
-}
-
-function isWidened(source: FailureMembers, target: FailureMembers, checker: ts.TypeChecker): boolean {
-  if (!target.defined || target.listed.length === 0) {
-    return true;
-  }
-
-  for (const srcMember of source.listed) {
-    const matched = target.listed.some((tgtMember) => failureMatches(srcMember, tgtMember, checker));
-    if (!matched) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 function unwrapCastChain(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): TSESTree.Expression {
   let curr: TSESTree.Expression = node.expression;
@@ -98,6 +41,7 @@ function hasAllowComment(node: TSESTree.Node, context: Context, marker: string):
 
   const stmtLine = stmt.loc.start.line;
   const allComments = sourceCode.getAllComments();
+
   for (const c of allComments) {
     if (c.value.includes(marker)) {
       if (
@@ -114,16 +58,60 @@ function hasAllowComment(node: TSESTree.Node, context: Context, marker: string):
   return false;
 }
 
-function isWithFailureInScope(context: Context, node: TSESTree.Node): boolean {
-  let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
-  while (scope) {
-    const v = scope.set.get('withFailure') ?? scope.variables.find((v) => v.name === 'withFailure');
-    if (v && v.defs.length > 0) {
-      return true;
+function getWithFailureName(context: Context, node: TSESTree.Node): string | undefined {
+  const bindings = getCancBindings(context);
+  for (const [localName, binding] of bindings) {
+    if (
+      binding.exported === 'withFailure' &&
+      (binding.source === '@cancjs/promise' || binding.source.includes('canc-promise'))
+    ) {
+      let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
+      let isShadowed = false;
+      while (scope) {
+        const v = scope.variables.find((v) => v.name === localName);
+        if (v && !v.defs.some((d) => d.node.type === AST_NODE_TYPES.ImportSpecifier)) {
+          isShadowed = true;
+          break;
+        }
+        scope = scope.upper;
+      }
+      if (!isShadowed) {
+        return localName;
+      }
     }
-    scope = scope.upper;
   }
-  return false;
+  return undefined;
+}
+
+function getCancelablePromiseName(context: Context, node: TSESTree.Node): string {
+  const bindings = getCancBindings(context);
+  for (const [localName, binding] of bindings) {
+    if (
+      (binding.exported === 'CancelablePromise' || binding.exported === 'default') &&
+      (binding.source === '@cancjs/promise' || binding.source.includes('canc-promise'))
+    ) {
+      let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
+      let isShadowed = false;
+      while (scope) {
+        const v = scope.variables.find((v) => v.name === localName);
+        if (
+          v &&
+          !v.defs.some(
+            (d) =>
+              d.node.type === AST_NODE_TYPES.ImportSpecifier || d.node.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+          )
+        ) {
+          isShadowed = true;
+          break;
+        }
+        scope = scope.upper;
+      }
+      if (!isShadowed) {
+        return localName;
+      }
+    }
+  }
+  return 'CancelablePromise';
 }
 
 function getNearestEnclosingFunction(node: TSESTree.Node): TSESTree.FunctionLike | null {
@@ -147,6 +135,7 @@ export default createRule<RuleOptions, MessageIds>({
     type: 'problem',
     docs: {
       description: 'Disallow casts and type annotations that drop declared failure types.',
+      requiresTypeChecking: true,
     },
     hasSuggestions: true,
     schema: [
@@ -183,14 +172,13 @@ export default createRule<RuleOptions, MessageIds>({
     },
   ],
   create(context, [options]) {
-    const parserServices = context.sourceCode.parserServices;
-    if (!parserServices?.program || !parserServices.esTreeNodeToTSNodeMap) {
+    const services = getCancServices(context);
+    if (!services?.program || !services.esTreeNodeToTSNodeMap) {
       return {};
     }
-
-    const program = parserServices.program;
-    const esTreeNodeToTSNodeMap = parserServices.esTreeNodeToTSNodeMap;
-    const checker = program.getTypeChecker();
+    const cancServices = services;
+    const checker = cancServices.program.getTypeChecker();
+    const settings = getCancSettings(context);
 
     const allowWithComment = options?.allowWithComment ?? 'canc-allow-widening';
     const allowVariableWidening = options?.allowVariableAnnotationWidening !== false;
@@ -209,30 +197,25 @@ export default createRule<RuleOptions, MessageIds>({
         return;
       }
 
-      // If direct child of a return statement in an annotated function, let the return handler own it
-      if (node.parent.type === AST_NODE_TYPES.ReturnStatement) {
-        const fn = getNearestEnclosingFunction(node.parent);
-        if (fn?.returnType) {
-          return;
-        }
-      }
-
       if (hasAllowComment(node, context, allowWithComment)) {
         return;
       }
 
       const innermost = unwrapCastChain(node);
-      const tsSource = esTreeNodeToTSNodeMap.get(innermost);
-      const sourceType = checker.getTypeAtLocation(tsSource);
-      const sourceFailures = getFailureMembers(sourceType, checker);
+      const sourceType = cancServices.getTypeAtLocation(innermost);
 
+      // Verify that source type is a canc cancelable type (Invariant 3 & B3)
+      if (!isCancelableType(sourceType, checker, settings, context)) {
+        return;
+      }
+
+      const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
       if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
         return;
       }
 
-      const tsTarget = esTreeNodeToTSNodeMap.get(node.typeAnnotation);
-      const targetType = checker.getTypeAtLocation(tsTarget);
-      const targetFailures = getFailureMembers(targetType, checker);
+      const targetType = cancServices.getTypeAtLocation(node.typeAnnotation);
+      const targetFailures = getFailureMembers(targetType, checker, settings, context);
 
       if (isWidened(sourceFailures, targetFailures, checker)) {
         let replacement: string | undefined;
@@ -245,12 +228,15 @@ export default createRule<RuleOptions, MessageIds>({
             typeName = node.typeAnnotation.typeName.right.name;
           }
 
-          if (typeName === 'CancelablePromise' && isWithFailureInScope(context, node)) {
+          const cpName = getCancelablePromiseName(context, node);
+          const wfName = getWithFailureName(context, node);
+
+          if ((typeName === 'CancelablePromise' || typeName === cpName) && wfName) {
             const typeParams = node.typeAnnotation.typeArguments?.params;
             const failureArg =
               typeParams && typeParams.length >= 2 ? context.sourceCode.getText(typeParams[1]) : 'unknown';
             const exprText = context.sourceCode.getText(innermost);
-            replacement = `withFailure<${failureArg}>()(${exprText})`;
+            replacement = `${wfName}<${failureArg}>()(${exprText})`;
           }
         }
 
@@ -288,6 +274,14 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
+        // If the return argument is already a cast, checkCast checks it
+        if (
+          node.argument.type === AST_NODE_TYPES.TSAsExpression ||
+          node.argument.type === AST_NODE_TYPES.TSTypeAssertion
+        ) {
+          return;
+        }
+
         const fn = getNearestEnclosingFunction(node);
         if (!fn?.returnType) {
           return;
@@ -297,25 +291,18 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const innermost =
-          (
-            node.argument.type === AST_NODE_TYPES.TSAsExpression ||
-            node.argument.type === AST_NODE_TYPES.TSTypeAssertion
-          ) ?
-            unwrapCastChain(node.argument)
-          : node.argument;
+        const sourceType = cancServices.getTypeAtLocation(node.argument);
+        if (!isCancelableType(sourceType, checker, settings, context)) {
+          return;
+        }
 
-        const tsSource = esTreeNodeToTSNodeMap.get(innermost);
-        const sourceType = checker.getTypeAtLocation(tsSource);
-        const sourceFailures = getFailureMembers(sourceType, checker);
-
+        const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
         if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
           return;
         }
 
-        const tsTarget = esTreeNodeToTSNodeMap.get(fn.returnType.typeAnnotation);
-        const targetType = checker.getTypeAtLocation(tsTarget);
-        const targetFailures = getFailureMembers(targetType, checker);
+        const targetType = cancServices.getTypeAtLocation(fn.returnType.typeAnnotation);
+        const targetFailures = getFailureMembers(targetType, checker, settings, context);
 
         if (isWidened(sourceFailures, targetFailures, checker)) {
           context.report({
@@ -331,26 +318,27 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
+        // If concise body is a cast, checkCast checks it
+        if (node.body.type === AST_NODE_TYPES.TSAsExpression || node.body.type === AST_NODE_TYPES.TSTypeAssertion) {
+          return;
+        }
+
         if (hasAllowComment(node, context, allowWithComment)) {
           return;
         }
 
-        const innermost =
-          node.body.type === AST_NODE_TYPES.TSAsExpression || node.body.type === AST_NODE_TYPES.TSTypeAssertion ?
-            unwrapCastChain(node.body)
-          : node.body;
+        const sourceType = cancServices.getTypeAtLocation(node.body);
+        if (!isCancelableType(sourceType, checker, settings, context)) {
+          return;
+        }
 
-        const tsSource = esTreeNodeToTSNodeMap.get(innermost);
-        const sourceType = checker.getTypeAtLocation(tsSource);
-        const sourceFailures = getFailureMembers(sourceType, checker);
-
+        const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
         if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
           return;
         }
 
-        const tsTarget = esTreeNodeToTSNodeMap.get(node.returnType.typeAnnotation);
-        const targetType = checker.getTypeAtLocation(tsTarget);
-        const targetFailures = getFailureMembers(targetType, checker);
+        const targetType = cancServices.getTypeAtLocation(node.returnType.typeAnnotation);
+        const targetFailures = getFailureMembers(targetType, checker, settings, context);
 
         if (isWidened(sourceFailures, targetFailures, checker)) {
           context.report({
@@ -366,26 +354,27 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
+        // If initializer is a cast, checkCast checks it
+        if (node.init.type === AST_NODE_TYPES.TSAsExpression || node.init.type === AST_NODE_TYPES.TSTypeAssertion) {
+          return;
+        }
+
         if (hasAllowComment(node, context, allowWithComment)) {
           return;
         }
 
-        const innermost =
-          node.init.type === AST_NODE_TYPES.TSAsExpression || node.init.type === AST_NODE_TYPES.TSTypeAssertion ?
-            unwrapCastChain(node.init)
-          : node.init;
+        const sourceType = cancServices.getTypeAtLocation(node.init);
+        if (!isCancelableType(sourceType, checker, settings, context)) {
+          return;
+        }
 
-        const tsSource = esTreeNodeToTSNodeMap.get(innermost);
-        const sourceType = checker.getTypeAtLocation(tsSource);
-        const sourceFailures = getFailureMembers(sourceType, checker);
-
+        const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
         if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
           return;
         }
 
-        const tsTarget = esTreeNodeToTSNodeMap.get(node.id.typeAnnotation.typeAnnotation);
-        const targetType = checker.getTypeAtLocation(tsTarget);
-        const targetFailures = getFailureMembers(targetType, checker);
+        const targetType = cancServices.getTypeAtLocation(node.id.typeAnnotation.typeAnnotation);
+        const targetFailures = getFailureMembers(targetType, checker, settings, context);
 
         if (isWidened(sourceFailures, targetFailures, checker)) {
           context.report({

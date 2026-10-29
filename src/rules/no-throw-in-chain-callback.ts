@@ -1,12 +1,11 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
-import type ts from 'typescript';
 
-import { getCancBindings, getCoroutineContext, refersTo } from '../util/canc-imports.js';
-import { isCancelableType, isLazyType } from '../util/canc-types.js';
+import { getCancBindings, getCoroutineContext, isCancCtorIdent, refersTo } from '../util/canc-imports.js';
+import { hasTypeServices, isCancelableOrLazyExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
-import { isCancelErrorCtorNode, isCancelErrorType } from '../util/failure-types.js';
-import { getCancSettings, type ResolvedCancSettings } from '../util/settings.js';
+import { isCancelErrorThrow } from '../util/failure-types.js';
+import { getCancSettings } from '../util/settings.js';
 
 export type MessageIds = 'throwInChainCallback' | 'rejectWithoutFailure';
 
@@ -47,25 +46,6 @@ function isCatchBindingRethrow(throwNode: TSESTree.ThrowStatement, callbackFn: T
   return false;
 }
 
-function isCancelErrorThrow(
-  argNode: TSESTree.Expression,
-  context: Context,
-  checker?: ts.TypeChecker,
-  tsNode?: ts.Node,
-  settings?: ResolvedCancSettings,
-): boolean {
-  if (isCancelErrorCtorNode(argNode, context)) {
-    return true;
-  }
-  if (checker && tsNode) {
-    const argType = checker.getTypeAtLocation(tsNode);
-    if (isCancelErrorType(argType, checker, settings)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function getChainRoot(expr: TSESTree.Expression): TSESTree.Expression {
   let curr = expr;
   while (
@@ -85,7 +65,7 @@ function getChainRoot(expr: TSESTree.Expression): TSESTree.Expression {
 function isSynCancelableChainRoot(expr: TSESTree.Expression, context: Context): boolean {
   const root = getChainRoot(expr);
   if (root.type === AST_NODE_TYPES.NewExpression) {
-    return refersTo(root.callee, context, 'CancelablePromise') || refersTo(root.callee, context, 'LazyPromise');
+    return isCancCtorIdent(root.callee, context) || refersTo(root.callee, context, 'LazyPromise');
   }
   if (root.type === AST_NODE_TYPES.CallExpression) {
     if (
@@ -93,21 +73,38 @@ function isSynCancelableChainRoot(expr: TSESTree.Expression, context: Context): 
       !root.callee.computed &&
       root.callee.property.type === AST_NODE_TYPES.Identifier
     ) {
-      return (
-        refersTo(root.callee.object, context, 'CancelablePromise') ||
-        refersTo(root.callee.object, context, 'LazyPromise')
-      );
+      return isCancCtorIdent(root.callee.object, context) || refersTo(root.callee.object, context, 'LazyPromise');
     }
   }
   return false;
 }
 
-function findInScopeCancelablePromise(context: Context): string | null {
+function isShadowed(name: string, context: Context, node: TSESTree.Node): boolean {
+  let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
+  while (scope) {
+    const variable = scope.variables.find((v) => v.name === name);
+    if (variable) {
+      return !variable.defs.some(
+        (def) =>
+          def.node.type === AST_NODE_TYPES.ImportSpecifier ||
+          def.node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+          def.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+      );
+    }
+    scope = scope.upper;
+  }
+  return false;
+}
+
+function findInScopeCancelablePromise(context: Context, node: TSESTree.Node): string | null {
   const bindings = getCancBindings(context);
+  const settings = getCancSettings(context);
   for (const [localName, binding] of bindings) {
     if (
-      (binding.source === '@cancjs/promise' || binding.source.includes('canc-promise')) &&
-      (binding.exported === 'CancelablePromise' || binding.exported === 'default')
+      !binding.isTypeOnly &&
+      settings.sources.includes(binding.source) &&
+      (binding.exported === 'CancelablePromise' || binding.exported === 'default') &&
+      !isShadowed(localName, context, node)
     ) {
       return localName;
     }
@@ -120,44 +117,7 @@ interface CallbackInfo {
   receiver: TSESTree.Expression;
 }
 
-function isCancelablePromiseReceiverType(
-  type: ts.Type,
-  checker: ts.TypeChecker,
-  settings: ResolvedCancSettings,
-): boolean {
-  if (isCancelableType(type, checker, settings) || isLazyType(type, checker, settings)) {
-    return true;
-  }
-  const typeStr = checker.typeToString(type);
-  if (typeStr.startsWith('CancelablePromise') || typeStr.startsWith('LazyPromise')) {
-    return true;
-  }
-  const sym = type.aliasSymbol ?? type.getSymbol();
-  if (sym) {
-    if (sym.flags & 2097152 /* ts.SymbolFlags.Alias */) {
-      try {
-        const aliased = checker.getAliasedSymbol(sym);
-        if (
-          settings.cancelableTypeNames.includes(aliased.getName()) ||
-          settings.lazyTypeNames.includes(aliased.getName())
-        ) {
-          return true;
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }
-  return false;
-}
-
-function getCallbackInfo(
-  fn: TSESTree.FunctionLike,
-  context: Context,
-  checker?: ts.TypeChecker,
-  settings?: ResolvedCancSettings,
-  esTreeNodeToTSNodeMap?: { get(node: TSESTree.Node): ts.Node | undefined },
-): CallbackInfo | null {
+function getCallbackInfo(fn: TSESTree.FunctionLike, context: Context): CallbackInfo | null {
   const call = fn.parent;
   if (call.type !== AST_NODE_TYPES.CallExpression) {
     return null;
@@ -185,13 +145,8 @@ function getCallbackInfo(
   }
 
   const receiver = call.callee.object;
-  if (checker && esTreeNodeToTSNodeMap && settings) {
-    const tsReceiver = esTreeNodeToTSNodeMap.get(receiver);
-    if (!tsReceiver) {
-      return null;
-    }
-    const type = checker.getTypeAtLocation(tsReceiver);
-    if (isCancelablePromiseReceiverType(type, checker, settings)) {
+  if (hasTypeServices(context)) {
+    if (isCancelableOrLazyExpression(receiver, context)) {
       return { method: propName, receiver };
     }
     return null;
@@ -211,6 +166,7 @@ export default createRule<RuleOptions, MessageIds>({
     docs: {
       description:
         'Require returning CancelablePromise.fail() instead of throwing inside chain callbacks on cancelable promises.',
+      requiresTypeChecking: true,
     },
     hasSuggestions: true,
     schema: [],
@@ -223,12 +179,6 @@ export default createRule<RuleOptions, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const parserServices = context.sourceCode.parserServices;
-    const program = parserServices?.program;
-    const checker = program ? program.getTypeChecker() : undefined;
-    const esTreeNodeToTSNodeMap = parserServices?.esTreeNodeToTSNodeMap;
-    const settings = getCancSettings(context);
-
     return {
       ThrowStatement(node) {
         const fn = getNearestEnclosingFunction(node);
@@ -241,7 +191,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const cbInfo = getCallbackInfo(fn, context, checker, settings, esTreeNodeToTSNodeMap);
+        const cbInfo = getCallbackInfo(fn, context);
         if (!cbInfo) {
           return;
         }
@@ -250,15 +200,14 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const tsNode = esTreeNodeToTSNodeMap?.get(node.argument);
-        if (isCancelErrorThrow(node.argument, context, checker, tsNode, settings)) {
+        if (isCancelErrorThrow(node.argument, context)) {
           return;
         }
 
         const isTail =
           fn.body?.type === AST_NODE_TYPES.BlockStatement && fn.body.body[fn.body.body.length - 1] === node;
 
-        const inScopeCP = findInScopeCancelablePromise(context);
+        const inScopeCP = findInScopeCancelablePromise(context, node);
 
         // H3: finally callbacks do not carry failure, so no suggestions in finally
         if (cbInfo.method !== 'finally' && isTail && inScopeCP) {
@@ -297,9 +246,7 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         const calleeObj = node.callee.object;
-        const isCP =
-          refersTo(calleeObj, context, 'CancelablePromise') ||
-          (calleeObj.type === AST_NODE_TYPES.Identifier && calleeObj.name === 'CancelablePromise');
+        const isCP = isCancCtorIdent(calleeObj, context);
         if (!isCP) {
           return;
         }
@@ -324,7 +271,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const cbInfo = getCallbackInfo(fn, context, checker, settings, esTreeNodeToTSNodeMap);
+        const cbInfo = getCallbackInfo(fn, context);
         if (!cbInfo) {
           return;
         }

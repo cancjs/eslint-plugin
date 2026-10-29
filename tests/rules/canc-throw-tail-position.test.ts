@@ -155,6 +155,51 @@ const run = cancAsync(function* () {
       },
       // Gen dialect and namespace callee
       {
+        code: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
+const run = cancAsync(function* () {
+  yield* cancThrow(new Error('fail'));
+  const unreachable = 1;
+});`,
+        output: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
+const run = cancAsync(function* () {
+  return yield* cancThrow(new Error('fail'));
+  const unreachable = 1;
+});`,
+        errors: [
+          {
+            messageId: 'cancThrowTailPosition' as const,
+            data: { thrower: 'cancThrow' },
+          },
+        ],
+      },
+      // Following sibling is or contains a LabeledStatement: suggestion only (no autofix)
+      {
+        code: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
+const run = cancAsync(function* () {
+  yield* cancThrow(new Error('fail'));
+  loop: while (true) { break loop; }
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'cancThrowTailPosition' as const,
+            data: { thrower: 'cancThrow' },
+            suggestions: [
+              {
+                messageId: 'cancThrowTailPosition' as const,
+                data: { thrower: 'cancThrow' },
+                output: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
+const run = cancAsync(function* () {
+  return yield* cancThrow(new Error('fail'));
+  loop: while (true) { break loop; }
+});`,
+              },
+            ],
+          },
+        ],
+      },
+      // Gen dialect and namespace callee
+      {
         code: `import * as gen from '@cancjs/coroutine/gen';
 const run = gen.cancGenAsync(function* () {
   yield* gen.throw(new Error('Gen'));
@@ -172,31 +217,24 @@ const run = gen.cancGenAsync(function* () {
           },
         ],
       },
-      // Followed by executable statement (suggestion only, no autofix)
+      // Followed by executable statement (still autofixes with return)
       {
         code: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
 const run = cancAsync(function* () {
   yield* cancThrow(new Error('Mid'));
   console.log('done');
 });`,
-        output: null,
+        output: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
+const run = cancAsync(function* () {
+  return yield* cancThrow(new Error('Mid'));
+  console.log('done');
+});`,
         errors: [
           {
             messageId: 'cancThrowTailPosition' as const,
             line: 3,
             column: 3,
             data: { thrower: 'cancThrow' },
-            suggestions: [
-              {
-                messageId: 'cancThrowTailPosition' as const,
-                data: { thrower: 'cancThrow' },
-                output: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
-const run = cancAsync(function* () {
-  return yield* cancThrow(new Error('Mid'));
-  console.log('done');
-});`,
-              },
-            ],
           },
         ],
       },

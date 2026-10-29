@@ -188,8 +188,7 @@ describe('failure rules phase smoke over built artifacts', () => {
     const results = await eslintRecommended.lintFiles(validFiles);
     for (const r of results) {
       const rel = path.relative(corpusDir, r.filePath).replaceAll('\\', '/');
-      const messages = r.messages.filter((m) => m.ruleId && FAILURE_RULES_PREFIXED.has(m.ruleId));
-      expect(messages, `Unexpected diagnostic under recommended in ${rel}`).toEqual([]);
+      expect(r.messages, `Unexpected diagnostic under recommended in ${rel}`).toEqual([]);
     }
   }, 30000);
 

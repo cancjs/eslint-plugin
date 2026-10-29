@@ -68,32 +68,7 @@ export const chain = p.catch((err) => {
 
 ## Options
 
-This rule accepts an optional configuration object:
-
-```json
-{
-  "canc/no-throw-in-chain-callback": [
-    "warn",
-    {
-      "requireTypeInfo": false,
-      "allowThrowInFinally": true,
-      "allowRejectionForms": false
-    }
-  ]
-}
-```
-
-### requireTypeInfo
-
-Default: `false`. When set to `true`, the rule runs only when TypeScript parser services are available and degrades silently when type information is missing.
-
-### allowThrowInFinally
-
-Default: `true`. When set to `true`, throwing inside a `.finally(...)` callback is permitted without warnings because `finally` callbacks do not affect the failure type of the returned promise.
-
-### allowRejectionForms
-
-Default: `false`. When set to `true`, returning bare `CancelablePromise.reject(...)` without failure type arguments is permitted.
+This rule does not accept any options.
 
 ## When not to use it
 

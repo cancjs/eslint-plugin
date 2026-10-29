@@ -1,10 +1,17 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import ts from 'typescript';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { getFailureMembers, isCancelErrorType } from '../src/util/failure-types.js';
+import {
+  getFailureMembers,
+  isCancelErrorCtorNode,
+  isCancelErrorType,
+  isUnlistedMarker,
+} from '../src/util/failure-types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixtureTsconfigPath = path.resolve(__dirname, 'fixtures/projects/default/tsconfig.json');
@@ -112,6 +119,68 @@ describe('failure-types', () => {
 
       expect(isCancelErrorType(copyA, checker)).toBe(true);
       expect(isCancelErrorType(copyB, checker)).toBe(true);
+    });
+  });
+
+  describe('isUnlistedMarker', () => {
+    it('recognizes Unlisted marker type and rejects plain error types', () => {
+      const unlisted = getTypeByName(casesFile, checker, 'CaseUnlisted');
+      const plain = getTypeByName(casesFile, checker, 'PlainError');
+
+      expect(isUnlistedMarker(unlisted, checker)).toBe(true);
+      expect(isUnlistedMarker(plain, checker)).toBe(false);
+    });
+  });
+
+  describe('isCancelErrorCtorNode', () => {
+    it('returns true for NewExpression referring to CancelError and false for other callees', () => {
+      const mockContext = {
+        sourceCode: {
+          ast: {
+            body: [
+              {
+                type: AST_NODE_TYPES.ImportDeclaration,
+                source: { value: '@cancjs/promise' },
+                specifiers: [
+                  {
+                    type: AST_NODE_TYPES.ImportSpecifier,
+                    imported: { type: AST_NODE_TYPES.Identifier, name: 'CancelError' },
+                    local: { type: AST_NODE_TYPES.Identifier, name: 'CancelError' },
+                  },
+                ],
+              },
+            ],
+          },
+          getScope: () => ({
+            set: new Map(),
+            variables: [],
+            upper: null,
+          }),
+        },
+        settings: {},
+      } as unknown as TSESLint.RuleContext<string, readonly unknown[]>;
+
+      const cancelErrorNode = {
+        type: AST_NODE_TYPES.NewExpression,
+        callee: {
+          type: AST_NODE_TYPES.Identifier,
+          name: 'CancelError',
+        },
+        arguments: [],
+      } as unknown as TSESTree.Node;
+
+      const otherNode = {
+        type: AST_NODE_TYPES.NewExpression,
+        callee: {
+          type: AST_NODE_TYPES.Identifier,
+          name: 'Error',
+        },
+        arguments: [],
+      } as unknown as TSESTree.Node;
+
+      expect(isCancelErrorCtorNode(cancelErrorNode, mockContext)).toBe(true);
+      expect(isCancelErrorCtorNode(otherNode, mockContext)).toBe(false);
+      expect(isCancelErrorCtorNode(null, mockContext)).toBe(false);
     });
   });
 });

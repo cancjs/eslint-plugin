@@ -49,7 +49,7 @@ const SYMBOL_FLAG_ALIAS = 2097152;
  * one of the configured canc packages. Path-based nominal check: no runtime dependency on the real
  * packages, works against the hand-derived fixture stubs and against real installs alike.
  */
-function symbolDeclaredInCancSource(
+export function symbolDeclaredInCancSource(
   symbol: ts.Symbol | undefined,
   settings: ResolvedCancSettings,
   checker?: ts.TypeChecker,

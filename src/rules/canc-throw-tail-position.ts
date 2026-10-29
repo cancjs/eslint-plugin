@@ -31,6 +31,27 @@ function isInsideLoop(node: TSESTree.Node): boolean {
   return false;
 }
 
+function containsLabeledStatement(node: TSESTree.Node): boolean {
+  if (node.type === AST_NODE_TYPES.LabeledStatement) {
+    return true;
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (key === 'parent') continue;
+    if (child && typeof child === 'object') {
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object' && 'type' in item) {
+            if (containsLabeledStatement(item as TSESTree.Node)) return true;
+          }
+        }
+      } else if ('type' in child) {
+        if (containsLabeledStatement(child as TSESTree.Node)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function canAutofix(node: TSESTree.ExpressionStatement): boolean {
   if (isInsideLoop(node)) {
     return false;
@@ -43,10 +64,7 @@ function canAutofix(node: TSESTree.ExpressionStatement): boolean {
       return false;
     }
     const following = list.slice(idx + 1);
-    const executable = following.filter(
-      (stmt) => stmt.type !== AST_NODE_TYPES.FunctionDeclaration && stmt.type !== AST_NODE_TYPES.ClassDeclaration,
-    );
-    return executable.length === 0;
+    return !following.some(containsLabeledStatement);
   }
   if (parent.type === AST_NODE_TYPES.IfStatement) {
     return true;
@@ -58,13 +76,7 @@ function canAutofix(node: TSESTree.ExpressionStatement): boolean {
       return false;
     }
     const following = list.slice(idx + 1);
-    const executable = following.filter(
-      (stmt) =>
-        stmt.type !== AST_NODE_TYPES.FunctionDeclaration &&
-        stmt.type !== AST_NODE_TYPES.ClassDeclaration &&
-        stmt.type !== AST_NODE_TYPES.BreakStatement,
-    );
-    return executable.length === 0;
+    return !following.some(containsLabeledStatement);
   }
   return false;
 }

@@ -231,6 +231,45 @@ const run = cancAsync(function* () {
           },
         ],
       },
+      // Cross-dialect thrower: canc imported but inside cancGenAsync
+      {
+        code: `import * as canc from '@cancjs/coroutine';
+import { cancGenAsync } from '@cancjs/coroutine/gen';
+export const g = cancGenAsync(function* () {
+  throw new Error('boom');
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancThrow',
+            data: { thrower: 'cancGen.throw' },
+          },
+        ],
+      },
+      // Dialect throw alias in cancGenAsync
+      {
+        code: `import { cancGenAsync, throw as t } from '@cancjs/coroutine/gen';
+export const g = cancGenAsync(function* () {
+  throw new Error('boom');
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancThrow',
+            data: { thrower: 't' },
+            suggestions: [
+              {
+                messageId: 'preferCancThrow',
+                data: { thrower: 't' },
+                output: `import { cancGenAsync, throw as t } from '@cancjs/coroutine/gen';
+export const g = cancGenAsync(function* () {
+  return yield* t(new Error('boom'));
+});`,
+              },
+            ],
+          },
+        ],
+      },
       // Coroutine generator bound to variable then passed to cancAsync
       {
         code: `import { cancAsync } from '@cancjs/coroutine';
@@ -286,7 +325,8 @@ const run = cancAsync(function* () {
           },
         ],
       },
-      // Exclude package specifier { from: 'package', package: 'node:assert', name: 'AssertionError' }
+      // Exclude package specifier
+      // { from: 'package', package: 'node:assert', name: 'AssertionError' }
       // vs same-named user class in test file: user class is still reported!
       {
         code: `import { cancAsync } from '@cancjs/coroutine';

@@ -176,6 +176,63 @@ const task = cancAsync(function* () {
           },
         ],
       },
+      // Empty class in type alias referenced in CancelablePromise failure position
+      {
+        code: `import type CancelablePromise from '@cancjs/promise';
+export class EmptyTypeAliasError extends Error {}
+type AppFailures = EmptyTypeAliasError | Error;
+export declare function run(): CancelablePromise<void, AppFailures>;`,
+        output: null,
+        errors: [
+          {
+            messageId: 'missingDiscriminant',
+            line: 2,
+            column: 14,
+            data: { name: 'EmptyTypeAliasError' },
+            suggestions: [
+              {
+                messageId: 'missingDiscriminant',
+                data: { name: 'EmptyTypeAliasError' },
+                output: `import type CancelablePromise from '@cancjs/promise';
+export class EmptyTypeAliasError extends Error {
+  readonly kind = 'EmptyTypeAliasError';
+}
+type AppFailures = EmptyTypeAliasError | Error;
+export declare function run(): CancelablePromise<void, AppFailures>;`,
+              },
+            ],
+          },
+        ],
+      },
+      // Mutable override message = '...' without literal type is not a discriminant
+      {
+        code: `import type CancelablePromise from '@cancjs/promise';
+export class MutableMessageError extends Error {
+  override message: string = 'msg';
+}
+export declare function run(): CancelablePromise<void, MutableMessageError>;`,
+        output: null,
+        errors: [
+          {
+            messageId: 'missingDiscriminant',
+            line: 2,
+            column: 14,
+            data: { name: 'MutableMessageError' },
+            suggestions: [
+              {
+                messageId: 'missingDiscriminant',
+                data: { name: 'MutableMessageError' },
+                output: `import type CancelablePromise from '@cancjs/promise';
+export class MutableMessageError extends Error {
+  readonly kind = 'MutableMessageError';
+  override message: string = 'msg';
+}
+export declare function run(): CancelablePromise<void, MutableMessageError>;`,
+              },
+            ],
+          },
+        ],
+      },
     ],
   });
 });

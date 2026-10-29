@@ -43,8 +43,27 @@ describe('no-throw-in-chain-callback (typed lane)', () => {
       // 1. Corpus valid 11: named callbacks (rule cannot see inside)
       codeValid11,
 
-      // 2. Corpus valid 12: fail() and typed reject() in chain callbacks, local catch rethrow, CancelError
+      // 2. Corpus valid 12: fail() and typed reject() in chain callbacks,
+      //    local catch rethrow, CancelError
       codeValid12,
+
+      // Non-canc class with .then() is silent
+      `class CustomThenable<T> {
+         then(fn: (v: T) => unknown) { return this; }
+       }
+       const p = new CustomThenable<string>();
+       export const c = p.then(() => {
+         throw new Error('boom');
+       });`,
+
+      // Local CancelablePromise class without @cancjs is silent
+      `class CancelablePromise<T> {
+         then(fn: (v: T) => unknown) { return this; }
+       }
+       const p = new CancelablePromise<string>();
+       export const c = p.then(() => {
+         throw new Error('boom');
+       });`,
 
       // 3. Return CancelablePromise.fail() is valid
       `import CancelablePromise from '@cancjs/promise';

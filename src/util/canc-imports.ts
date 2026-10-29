@@ -16,6 +16,8 @@ export interface CancBinding {
   exported: string;
   /** True when the local name is a namespace object (`import * as canc`). */
   namespace: boolean;
+  /** True when imported with `import type` or `import { type X }`. */
+  isTypeOnly?: boolean;
 }
 
 type Context = TSESLint.RuleContext<string, readonly unknown[]>;
@@ -73,33 +75,30 @@ function collectFromImport(
   sources: Set<string>,
   bindings: Map<string, CancBinding>,
 ): void {
-  // Type-only imports carry no runtime binding to track.
-  if (node.importKind === 'type') {
-    return;
-  }
   const source = node.source.value;
   if (!sources.has(source)) {
     return;
   }
 
+  const isTypeDecl = node.importKind === 'type';
   for (const specifier of node.specifiers) {
+    const isTypeOnly =
+      isTypeDecl || (specifier.type === AST_NODE_TYPES.ImportSpecifier && specifier.importKind === 'type');
+    const extra = isTypeOnly ? { isTypeOnly: true as const } : {};
     switch (specifier.type) {
       case AST_NODE_TYPES.ImportSpecifier: {
-        if (specifier.importKind === 'type') {
-          break;
-        }
         const exported =
           specifier.imported.type === AST_NODE_TYPES.Identifier ?
             specifier.imported.name
           : String(specifier.imported.value);
-        bindings.set(specifier.local.name, { source, exported, namespace: false });
+        bindings.set(specifier.local.name, { source, exported, namespace: false, ...extra });
         break;
       }
       case AST_NODE_TYPES.ImportDefaultSpecifier:
-        bindings.set(specifier.local.name, { source, exported: 'default', namespace: false });
+        bindings.set(specifier.local.name, { source, exported: 'default', namespace: false, ...extra });
         break;
       case AST_NODE_TYPES.ImportNamespaceSpecifier:
-        bindings.set(specifier.local.name, { source, exported: '*', namespace: true });
+        bindings.set(specifier.local.name, { source, exported: '*', namespace: true, ...extra });
         break;
     }
   }

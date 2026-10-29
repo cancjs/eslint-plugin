@@ -143,7 +143,8 @@ describe('class-matcher util', () => {
     expect(matchesType(regexMatcher, myErrorType, checker, program)).toBe(true);
     expect(matchesType(regexMatcher, level2Type, checker, program)).toBe(false);
 
-    // 4. Same-named user class CancelError vs { from: 'package', package: '@cancjs/promise', name: 'CancelError' }
+    // 4. Same-named user class CancelError vs package CancelError matcher
+    //    with { from: 'package', package: '@cancjs/promise', name: 'CancelError' }
     const packageMatcher = compileMatchers([{ from: 'package', package: '@cancjs/promise', name: 'CancelError' }]);
     expect(matchesType(packageMatcher, localCancelErrorType, checker, program)).toBe(false);
     expect(matchesType(packageMatcher, pkgCancelErrorType, checker, program)).toBe(true);

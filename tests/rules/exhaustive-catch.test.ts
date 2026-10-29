@@ -232,6 +232,111 @@ describe('exhaustive-catch (typed lane)', () => {
           },
         ],
       },
+      // 5. Unrelated if/else rethrow does not cover failures
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+declare function getA(): CancelablePromise<string, ErrorA>;
+declare const unrelatedFlag: boolean;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getA());
+  } catch (e) {
+    if (unrelatedFlag) {
+      console.log('swallowed');
+    } else {
+      throw e;
+    }
+  }
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            data: { names: 'ErrorA' },
+          },
+        ],
+      },
+      // 6. allowRethrow: false reports without duplicate throw suggestion
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (e instanceof ErrorA) {
+      console.log('A');
+    } else {
+      throw e;
+    }
+  }
+});`,
+        options: [{ allowRethrow: false }],
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: null,
+          },
+        ],
+      },
+      // 7. Shadowed catch binding suppresses suggestion
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (e instanceof ErrorA) {
+      const e = 'shadowed';
+      console.log(e);
+    }
+  }
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: null,
+          },
+        ],
+      },
+      // 8. Inner try/catch yield throws to outer catch
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+declare function getA(): CancelablePromise<string, ErrorA>;
+export const run = cancAsync(function* () {
+  try {
+    try {
+      console.log('inner try');
+    } catch (innerErr) {
+      yield* cancAwait(getA());
+    }
+  } catch (e) {
+    console.log('outer catch');
+  }
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            data: { names: 'ErrorA' },
+          },
+        ],
+      },
     ],
   });
 });

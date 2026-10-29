@@ -5,6 +5,6 @@ class ErrorB extends Error { readonly kind = 'ErrorB'; }
 
 declare const p: CancelablePromise<string, ErrorA | ErrorB>;
 
-export function load(): CancelablePromise<string, ErrorA> { // lint: no-failure-widening:failureWidening
-  return p as any;
+export function load(): CancelablePromise<string> { // lint: no-failure-widening:failureWidening
+  return p;
 }

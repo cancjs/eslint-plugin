@@ -11,3 +11,4 @@ export type CaseFooOpen = CancelablePromise<number, FooError | Unlisted>;
 export type CaseDefault = CancelablePromise<number>;
 export type CaseAny = CancelablePromise<number, any>;
 export type CaseNever = CancelablePromise<number, never>;
+export type CaseUnlisted = Unlisted;
