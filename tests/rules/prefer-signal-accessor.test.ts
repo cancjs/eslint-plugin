@@ -199,6 +199,84 @@ new CancelablePromise((resolve, reject, ctx = {} as any) => {
           },
         ],
       },
+
+      // binding aliased to a plain variable: suggestion only
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, { getSignal }) => {
+  const read = getSignal;
+  void read;
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferSignalAccessor' as const,
+            line: 2,
+            suggestions: [
+              {
+                messageId: 'preferSignalAccessor' as const,
+                output: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, { signal }) => {
+  const read = getSignal;
+  void read;
+});`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // binding passed as a value: suggestion only
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+declare function useLater(fn: () => AbortSignal): void;
+new CancelablePromise((resolve, reject, { getSignal: gs }) => {
+  useLater(gs);
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferSignalAccessor' as const,
+            line: 3,
+            suggestions: [
+              {
+                messageId: 'preferSignalAccessor' as const,
+                output: `import CancelablePromise from '@cancjs/promise';
+declare function useLater(fn: () => AbortSignal): void;
+new CancelablePromise((resolve, reject, { signal: gs }) => {
+  useLater(gs);
+});`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // default value on the destructured binding: suggestion only
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, { getSignal = () => null as any }) => {
+  const s = getSignal();
+  void s;
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferSignalAccessor' as const,
+            line: 2,
+            suggestions: [
+              {
+                messageId: 'preferSignalAccessor' as const,
+                output: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, { signal }) => {
+  const s = signal;
+  void s;
+});`,
+              },
+            ],
+          },
+        ],
+      },
     ],
   });
 
@@ -207,6 +285,7 @@ new CancelablePromise((resolve, reject, ctx = {} as any) => {
       codeValid09,
       `const obj = { getSignal: () => null }; obj.getSignal();`,
       `const fn = promisify((resolve, reject, getSignal) => { getSignal(); });`,
+      `function helper(ctx) { return ctx.getSignal(); }`,
     ],
     invalid: [
       {

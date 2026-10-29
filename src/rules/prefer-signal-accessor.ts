@@ -206,10 +206,25 @@ export default createRule<RuleOptions, MessageIds>({
           return undefined;
         }
 
+        const hasDefault = node.value.type === AST_NODE_TYPES.AssignmentPattern;
+        const valueTarget = node.value.type === AST_NODE_TYPES.AssignmentPattern ? node.value.left : node.value;
         const isRenamed =
-          !node.shorthand && node.value.type === AST_NODE_TYPES.Identifier && node.value.name !== 'getSignal';
+          !node.shorthand && valueTarget.type === AST_NODE_TYPES.Identifier && valueTarget.name !== 'getSignal';
         const localBindingName =
-          isRenamed && node.value.type === AST_NODE_TYPES.Identifier ? node.value.name : 'getSignal';
+          isRenamed && valueTarget.type === AST_NODE_TYPES.Identifier ? valueTarget.name : 'getSignal';
+
+        // Only zero-arg calls survive the rewrite; any other use of the binding changes meaning
+        const hasNonCallRef = (getVariableInScope(localBindingName)?.references ?? []).some((ref) => {
+          if (isDescendant(ref.identifier, node)) {
+            return false;
+          }
+          const parent = ref.identifier.parent;
+          return !(
+            parent?.type === AST_NODE_TYPES.CallExpression &&
+            parent.callee === ref.identifier &&
+            parent.arguments.length === 0
+          );
+        });
 
         // Check if 'signal' collides in scope (only relevant for non-renamed)
         const hasCollision = !isRenamed && hasSignalCollision(fn, context);
@@ -223,7 +238,7 @@ export default createRule<RuleOptions, MessageIds>({
             const variable = getVariableInScope(localBindingName);
             if (variable) {
               for (const ref of variable.references) {
-                if (ref.identifier === node.value) continue;
+                if (isDescendant(ref.identifier, node)) continue;
                 const parent = ref.identifier.parent;
                 if (parent?.type === AST_NODE_TYPES.CallExpression && parent.callee === ref.identifier) {
                   fixes.push(fixer.replaceText(parent, localBindingName));
@@ -237,7 +252,7 @@ export default createRule<RuleOptions, MessageIds>({
             const variable = getVariableInScope('getSignal');
             if (variable) {
               for (const ref of variable.references) {
-                if (ref.identifier === node.key) continue;
+                if (isDescendant(ref.identifier, node)) continue;
                 const parent = ref.identifier.parent;
                 if (parent?.type === AST_NODE_TYPES.CallExpression && parent.callee === ref.identifier) {
                   fixes.push(fixer.replaceText(parent, 'signal'));
@@ -248,7 +263,7 @@ export default createRule<RuleOptions, MessageIds>({
           return fixes;
         }
 
-        if (hasCollision) {
+        if (hasCollision || hasDefault || hasNonCallRef) {
           // Suggestion only
           context.report({
             node: node.key,
