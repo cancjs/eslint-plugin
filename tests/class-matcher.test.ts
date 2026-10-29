@@ -58,6 +58,19 @@ function findClassType(sourceFile: ts.SourceFile, checker: ts.TypeChecker, class
   return found;
 }
 
+function findVariableType(sourceFile: ts.SourceFile, checker: ts.TypeChecker, varName: string): ts.Type {
+  let found: ts.Type | undefined;
+  function visit(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === varName) {
+      found = checker.getTypeAtLocation(node);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  if (!found) throw new Error(`Could not find variable ${varName} in source file`);
+  return found;
+}
+
 describe('class-matcher util', () => {
   it('throws a clear Error on invalid regex or g/y flags naming the pattern', () => {
     expect(() => compileMatchers(['/x/g'])).toThrow(/flag 'g' is not permitted/);
@@ -93,25 +106,31 @@ describe('class-matcher util', () => {
 
   it('handles typed matching with exact name, regex, lib specifier, and extends', () => {
     const code = `
-      import { AssertionError as NodeAssertionError } from 'node:assert';
+      import { CancelError as PkgCancelError } from '@cancjs/promise';
 
       export class MyError extends Error {}
       export class Level2Error extends MyError {}
-      export class LocalAssertionError {}
+      export class CancelError {}
       export class UnrelatedClass {}
+
+      export const stdError = new Error();
+      export const pkgCancelError = new PkgCancelError();
     `;
 
     const { program, checker, sourceFile } = createFixtureProgram(code);
 
     const myErrorType = findClassType(sourceFile, checker, 'MyError');
     const level2Type = findClassType(sourceFile, checker, 'Level2Error');
-    const localAssertType = findClassType(sourceFile, checker, 'LocalAssertionError');
+    const localCancelErrorType = findClassType(sourceFile, checker, 'CancelError');
     const unrelatedType = findClassType(sourceFile, checker, 'UnrelatedClass');
+    const stdErrorType = findVariableType(sourceFile, checker, 'stdError');
+    const pkgCancelErrorType = findVariableType(sourceFile, checker, 'pkgCancelError');
 
-    // 1. { from: 'lib', name: 'Error' } vs MyError (no match)
+    // 1. { from: 'lib', name: 'Error' } vs MyError (no match) and vs Error (match)
     const libErrorMatcher = compileMatchers([{ from: 'lib', name: 'Error' }]);
     expect(matchesType(libErrorMatcher, myErrorType, checker, program)).toBe(false);
     expect(matchesType(libErrorMatcher, level2Type, checker, program)).toBe(false);
+    expect(matchesType(libErrorMatcher, stdErrorType, checker, program)).toBe(true);
 
     // 2. { extends: 'Error' } matches MyError and Level2Error (transitive)
     const extendsErrorMatcher = compileMatchers([{ extends: 'Error' }]);
@@ -119,14 +138,15 @@ describe('class-matcher util', () => {
     expect(matchesType(extendsErrorMatcher, level2Type, checker, program)).toBe(true);
     expect(matchesType(extendsErrorMatcher, unrelatedType, checker, program)).toBe(false);
 
-    // 3. Regex matching: '/^LocalAssert/'
-    const regexMatcher = compileMatchers(['/^LocalAssert/']);
-    expect(matchesType(regexMatcher, localAssertType, checker, program)).toBe(true);
-    expect(matchesType(regexMatcher, myErrorType, checker, program)).toBe(false);
+    // 3. Regex matching: '/^My/'
+    const regexMatcher = compileMatchers(['/^My/']);
+    expect(matchesType(regexMatcher, myErrorType, checker, program)).toBe(true);
+    expect(matchesType(regexMatcher, level2Type, checker, program)).toBe(false);
 
-    // 4. Same-named user class LocalAssertionError vs { from: 'package', package: 'node:assert', name: 'AssertionError' }
-    const packageMatcher = compileMatchers([{ from: 'package', package: 'node:assert', name: 'AssertionError' }]);
-    expect(matchesType(packageMatcher, localAssertType, checker, program)).toBe(false);
+    // 4. Same-named user class CancelError vs { from: 'package', package: '@cancjs/promise', name: 'CancelError' }
+    const packageMatcher = compileMatchers([{ from: 'package', package: '@cancjs/promise', name: 'CancelError' }]);
+    expect(matchesType(packageMatcher, localCancelErrorType, checker, program)).toBe(false);
+    expect(matchesType(packageMatcher, pkgCancelErrorType, checker, program)).toBe(true);
 
     // 5. isIncluded: exclude beats include on typed subjects
     const complexOpts = compileOptions({

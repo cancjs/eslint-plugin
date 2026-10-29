@@ -20,6 +20,7 @@ export const classMatcherSchema: JSONSchema4 = {
     oneOf: [
       {
         type: 'string',
+        pattern: '^(/[^/].*/[dimsuv]*|[a-zA-Z_$][a-zA-Z0-9_$.]*)$',
       },
       ...typeOrValueSpecifiersSchema.items.oneOf.slice(1),
       {
@@ -27,6 +28,7 @@ export const classMatcherSchema: JSONSchema4 = {
         properties: {
           extends: {
             type: 'string',
+            pattern: '^(/[^/].*/[dimsuv]*|[a-zA-Z_$][a-zA-Z0-9_$.]*)$',
           },
         },
         required: ['extends'],
