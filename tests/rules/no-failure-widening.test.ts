@@ -88,6 +88,28 @@ describe('no-failure-widening (typed lane)', () => {
        class ErrorA extends Error {}
        declare const p: CancelablePromise<string, ErrorA>;
        export const res = withFailure<ErrorA>()(p);`,
+
+      // User-defined FAILURE symbol on a non-canc carrier (silent)
+      `declare const FAILURE: unique symbol;
+       class ErrorA extends Error {}
+       interface Mine<T, E> { readonly [FAILURE]?: E; value: T }
+       declare const m: Mine<string, ErrorA>;
+       export const x = m as any;`,
+
+      // Local CancelablePromise look-alike with [FAILURE] (silent)
+      `declare const FAILURE: unique symbol;
+       class ErrorA extends Error {}
+       class CancelablePromise<T, E = unknown> { readonly [FAILURE]?: E; value?: T }
+       declare const p: CancelablePromise<string, ErrorA>;
+       export const x = p as any;`,
+      // Union with a user FAILURE-symbol branch: that branch adds no failures (silent)
+      `import type { CancelablePromise } from '@cancjs/promise';
+       declare const FAILURE: unique symbol;
+       class ErrorA extends Error {}
+       class ErrorB extends Error {}
+       interface Mine<T, E> { readonly [FAILURE]?: E; value: T }
+       declare const p: CancelablePromise<string, ErrorA> | Mine<string, ErrorB>;
+       export const x = p as unknown as CancelablePromise<string, ErrorA>;`,
     ],
 
     invalid: [
@@ -173,6 +195,60 @@ export const b: CancelablePromise<string> = getUser();`,
             data: { position: 'variable type' },
           },
         ],
+      },
+      // 6. return p as any: exactly one report, on the cast
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const p: CancelablePromise<string, ErrorA>;
+export function f() {
+  return p as any;
+}`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 5, data: { position: 'cast' } }],
+      },
+
+      // 7. return p as CancelablePromise<string>: exactly one report
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const p: CancelablePromise<string, ErrorA>;
+export function f() {
+  return p as CancelablePromise<string>;
+}`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 5, data: { position: 'cast' } }],
+      },
+
+      // 8. arrow expression body cast: exactly one report
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const p: CancelablePromise<string, ErrorA>;
+export const f = () => p as any;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'cast' } }],
+      },
+
+      // 9. variable declarator cast: one report even with variable checks on
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const p: CancelablePromise<string, ErrorA>;
+export const v: CancelablePromise<string> = p as CancelablePromise<string>;`,
+        options: [{ allowVariableAnnotationWidening: false }],
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'cast' } }],
+      },
+
+      // 10. mixed union with a non-canc branch: cast still reports once
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const p: CancelablePromise<string, ErrorA> | { z: 1 };
+export const m = p as unknown as CancelablePromise<string>;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'cast' } }],
       },
     ],
   });
