@@ -6,9 +6,10 @@ Declared failures on `CancelablePromise<T, F>` represent domain-level error cont
 
 To refine, narrow, or deliberately erase failure types, use the sanctioned `withFailure` helper from `@cancjs/promise`. Alternatively, an explicit line comment marker (default: `canc-allow-widening`) can acknowledge intentional erasures.
 
-### Sanctioned withFailure forms
+## Sanctioned withFailure forms
 
 The `withFailure` helper provides explicit and documented failure type transitions:
+
 1. `withFailure<TargetError>()(p)`: Restricts or resets the failure type to a specific target error class.
 2. `withFailure<ErrorA, ErrorB>()(p)`: Re-declares a multi-member failure union.
 3. `withFailure(ErrorA, ErrorB)(p)`: Passes constructor matchers that establish the declared failure set.

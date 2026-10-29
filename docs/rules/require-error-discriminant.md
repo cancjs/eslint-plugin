@@ -5,6 +5,7 @@ Require error classes used in declared failure unions to declare a discriminant 
 TypeScript checks and compares types structurally rather than nominally. Two distinct error classes that both extend `Error` without declaring unique fields share an identical structural type shape. When used in a failure union (such as `CancelablePromise<string, NotFoundError | UnauthorizedError>`), attempting to narrow or subtract one class using `Exclude` or type predicates inadvertently matches and removes both classes.
 
 To guarantee that failure union members can be distinguished and narrowed safely, every error class used in a failure type must declare:
+
 1. A unique discriminant property (for example, `readonly kind = 'NotFoundError';`),
 2. A literal `name` property (for example, `override readonly name = 'NotFoundError' as const;`), or
 3. A unique brand key or symbol (for example, `readonly [BRAND] = true;`).
