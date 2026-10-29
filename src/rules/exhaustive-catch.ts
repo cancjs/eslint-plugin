@@ -379,14 +379,29 @@ export default createRule<RuleOptions, MessageIds>({
 
           let failures = getFailureMembers(stepType, checker);
 
-          if (!failures.defined && step.argument.type === AST_NODE_TYPES.CallExpression) {
+          if (step.argument.type === AST_NODE_TYPES.CallExpression) {
             const arg0 = step.argument.arguments[0];
             if (arg0) {
               const tsArg0 = esTreeNodeToTSNodeMap.get(arg0);
               const arg0Type = checker.getTypeAtLocation(tsArg0);
               const arg0Failures = getFailureMembers(arg0Type, checker);
-              failures = arg0Failures;
-              if (!failures.defined && isCancelablePromiseType(arg0Type)) {
+              if (arg0Failures.defined) {
+                if (!failures.defined) {
+                  failures = arg0Failures;
+                } else {
+                  if (arg0Failures.open) {
+                    failures.open = true;
+                  }
+                  for (const m of arg0Failures.listed) {
+                    if (
+                      !failures.listed.some((existing) => checker.typeToString(existing) === checker.typeToString(m))
+                    ) {
+                      failures.listed.push(m);
+                    }
+                  }
+                }
+              }
+              if (!failures.defined && !arg0Failures.defined && isCancelablePromiseType(arg0Type)) {
                 return;
               }
             }
@@ -476,6 +491,10 @@ export default createRule<RuleOptions, MessageIds>({
                 if (brandType?.isStringLiteral()) {
                   const parts = brandType.value.split(':');
                   return parts[parts.length - 1];
+                }
+                const match = /_cancErrorBrand:\s*["'](?:[^"':]+:)?([^"']+)["']/.exec(checker.typeToString(t));
+                if (match) {
+                  return match[1];
                 }
               }
               return checker.typeToString(t);
