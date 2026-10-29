@@ -6,6 +6,8 @@ export class LiteralNameError extends Error {
   override readonly name = 'LiteralNameError' as const;
 }
 
+const BRAND = Symbol.for('@cancjs/app:BrandedSymbolError');
+
 export class BrandedSymbolError extends Error {
-  readonly [Symbol.for('@cancjs/app:BrandedSymbolError')] = true;
+  readonly [BRAND] = true;
 }

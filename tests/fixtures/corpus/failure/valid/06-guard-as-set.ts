@@ -1,13 +1,8 @@
-import type CancelablePromise from '@cancjs/promise';
+import type { CancelablePromise, MatchedError } from '@cancjs/promise';
+import { catchErrors, createIsError, withFailure } from '@cancjs/promise';
 
 class HttpError extends Error {}
 class NotFoundError extends Error {}
-
-declare function createIsError<T extends any[]>(...matchers: T): (e: unknown) => boolean;
-declare function withFailure(matcher: any): (p: any) => any;
-declare function catchErrors(p: any, matcher: any): any;
-
-type MatchedError<T> = T extends (e: unknown) => e is infer R ? R : never;
 
 const isUserFailure = createIsError(HttpError, NotFoundError);
 
@@ -19,7 +14,7 @@ export function handleUserFailure(p: CancelablePromise<string>) {
     // try block
   } catch (e) {
     if (isUserFailure(e)) {
-      const _matched: MatchedError<typeof isUserFailure> = e as any;
+      const _matched: MatchedError<typeof isUserFailure> = e;
       void _matched;
     } else {
       throw e;

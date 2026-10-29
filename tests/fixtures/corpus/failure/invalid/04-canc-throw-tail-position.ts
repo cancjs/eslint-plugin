@@ -1,7 +1,7 @@
-import { cancAsync, cancThrow } from '@cancjs/coroutine';
+import { type AsyncResult, cancAsync, cancThrow } from '@cancjs/coroutine';
 
 class NotFoundError extends Error {}
 
-export const run = cancAsync(function* () {
+export const run = cancAsync(function* (): AsyncResult<string> {
   yield* cancThrow(new NotFoundError('Item not found')); // lint: canc-throw-tail-position:cancThrowTailPosition
 });
