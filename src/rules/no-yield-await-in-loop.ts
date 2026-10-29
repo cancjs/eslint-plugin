@@ -36,8 +36,57 @@ function getEnclosingLoop(node: TSESTree.Node, boundaryFn: TSESTree.Node): TSEST
   return null;
 }
 
+const MUTATING_METHODS = new Set([
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+  'fill',
+  'copyWithin',
+  'set',
+  'add',
+  'delete',
+  'clear',
+]);
+
+function getRootIdentifier(node: TSESTree.Node): TSESTree.Identifier | null {
+  let curr = node;
+  while (curr.type === AST_NODE_TYPES.MemberExpression) {
+    curr = curr.object;
+  }
+  return curr.type === AST_NODE_TYPES.Identifier ? curr : null;
+}
+
+function collectInnerLabels(body: TSESTree.Node): Set<string> {
+  const labels = new Set<string>();
+  function walk(node: TSESTree.Node) {
+    if (node.type === AST_NODE_TYPES.LabeledStatement) {
+      labels.add(node.label.name);
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) walk(item as TSESTree.Node);
+          }
+        } else if ('type' in child) {
+          walk(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+  walk(body);
+  return labels;
+}
+
 function loopHasBreakOrReturn(loopNode: TSESTree.Node): boolean {
   let hasExit = false;
+  const innerLabels = collectInnerLabels((loopNode as TSESTree.ForOfStatement).body);
 
   function walk(node: TSESTree.Node) {
     if (hasExit) return;
@@ -54,6 +103,10 @@ function loopHasBreakOrReturn(loopNode: TSESTree.Node): boolean {
       function walkNested(nested: TSESTree.Node) {
         if (hasExit) return;
         if (nested.type === AST_NODE_TYPES.ReturnStatement) {
+          hasExit = true;
+          return;
+        }
+        if (nested.type === AST_NODE_TYPES.BreakStatement && nested.label && !innerLabels.has(nested.label.name)) {
           hasExit = true;
           return;
         }
@@ -79,7 +132,7 @@ function loopHasBreakOrReturn(loopNode: TSESTree.Node): boolean {
       hasExit = true;
       return;
     }
-    if (node.type === AST_NODE_TYPES.BreakStatement && !node.label) {
+    if (node.type === AST_NODE_TYPES.BreakStatement && (!node.label || !innerLabels.has(node.label.name))) {
       hasExit = true;
       return;
     }
@@ -271,6 +324,9 @@ function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {
   function extractPattern(pattern: TSESTree.Node) {
     if (pattern.type === AST_NODE_TYPES.Identifier) {
       assigned.add(pattern.name);
+    } else if (pattern.type === AST_NODE_TYPES.MemberExpression) {
+      const root = getRootIdentifier(pattern);
+      if (root) assigned.add(root.name);
     } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
       for (const prop of pattern.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
@@ -301,10 +357,20 @@ function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {
       return;
     }
 
-    if (node.type === AST_NODE_TYPES.UpdateExpression && node.argument.type === AST_NODE_TYPES.Identifier) {
-      assigned.add(node.argument.name);
+    if (node.type === AST_NODE_TYPES.UpdateExpression) {
+      extractPattern(node.argument);
     } else if (node.type === AST_NODE_TYPES.AssignmentExpression) {
       extractPattern(node.left);
+    } else if (
+      node.type === AST_NODE_TYPES.CallExpression &&
+      node.callee.type === AST_NODE_TYPES.MemberExpression &&
+      !node.callee.computed &&
+      node.callee.property.type === AST_NODE_TYPES.Identifier &&
+      MUTATING_METHODS.has(node.callee.property.name)
+    ) {
+      // collection mutated in the body carries state between iterations
+      const root = getRootIdentifier(node.callee.object);
+      if (root) assigned.add(root.name);
     }
 
     for (const key of Object.keys(node)) {

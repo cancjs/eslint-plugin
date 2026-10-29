@@ -127,6 +127,38 @@ describe('no-yield-await-in-loop', () => {
            cursor = yield* cancAwait(fetchPage(cursor));
          }
        });`,
+
+      // 12. Member-write accumulator is sequential like an identifier accumulator
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function f(id: string, state: { x: number }): Promise<number>;
+       const run = cancAsync(function* (ids: string[], state: { x: number }) {
+         for (const id of ids) {
+           state.x = yield* cancAwait(f(id, state));
+         }
+       });`,
+
+      // 13. Labeled break from an inner loop exits sequentially
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function check(id: string): Promise<boolean>;
+       const run = cancAsync(function* (groups: string[][]) {
+         outer: for (const group of groups) {
+           for (const id of group) {
+             const ok = yield* cancAwait(check(id));
+             if (ok) break outer;
+           }
+         }
+       });`,
+
+      // 14. Operand depends on a collection the body mutates
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function next(id: string, count: number): Promise<string>;
+       const run = cancAsync(function* (ids: string[]) {
+         const out: string[] = [];
+         for (const id of ids) {
+           out.push(yield* cancAwait(next(id, out.length)));
+         }
+         return out;
+       });`,
     ],
     invalid: [
       // 1. Corpus invalid 15: for-of loop referencing id
@@ -210,6 +242,33 @@ const run = cancAsync(function* (ids: string[]) {
             column: 5,
           },
         ],
+      },
+
+      // 6. Member write to an unrelated object stays independent
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function f(id: string): Promise<number>;
+const run = cancAsync(function* (ids: string[], out: Record<string, number>) {
+  for (const id of ids) {
+    out[id] = yield* cancAwait(f(id));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const, line: 5 }],
+      },
+
+      // 7. Labeled break to a label inside the loop body is not an exit
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function f(id: string): Promise<boolean>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    inner: {
+      yield* cancAwait(f(id));
+      break inner;
+    }
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const, line: 6 }],
       },
     ],
   });
