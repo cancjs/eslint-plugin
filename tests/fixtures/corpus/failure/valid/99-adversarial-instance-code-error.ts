@@ -1,12 +1,13 @@
-// Error class with only a static member, used as a declared failure type
+// Error class told apart by an instance field, with a static default beside it
 import type CancelablePromise from '@cancjs/promise';
 
-export class StaticOnlyError extends Error {
-  static readonly DEFAULT_CODE = 'STATIC_ERR';
+export class CodedError extends Error {
+  static readonly DEFAULT_CODE = 'CODED_ERR';
+  readonly code: string = CodedError.DEFAULT_CODE;
 }
 
-export declare function fail(): CancelablePromise<void, StaticOnlyError>;
+export declare function fail(): CancelablePromise<void, CodedError>;
 
-export function reportStatic(): string {
-  return StaticOnlyError.DEFAULT_CODE;
+export function reportCode(error: CodedError): string {
+  return error.code;
 }
