@@ -34,8 +34,8 @@ interface Order {
 declare function pullOrdersCancelable(): CancelablePromise<Order[]>;
 declare function pushOrders(orders: Order[], signal: AbortSignal): Promise<void>;
 
-const pushOrdersCancelable = cancelify(({ getSignal }, orders: Order[]) =>
-  pushOrders(orders, getSignal()),
+const pushOrdersCancelable = cancelify(({ signal }, orders: Order[]) =>
+  pushOrders(orders, signal),
 );
 
 const syncOrders = cancAsync(function* () {

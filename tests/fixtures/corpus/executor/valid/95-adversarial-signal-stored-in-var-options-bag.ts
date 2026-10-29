@@ -30,6 +30,7 @@ import {
 
 declare function fetchOp(options: { signal: AbortSignal }): Promise<string>;
 
+// eslint-disable-next-line canc/prefer-signal-accessor
 export const bag = new CancelablePromise<string>((resolve, reject, { getSignal }) => {
   const sig = getSignal();
   fetchOp({ signal: sig }).then(resolve, reject);

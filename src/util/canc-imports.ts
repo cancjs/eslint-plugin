@@ -498,14 +498,15 @@ function resolveGeneratorFnFromIdentifier(
     return null;
   }
   for (const def of variable.defs) {
-    if (def.node.type === AST_NODE_TYPES.FunctionDeclaration && def.node.generator) {
+    if (def.node.type === AST_NODE_TYPES.FunctionDeclaration && def.node.generator && !def.node.async) {
       return def.node;
     }
     if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
       const init = unwrapParens(def.node.init);
       if (
         (init.type === AST_NODE_TYPES.FunctionExpression || init.type === AST_NODE_TYPES.FunctionDeclaration) &&
-        init.generator
+        init.generator &&
+        !init.async
       ) {
         return init;
       }
@@ -569,7 +570,8 @@ function getCoroutineFileMap(context: Context): Map<TSESTree.Node, CoroutineCont
           if (
             (unwrapped.type === AST_NODE_TYPES.FunctionExpression ||
               unwrapped.type === AST_NODE_TYPES.FunctionDeclaration) &&
-            unwrapped.generator
+            unwrapped.generator &&
+            !unwrapped.async
           ) {
             registerRoot(unwrapped, kind, node, options);
           } else if (unwrapped.type === AST_NODE_TYPES.Identifier) {
@@ -760,7 +762,7 @@ export function getCoroutineContext(node: TSESTree.Node, context: Context): Coro
     curr = curr.parent;
   }
 
-  if (!enclosingFn?.generator) {
+  if (!enclosingFn?.generator || enclosingFn.async) {
     return null;
   }
 
