@@ -94,7 +94,7 @@ describe('canc-types: typed detection', () => {
     ],
     invalid: [
       {
-        // Alias of an object type with the canc shape, declared outside a canc package -> plain sink only
+        // Object-type alias with the canc shape, declared outside a canc package: plain sink only
         code: `type CancelablePromise<T> = { then: Promise<T>['then']; cancel(): void; isCanceled: boolean };
                declare const src: CancelablePromise<number>;
                const p = src;`,

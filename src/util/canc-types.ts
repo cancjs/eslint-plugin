@@ -40,7 +40,7 @@ function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/');
 }
 
-// Mirrors ts.SymbolFlags.Alias; typescript is a type-only import here, so the enum is not available at runtime.
+// Mirrors ts.SymbolFlags.Alias; typescript is a type-only import, so the enum is absent at runtime.
 const SYMBOL_FLAG_ALIAS = 2097152;
 
 /**
