@@ -104,8 +104,12 @@ function isRethrowStatement(stmt: TSESTree.Statement, bindingName: string): bool
     }
   }
 
-  if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
-    const expr = stmt.expression;
+  const expr =
+    stmt.type === AST_NODE_TYPES.ExpressionStatement ? stmt.expression
+    : stmt.type === AST_NODE_TYPES.ReturnStatement ? stmt.argument
+    : null;
+
+  if (expr) {
     if (expr.type === AST_NODE_TYPES.YieldExpression && expr.delegate && expr.argument) {
       if (expr.argument.type === AST_NODE_TYPES.CallExpression) {
         const callee = expr.argument.callee;
