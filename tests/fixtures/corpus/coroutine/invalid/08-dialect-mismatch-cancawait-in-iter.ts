@@ -34,7 +34,7 @@ interface Page {
 declare function fetchPageCancelable(): CancelablePromise<Page>;
 
 const streamOrders = cancGenAsync(function* () {
-  const page = yield* cancAwait(fetchPageCancelable()); // lint: no-coroutine-dialect-mismatch cancAwait inside cancGenAsync
+  const page = yield* cancAwait(fetchPageCancelable()); // lint: no-coroutine-dialect-mismatch:cancAwaitInIter cancAwait inside cancGenAsync
   yield page.items;
 });
 

@@ -32,8 +32,8 @@ declare function pollUntil(cb: () => boolean): unknown;
 
 function pollWithSignal(signal: AbortSignal) {
   let stopped = false;
-  signal.addEventListener('abort', () => {
-  stopped = true; // lint: no-abort-listener-leak added per call on a reused signal, never removed
+  signal.addEventListener('abort', () => { // lint: no-abort-listener-leak:leakedAbortListener added per call on a reused signal, never removed
+    stopped = true;
   });
   return pollUntil(() => stopped);
 }

@@ -243,7 +243,7 @@ describe('executor rules phase smoke over built artifacts', () => {
     const validFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(validFiles.length).toBe(117);
+    expect(validFiles.length).toBe(125);
 
     const recResults = await eslintRecommended.lintFiles(validFiles);
     for (const r of recResults) {
@@ -280,7 +280,8 @@ describe('executor rules phase smoke over built artifacts', () => {
         if (
           (rel.endsWith('09-require-signal-forwarding-no-controller.ts') ||
             rel.endsWith('01-must-consume-lazy-consumed-later.ts') ||
-            rel.endsWith('02-must-consume-lazy-returned.ts')) &&
+            rel.endsWith('02-must-consume-lazy-returned.ts') ||
+            rel.endsWith('06-must-consume-lazy-toolbox-native.ts')) &&
           m.ruleId === 'canc/executor-cancel-wiring'
         ) {
           return false;

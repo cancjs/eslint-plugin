@@ -34,7 +34,7 @@ interface User {
 declare function fetchUserCancelable(): CancelablePromise<User>;
 
 const load = cancAsync(function* () {
-  const user = yield* cancGenAwait(fetchUserCancelable()); // lint: no-coroutine-dialect-mismatch cancGenAwait inside cancAsync
+  const user = yield* cancGenAwait(fetchUserCancelable()); // lint: no-coroutine-dialect-mismatch:iterAwaitInCancAsync cancGenAwait inside cancAsync
   return user;
 });
 

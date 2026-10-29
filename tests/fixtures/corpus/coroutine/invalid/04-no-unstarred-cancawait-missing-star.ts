@@ -34,7 +34,7 @@ interface User {
 declare function fetchUserCancelable(): CancelablePromise<User>;
 
 const load = cancAsync(function* () {
-  const user = yield cancAwait(fetchUserCancelable()); // lint: no-unstarred-cancawait missing star, resumes with a generator object
+  const user = yield cancAwait(fetchUserCancelable()); // lint: no-unstarred-cancawait:missingStar missing star, resumes with a generator object
   return user;
 });
 

@@ -36,6 +36,6 @@ declare function legacyPushOrders(): Promise<void>;
 
 const syncOrders = cancAsync(function* () {
   yield* cancAwait(pullOrdersCancelable());
-  yield* cancAwait(legacyPushOrders()); // lint: no-cancellation-gap plain promise, work continues after cancel
+  yield* cancAwait(legacyPushOrders()); // lint: no-cancellation-gap:gapStep plain promise, work continues after cancel
 });
 

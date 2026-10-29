@@ -34,8 +34,8 @@ interface Order {
 declare function processOrder(order: Order): Promise<void>;
 
 const run = cancAsync(function* (source: AsyncIterable<Order>) {
-  yield* cancForAwait(source, async (order) => { // lint: no-async-loop-callback async callback escapes the cancel chain
-  await processOrder(order);
+  yield* cancForAwait(source, async (order) => { // lint: no-async-loop-callback:asyncLoopCallback async callback escapes the cancel chain
+    await processOrder(order);
   });
 });
 

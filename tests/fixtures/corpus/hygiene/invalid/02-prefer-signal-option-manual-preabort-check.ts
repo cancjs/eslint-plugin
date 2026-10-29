@@ -36,8 +36,8 @@ declare function fetchQuotes(): Promise<Quote[]>;
 
 function loadQuotes(signal: AbortSignal): CancelablePromise<Quote[]> {
   return new CancelablePromise((resolve, reject, { handleCancel }) => {
-  if (signal.aborted) { // lint: prefer-signal-option pre-abort handled by the signal option
-  reject(new CancelError());
+    if (signal.aborted) { // lint: prefer-signal-option:preAbortCheck pre-abort handled by the signal option
+      reject(new CancelError());
   return;
   }
   fetchQuotes().then(resolve, reject);

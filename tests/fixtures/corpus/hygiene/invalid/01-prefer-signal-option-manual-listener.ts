@@ -37,8 +37,8 @@ function loadQuotes(signal: AbortSignal): CancelablePromise<Quote[]> {
   return new CancelablePromise((resolve, reject, { handleCancel }) => {
   const controller = new AbortController();
   handleCancel(() => controller.abort());
-  signal.addEventListener('abort', () => controller.abort()); // lint: prefer-signal-option listener never removed
-  fetchQuotes(controller.signal).then(resolve, reject);
+    signal.addEventListener('abort', () => controller.abort()); // lint: prefer-signal-option:manualSignalWiring listener never removed
+    fetchQuotes(controller.signal).then(resolve, reject);
   });
 }
 
