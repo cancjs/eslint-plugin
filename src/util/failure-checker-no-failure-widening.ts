@@ -21,7 +21,7 @@ export function isFailureWidened(
     return false;
   }
   const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
-  if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
+  if (sourceFailures.listed.length === 0) {
     return false;
   }
   const targetFailures = getFailureMembers(services.getTypeAtLocation(targetNode), checker, settings, context);
