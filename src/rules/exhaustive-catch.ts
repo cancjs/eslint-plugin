@@ -5,6 +5,7 @@ import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
 import { getCancServices } from '../util/canc-types.js';
 import { type ClassMatcher, classMatcherSchema, compileMatchers } from '../util/class-matcher.js';
 import createRule from '../util/create-rule.js';
+import { isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
 import { analyzeCatchFailures, collectHandledCatchTypes } from '../util/failure-types.js';
 
 export type MessageIds = 'unhandledFailure' | 'noRethrow' | 'missingUnlistedFallback';
@@ -51,8 +52,11 @@ function collectYieldStepsInTry(
     }
 
     if (node !== parentTry && node.type === AST_NODE_TYPES.TryStatement) {
+      // without a handler the inner block throws straight to the outer catch
       if (node.handler) {
         visit(node.handler.body);
+      } else {
+        visit(node.block);
       }
       if (node.finalizer) {
         visit(node.finalizer);
@@ -122,6 +126,8 @@ function isRethrowStatement(stmt: TSESTree.Statement, bindingName: string, conte
   return false;
 }
 
+const CANC_GUARD_NAMES = ['isErrorOf', 'isCancelError', 'isAbortError', 'isTimeoutError'];
+
 function isRecognizedGuard(expr: TSESTree.Expression, bindingName: string, context: Context): boolean {
   if (expr.type === AST_NODE_TYPES.BinaryExpression) {
     if (expr.operator === 'instanceof') {
@@ -150,10 +156,9 @@ function isRecognizedGuard(expr: TSESTree.Expression, bindingName: string, conte
       (arg) => arg.type === AST_NODE_TYPES.Identifier && arg.name === bindingName,
     );
     if (hasBindingArg) {
-      if (refersTo(expr.callee, context, 'isErrorOf')) {
-        return true;
-      }
-      return true;
+      return (
+        CANC_GUARD_NAMES.some((name) => refersTo(expr.callee, context, name)) || isTypePredicateCall(expr, context)
+      );
     }
   }
 
@@ -164,9 +169,38 @@ function isRecognizedGuard(expr: TSESTree.Expression, bindingName: string, conte
   return false;
 }
 
+function containsRethrow(stmt: TSESTree.Statement, bindingName: string, context: Context): boolean {
+  return stmt.type === AST_NODE_TYPES.BlockStatement ?
+      stmt.body.some((s) => isRethrowStatement(s, bindingName, context))
+    : isRethrowStatement(stmt, bindingName, context);
+}
+
+/** `if (!guard(e)) throw e;`: everything past it is narrowed to what the guard matches. */
+function isNegatedGuardRethrow(stmt: TSESTree.IfStatement, bindingName: string, context: Context): boolean {
+  return (
+    stmt.test.type === AST_NODE_TYPES.UnaryExpression &&
+    stmt.test.operator === '!' &&
+    isRecognizedGuard(stmt.test.argument, bindingName, context) &&
+    containsRethrow(stmt.consequent, bindingName, context)
+  );
+}
+
+function hasDefaultRethrow(stmt: TSESTree.SwitchStatement, bindingName: string, context: Context): boolean {
+  const defaultCase = stmt.cases.find((c) => c.test === null);
+  return defaultCase?.consequent.some((s) => containsRethrow(s, bindingName, context)) ?? false;
+}
+
 function hasFallbackInCatch(catchBody: TSESTree.BlockStatement, bindingName: string, context: Context): boolean {
   for (const stmt of catchBody.body) {
     if (isRethrowStatement(stmt, bindingName, context)) {
+      return true;
+    }
+
+    if (stmt.type === AST_NODE_TYPES.SwitchStatement && hasDefaultRethrow(stmt, bindingName, context)) {
+      return true;
+    }
+
+    if (stmt.type === AST_NODE_TYPES.IfStatement && isNegatedGuardRethrow(stmt, bindingName, context)) {
       return true;
     }
 

@@ -40,6 +40,56 @@ const untypedTester = ruleTester({ types: false });
 describe('exhaustive-catch (typed lane)', () => {
   typedTester.run('exhaustive-catch', rule, {
     valid: [
+      // Early negated instanceof guard rethrows the rest
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (!(e instanceof ErrorA)) {
+      throw e;
+    }
+    console.log(e.kind);
+  }
+});`,
+      // Early negated isErrorOf guard rethrows the rest
+      `import { isErrorOf } from '@cancjs/promise';
+import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (!isErrorOf(e, ErrorA)) throw e;
+    console.log(e.kind);
+  }
+});`,
+      // Switch default rethrows the rest
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    switch (true) {
+      case e instanceof ErrorA:
+        console.log('A');
+        break;
+      default:
+        throw e;
+    }
+  }
+});`,
       // Valid corpus twins
       codeValid14,
       codeValid15,
@@ -311,6 +361,49 @@ export const run = cancAsync(function* () {
             suggestions: null,
           },
         ],
+      },
+      // A call that is not a type guard does not narrow the binding
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+declare function log(e: unknown): boolean;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (log(e)) {
+      console.log('logged');
+    } else {
+      throw e;
+    }
+  }
+});`,
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
+      },
+      // Inner try without a handler throws to the swallowing outer catch
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    try {
+      yield* cancAwait(getUnion());
+    } finally {
+      console.log('cleanup');
+    }
+  } catch (e) {
+    console.log('swallowed');
+  }
+});`,
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
       },
       // 8. Inner try/catch yield throws to outer catch
       {
