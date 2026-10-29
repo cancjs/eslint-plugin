@@ -28,6 +28,27 @@ describe('no-async-loop-callback', () => {
   tester.run('no-async-loop-callback', rule, {
     valid: [
       codeValid09,
+      // Parameter callback is not the enclosing function
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       async function forEachItem(source: AsyncIterable<number>, cb: (n: number) => void) {
+         await 0;
+         return cancAsync(function* () {
+           yield* cancForAwait(source, cb);
+         });
+       }`,
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       const forEachItem = async (source: AsyncIterable<number>, cb: (n: number) => void) =>
+         cancAsync(function* () {
+           yield* cancForAwait(source, cb);
+         });`,
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       class Loop {
+         async each(source: AsyncIterable<number>, cb: (n: number) => void) {
+           return cancAsync(function* () {
+             yield* cancForAwait(source, cb);
+           });
+         }
+       }`,
       // Sync arrow callback
       `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
        const run = cancAsync(function* (source: AsyncIterable<number>) {
@@ -201,6 +222,12 @@ describe('no-async-loop-callback', () => {
        declare function fetchCancelable(n: number): CancelablePromise<void>;
        const run = cancAsync(function* (source: AsyncIterable<number>) {
          yield* cancForAwait(source, (n) => fetchCancelable(n));
+       });`,
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       import CancelablePromise from '@cancjs/promise';
+       declare function fetchCancelable(n: number): CancelablePromise<void>;
+       const run = cancAsync(function* (source: AsyncIterable<number>) {
+         yield* cancForAwait(source, async (n) => fetchCancelable(n));
        });`,
     ],
     invalid: [],

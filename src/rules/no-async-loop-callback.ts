@@ -48,11 +48,12 @@ function resolveCallback(
     if (!variable || variable.defs.length === 0) {
       return null;
     }
+    // parameter defs point at the owning function, so match the def name too
     for (const def of variable.defs) {
-      if (def.node.type === AST_NODE_TYPES.FunctionDeclaration) {
+      if (def.node.type === AST_NODE_TYPES.FunctionDeclaration && def.node.id === def.name) {
         return { fn: def.node, reportNode: unwrapped, isIdentifier: true };
       }
-      if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
+      if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.id === def.name && def.node.init) {
         const init = unwrapCallback(def.node.init);
         if (
           init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
