@@ -9,9 +9,9 @@ import {
   type CompiledMatchers,
   compileMatchers,
   matchesName,
-  matchesType,
 } from '../util/class-matcher.js';
 import createRule from '../util/create-rule.js';
+import { isThrownTypeExcluded } from '../util/failure-checker-prefer-canc-throw.js';
 import { isCancelErrorThrow } from '../util/failure-types.js';
 
 export type MessageIds = 'preferCancThrow';
@@ -149,15 +149,7 @@ function isExcludedThrow(argNode: TSESTree.Expression, compiledExclude: Compiled
     return true;
   }
 
-  const services = getCancServices(context);
-  if (services?.program) {
-    const argType = services.getTypeAtLocation(argNode);
-    if (matchesType(compiledExclude, argType, services.program.getTypeChecker(), services.program)) {
-      return true;
-    }
-  }
-
-  return false;
+  return isThrownTypeExcluded(argNode, compiledExclude, context);
 }
 
 export default createRule<RuleOptions, MessageIds>({
