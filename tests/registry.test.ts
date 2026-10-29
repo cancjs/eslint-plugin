@@ -53,8 +53,10 @@ describe('rule registry and tier table', () => {
   describe('real registry', () => {
     it('TIERS keys match rules keys and every rule meta.docs.url ends with /<name>.md', () => {
       const expectedRuleKeys = [
+        'canc-throw-tail-position',
         'executor-cancel-wiring',
         'executor-param-names',
+        'exhaustive-catch',
         'handle-cancel-first',
         'must-consume-lazy',
         'no-abort-listener-leak',
@@ -63,11 +65,14 @@ describe('rule registry and tier table', () => {
         'no-cancellation-gap',
         'no-coroutine-dialect-mismatch',
         'no-executor-return',
+        'no-failure-widening',
         'no-internal-imports',
         'no-keyword-alias-import',
+        'no-throw-in-chain-callback',
         'no-unstarred-cancawait',
         'no-yield-await-in-loop',
         'prefer-canc-combinators',
+        'prefer-canc-throw',
         'prefer-cancawait',
         'prefer-cancel-aware-wrapper',
         'prefer-canceled-property',
@@ -75,6 +80,7 @@ describe('rule registry and tier table', () => {
         'prefer-signal-accessor',
         'prefer-signal-option',
         'prefer-signal-over-controller',
+        'require-error-discriminant',
         'require-signal-forwarding',
         'valid-canc-params',
         'valid-cancasync',
