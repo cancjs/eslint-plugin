@@ -36,7 +36,7 @@ const recommendedConfigs: Linter.Config[] =
   : plugin.configs?.recommended ? [plugin.configs.recommended as Linter.Config]
   : [];
 
-function buildEslint(): ESLint {
+function buildEslint(typed = false): ESLint {
   return new ESLint({
     cwd: corpusDir,
     overrideConfigFile: true,
@@ -45,10 +45,10 @@ function buildEslint(): ESLint {
         files: ['**/*.ts'],
         languageOptions: {
           parser: tseslintParser,
-          parserOptions: {
-            sourceType: 'module',
-            ecmaVersion: 'latest',
-          },
+          parserOptions:
+            typed ?
+              { projectService: true, tsconfigRootDir: corpusDir }
+            : { sourceType: 'module', ecmaVersion: 'latest' },
         },
         plugins: { canc: plugin },
       },
@@ -57,17 +57,47 @@ function buildEslint(): ESLint {
   });
 }
 
-// A handful of corpus fixtures carry `eslint-disable-next-line canc/<rule-id>` comments that
-// acknowledge a defect for a rule later phases have not shipped yet (the corpus is written once,
-// ahead of the rules it documents); eslint validates disable-comment rule names against
-// registered rules unconditionally and reports unresolved ones as a lint message; until the
-// referenced rule exists, that message is expected noise, not a false positive from a shipped
-// rule; ignore only this exact message shape.
+const enabledRuleIds = new Set(
+  recommendedConfigs.flatMap((config) =>
+    Object.entries(config.rules ?? {})
+      .filter(
+        ([, setting]) =>
+          setting !== 'off' && setting !== 0 && !(Array.isArray(setting) && (setting[0] === 'off' || setting[0] === 0)),
+      )
+      .map(([id]) => id),
+  ),
+);
+
+function namesOnlyIdleRules(ruleIds: string[]): boolean {
+  return ruleIds.length > 0 && ruleIds.every((id) => !enabledRuleIds.has(id));
+}
+
+// directives for rules this run never executes (unshipped or outside the preset) are expected noise
+// a directive naming a rule the preset does run is a real finding
 function isForwardReferencedDisableComment(message: string): boolean {
-  return (
-    /^Definition for rule '[^']+' was not found\.$/.test(message) ||
-    message.startsWith('Unused eslint-disable directive')
-  );
+  if (/^Definition for rule '[^']+' was not found\.$/.test(message)) {
+    return true;
+  }
+  const unused = /^Unused eslint-disable directive \(no problems were reported from ([^)]+)\)\.$/.exec(message);
+  return unused !== null && namesOnlyIdleRules([...unused[1].matchAll(/'([^']+)'/g)].map((m) => m[1]));
+}
+
+async function lintValidFixtures(typed: boolean): Promise<string> {
+  const targets = findValidFixtures();
+  expect(targets.length).toBeGreaterThan(0);
+
+  const results = await buildEslint(typed).lintFiles(targets);
+  return results
+    .map((r) => ({
+      ...r,
+      messages: r.messages.filter((m) => !isForwardReferencedDisableComment(m.message)),
+    }))
+    .filter((r) => r.messages.length > 0)
+    .map((r) => {
+      const lines = r.messages.map((m) => ` ${m.line}:${m.column} ${m.ruleId ?? 'parse-error'} ${m.message}`);
+      return [`${r.filePath}:`, ...lines].join('\n');
+    })
+    .join('\n');
 }
 
 describe('corpus: recommended preset zero-false-positive aggregate (161 valid files, failure: 26)', () => {
@@ -77,28 +107,12 @@ describe('corpus: recommended preset zero-false-positive aggregate (161 valid fi
   });
 
   it('produces zero diagnostics for every corpus/valid fixture under the recommended config', async () => {
-    const targets = findValidFixtures();
-    expect(targets.length).toBeGreaterThan(0);
+    const detail = await lintValidFixtures(false);
+    expect(detail, 'expected zero diagnostics on blessed corpus').toBe('');
+  });
 
-    const eslint = buildEslint();
-    const results = await eslint.lintFiles(targets);
-    const withDiagnostics = results
-      .map((r) => ({
-        ...r,
-        messages: r.messages.filter((m) => !isForwardReferencedDisableComment(m.message)),
-      }))
-      .filter((r) => r.messages.length > 0);
-
-    if (withDiagnostics.length > 0) {
-      const detail = withDiagnostics
-        .map(
-          (r) =>
-            `${r.filePath}:\n${r.messages.map((m) => ` ${m.line}:${m.column} ${m.ruleId ?? 'parse-error'} ${m.message}`).join('\n')}`,
-        )
-        .join('\n');
-      throw new Error(`Expected zero diagnostics on blessed corpus, got:\n${detail}`);
-    }
-
-    expect(withDiagnostics).toHaveLength(0);
+  it('produces zero diagnostics for every corpus/valid fixture with type information', async () => {
+    const detail = await lintValidFixtures(true);
+    expect(detail, 'expected zero typed diagnostics on blessed corpus').toBe('');
   });
 });
