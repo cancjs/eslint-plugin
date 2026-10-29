@@ -70,9 +70,9 @@ function isForwardReferencedDisableComment(message: string): boolean {
   );
 }
 
-describe('corpus: recommended preset zero-false-positive aggregate (135 valid files)', () => {
-  it('corpus/valid contains 135 fixture files (at least 25)', () => {
-    expect(findValidFixtures()).toHaveLength(135);
+describe('corpus: recommended preset zero-false-positive aggregate (151 valid files, failure: 16)', () => {
+  it('corpus/valid contains 151 fixture files (at least 25)', () => {
+    expect(findValidFixtures()).toHaveLength(151);
     expect(findValidFixtures().length).toBeGreaterThanOrEqual(25);
   });
 
