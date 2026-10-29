@@ -23,6 +23,12 @@ export interface CancBinding {
 type Context = TSESLint.RuleContext<string, readonly unknown[]>;
 
 const bindingCache = new WeakMap<object, Map<string, CancBinding>>();
+const valueBindingCache = new WeakMap<object, Map<string, CancBinding>>();
+
+export interface CancBindingOptions {
+  /** Keep bindings imported with `import type` or `import { type X }`. Default false. */
+  includeTypeOnly?: boolean;
+}
 
 /**
  * Build (once per file) a map of local identifier name to the canc binding it
@@ -32,25 +38,33 @@ const bindingCache = new WeakMap<object, Map<string, CancBinding>>();
  * Handles named, renamed, default and namespace ESM imports, plus the two
  * common CommonJS forms: `const { x } = require('...')` and
  * `const ns = require('...')`. Re-assignments are not tracked (v1).
+ *
+ * Type-only imports have no runtime binding, so they are left out unless
+ * `includeTypeOnly` is set.
  */
-export function getCancBindings(context: Context): Map<string, CancBinding> {
+export function getCancBindings(context: Context, options: CancBindingOptions = {}): Map<string, CancBinding> {
   const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
 
-  const cached = bindingCache.get(program);
-  if (cached) {
-    return cached;
+  let all = bindingCache.get(program);
+  if (!all) {
+    const sources = new Set(getCancSettings(context).sources);
+    all = new Map<string, CancBinding>();
+    for (const statement of program.body) {
+      collectFromStatement(statement, sources, all);
+    }
+    bindingCache.set(program, all);
+  }
+  if (options.includeTypeOnly) {
+    return all;
   }
 
-  const sources = new Set(getCancSettings(context).sources);
-  const bindings = new Map<string, CancBinding>();
-
-  for (const statement of program.body) {
-    collectFromStatement(statement, sources, bindings);
+  let valueOnly = valueBindingCache.get(program);
+  if (!valueOnly) {
+    valueOnly = new Map([...all].filter(([, binding]) => !binding.isTypeOnly));
+    valueBindingCache.set(program, valueOnly);
   }
-
-  bindingCache.set(program, bindings);
-  return bindings;
+  return valueOnly;
 }
 
 function collectFromStatement(

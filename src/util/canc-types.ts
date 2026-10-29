@@ -74,7 +74,7 @@ export function symbolDeclaredInCancSource(
 
   if (declarations.length === 0) {
     if (context) {
-      const bindings = getCancBindings(context);
+      const bindings = getCancBindings(context, { includeTypeOnly: true });
       const name = symbol.getName();
       const binding = bindings.get(name);
       if (
