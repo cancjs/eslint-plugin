@@ -169,12 +169,41 @@ export function isCancelableExpression(
   settings: ResolvedCancSettings,
 ): boolean {
   const services = getCancServices(context);
-  if (!services) {
+  if (!services?.program) {
     return false;
   }
 
+  const checker = services.program.getTypeChecker();
   const type = services.getTypeAtLocation(node);
-  return isCancelableType(type, services.program.getTypeChecker(), settings);
+  if (isCancelableType(type, checker, settings)) {
+    return true;
+  }
+
+  const parts = typeParts(type);
+  const bindings = getCancBindings(context);
+
+  for (const part of parts) {
+    if (isCancelableType(part, checker, settings)) {
+      return true;
+    }
+    const aliasName = part.aliasSymbol?.getName();
+    const typeStr = checker.typeToString(part);
+    const symName = part.getSymbol()?.getName();
+
+    for (const name of settings.cancelableTypeNames) {
+      if (aliasName === name || typeStr.startsWith(name) || symName === name) {
+        const binding = bindings.get(name);
+        if (binding && settings.sources.some((s) => binding.source.includes(s) || s.includes(binding.source))) {
+          return true;
+        }
+        if (aliasName === name || symName === name) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
