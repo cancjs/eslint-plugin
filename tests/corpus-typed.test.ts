@@ -59,7 +59,7 @@ describe('typed corpus lane', () => {
       throw new Error(`Expected 0 module-resolution errors, got ${modResDiags.length}:\n${details}`);
     }
 
-    expect(parsed.fileNames.length).toBe(207);
+    expect(parsed.fileNames.length).toBe(217);
     expect(modResDiags).toHaveLength(0);
   });
 
