@@ -40,10 +40,10 @@ function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/');
 }
 
-/**
 // Mirrors ts.SymbolFlags.Alias; typescript is a type-only import here, so the enum is not available at runtime.
 const SYMBOL_FLAG_ALIAS = 2097152;
 
+/**
  * A symbol is a canc entity when at least one of its declarations lives in a declaration file under
  * one of the configured canc packages. Path-based nominal check: no runtime dependency on the real
  * packages, works against the hand-derived fixture stubs and against real installs alike.
