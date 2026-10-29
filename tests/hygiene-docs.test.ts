@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { rules } from '../src/rules/index.js';
+import { PUBLIC_SUBPATHS } from '../src/util/public-subpaths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,10 +82,13 @@ describe('lazy and hygiene rule documentation', () => {
 
   it('no-internal-imports documents public subpaths and settings.canc.sources', () => {
     const content = fs.readFileSync(path.join(docsDir, 'no-internal-imports.md'), 'utf8');
-    expect(content).toContain('@cancjs/coroutine');
-    expect(content).toContain('/gen');
-    expect(content).toContain('@cancjs/node');
-    expect(content).toContain('/fs');
+    for (const [pkg, subpaths] of Object.entries(PUBLIC_SUBPATHS)) {
+      expect(content, `Package '${pkg}' missing in no-internal-imports.md`).toContain(pkg);
+      for (const sub of subpaths) {
+        const stripped = sub.startsWith('.') ? sub.slice(1) : sub;
+        expect(content, `Subpath '${sub}' for '${pkg}' missing in no-internal-imports.md`).toContain(stripped);
+      }
+    }
     expect(content).toContain('settings.canc.sources');
   });
 

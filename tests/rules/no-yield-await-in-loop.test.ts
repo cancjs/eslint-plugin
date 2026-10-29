@@ -77,6 +77,35 @@ describe('no-yield-await-in-loop', () => {
            yield* cancAwait(fetchItem(id));
          }
        }`,
+
+      // 7. while loop with queue condition (queue is not a loop index var)
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function processQueue(q: string[]): Promise<void>;
+       const run = cancAsync(function* (queue: string[]) {
+         while (queue.length > 0) {
+           yield* cancAwait(processQueue(queue));
+         }
+       });`,
+
+      // 8. Accumulator mutated in loop body alongside loop variable
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function step(id: string, acc: number): Promise<number>;
+       const run = cancAsync(function* (ids: string[]) {
+         let acc = 0;
+         for (const id of ids) {
+           acc = yield* cancAwait(step(id, acc));
+         }
+         return acc;
+       });`,
+
+      // 9. Property access obj.id does not match loop variable id
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function fetchItem(val: any): Promise<void>;
+       const run = cancAsync(function* (ids: string[], obj: { id: string }) {
+         for (const id of ids) {
+           yield* cancAwait(fetchItem(obj.id));
+         }
+       });`,
     ],
     invalid: [
       // 1. Corpus invalid 15: for-of loop referencing id
@@ -115,6 +144,42 @@ declare function load(id: string): Promise<string>;
 const run = cancGenAsync(function* (ids: string[]) {
   for (const id of ids) {
     yield* cancGenAwait(load(id));
+  }
+});`,
+        errors: [
+          {
+            messageId: 'serializedSteps' as const,
+            line: 5,
+            column: 5,
+          },
+        ],
+      },
+
+      // 4. Namespace canc.await(...) with loop var
+      {
+        code: `import * as canc from '@cancjs/coroutine';
+declare function load(id: string): Promise<string>;
+const run = canc.async(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* canc.await(load(id));
+  }
+});`,
+        errors: [
+          {
+            messageId: 'serializedSteps' as const,
+            line: 5,
+            column: 5,
+          },
+        ],
+      },
+
+      // 5. Parenthesized / casted cancAwait call with loop var
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function load(id: string): Promise<string>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* (cancAwait(load(id)) as any);
   }
 });`,
         errors: [

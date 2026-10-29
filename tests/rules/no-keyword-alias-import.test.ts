@@ -61,7 +61,7 @@ describe('no-keyword-alias-import', () => {
       {
         code: codeInvalid07,
         output: [
-          `// Source: hygiene.md > canc/no-keyword-alias-import > Incorrect (block 1, bare keyword-looking binding)
+          `// Source: hygiene.md > canc/no-keyword-alias-import > Incorrect (bare keyword-looking binding)
 import { cancAsync, await as cawait } from '@cancjs/coroutine'; // lint: no-keyword-alias-import:keywordAlias bare keyword-looking binding
 
 const load = cancAsync(function* () {
@@ -71,7 +71,7 @@ void cawait;
 void load;
 
 `,
-          `// Source: hygiene.md > canc/no-keyword-alias-import > Incorrect (block 1, bare keyword-looking binding)
+          `// Source: hygiene.md > canc/no-keyword-alias-import > Incorrect (bare keyword-looking binding)
 import { cancAsync, cancAwait } from '@cancjs/coroutine'; // lint: no-keyword-alias-import:keywordAlias bare keyword-looking binding
 
 const load = cancAsync(function* () {
@@ -91,13 +91,13 @@ void load;
           {
             messageId: 'preferAlias' as const,
             line: markers07[0].line,
-            data: { name: 'await', canonical: 'cancAwait', source: '@cancjs/coroutine' },
+            data: { name: 'await', local: 'cawait', canonical: 'cancAwait', source: '@cancjs/coroutine' },
           },
         ],
       },
       {
         code: codeInvalid08,
-        output: `// Source: hygiene.md > canc/no-keyword-alias-import > Incorrect (block 2, renamed but still the alias)
+        output: `// Source: hygiene.md > canc/no-keyword-alias-import > Incorrect (renamed but still alias)
 import { cancAsync, cancAwait } from '@cancjs/coroutine'; // lint: no-keyword-alias-import:preferAlias prefer the exported canonical names
 
 void cancAsync;
@@ -108,12 +108,12 @@ void cancAwait;
           {
             messageId: 'preferAlias' as const,
             line: markers08[0].line,
-            data: { name: 'async', canonical: 'cancAsync', source: '@cancjs/coroutine' },
+            data: { name: 'async', local: 'cancAsync', canonical: 'cancAsync', source: '@cancjs/coroutine' },
           },
           {
             messageId: 'preferAlias' as const,
             line: markers08[0].line,
-            data: { name: 'await', canonical: 'cancAwait', source: '@cancjs/coroutine' },
+            data: { name: 'await', local: 'cancAwait', canonical: 'cancAwait', source: '@cancjs/coroutine' },
           },
         ],
       },
@@ -175,7 +175,7 @@ void cancGenThrow;`,
         errors: [
           {
             messageId: 'preferAlias' as const,
-            data: { name: 'throw', canonical: 'cancGenThrow', source: '@cancjs/coroutine/gen' },
+            data: { name: 'throw', local: 'cGenThrow', canonical: 'cancGenThrow', source: '@cancjs/coroutine/gen' },
           },
         ],
       },

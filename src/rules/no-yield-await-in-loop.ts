@@ -148,25 +148,37 @@ function getLoopVariables(loopNode: TSESTree.Node): Set<string> {
       }
     }
   } else if (loopNode.type === AST_NODE_TYPES.WhileStatement || loopNode.type === AST_NODE_TYPES.DoWhileStatement) {
-    function extractTestVars(node: TSESTree.Node) {
-      if (node.type === AST_NODE_TYPES.Identifier) {
-        vars.add(node.name);
-      }
-      for (const key of Object.keys(node)) {
-        if (key === 'parent') continue;
-        const child = (node as unknown as Record<string, unknown>)[key];
-        if (child && typeof child === 'object') {
-          if (Array.isArray(child)) {
-            for (const item of child) {
-              if (item && typeof item === 'object' && 'type' in item) extractTestVars(item as TSESTree.Node);
+    if (loopNode.test && loopNode.body) {
+      const assignedInBody = getAssignedIdentifiers(loopNode.body);
+      function extractTestVars(node: TSESTree.Node) {
+        if (node.type === AST_NODE_TYPES.Identifier) {
+          const parent = node.parent;
+          if (
+            parent &&
+            ((parent.type === AST_NODE_TYPES.MemberExpression && !parent.computed && parent.property === node) ||
+              (parent.type === AST_NODE_TYPES.Property && !parent.computed && parent.key === node))
+          ) {
+            return;
+          }
+          if (assignedInBody.has(node.name)) {
+            vars.add(node.name);
+          }
+          return;
+        }
+        for (const key of Object.keys(node)) {
+          if (key === 'parent') continue;
+          const child = (node as unknown as Record<string, unknown>)[key];
+          if (child && typeof child === 'object') {
+            if (Array.isArray(child)) {
+              for (const item of child) {
+                if (item && typeof item === 'object' && 'type' in item) extractTestVars(item as TSESTree.Node);
+              }
+            } else if ('type' in child) {
+              extractTestVars(child as TSESTree.Node);
             }
-          } else if ('type' in child) {
-            extractTestVars(child as TSESTree.Node);
           }
         }
       }
-    }
-    if (loopNode.test) {
       extractTestVars(loopNode.test);
     }
   }
@@ -174,13 +186,83 @@ function getLoopVariables(loopNode: TSESTree.Node): Set<string> {
   return vars;
 }
 
-function operandReferencesLoopVar(operand: TSESTree.Node, loopVars: Set<string>, scope: Scope): boolean {
+function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {
+  const assigned = new Set<string>();
+
+  function extractPattern(pattern: TSESTree.Node) {
+    if (pattern.type === AST_NODE_TYPES.Identifier) {
+      assigned.add(pattern.name);
+    } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
+      for (const prop of pattern.properties) {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          extractPattern(prop.value);
+        } else if (prop.type === AST_NODE_TYPES.RestElement) {
+          extractPattern(prop.argument);
+        }
+      }
+    } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
+      for (const elem of pattern.elements) {
+        if (elem) {
+          extractPattern(elem);
+        }
+      }
+    } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
+      extractPattern(pattern.left);
+    } else if (pattern.type === AST_NODE_TYPES.RestElement) {
+      extractPattern(pattern.argument);
+    }
+  }
+
+  function walk(node: TSESTree.Node) {
+    if (
+      node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      return;
+    }
+
+    if (node.type === AST_NODE_TYPES.UpdateExpression && node.argument.type === AST_NODE_TYPES.Identifier) {
+      assigned.add(node.argument.name);
+    } else if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+      extractPattern(node.left);
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) walk(item as TSESTree.Node);
+          }
+        } else if ('type' in child) {
+          walk(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+
+  walk(body);
+  return assigned;
+}
+
+function operandReferencesAny(operand: TSESTree.Node, targetVars: Set<string>, scope: Scope): boolean {
   let references = false;
 
   function walk(node: TSESTree.Node) {
     if (references) return;
     if (node.type === AST_NODE_TYPES.Identifier) {
-      if (loopVars.has(node.name)) {
+      const parent = node.parent;
+      if (
+        parent &&
+        ((parent.type === AST_NODE_TYPES.MemberExpression && !parent.computed && parent.property === node) ||
+          (parent.type === AST_NODE_TYPES.Property && !parent.computed && parent.key === node) ||
+          (parent.type === AST_NODE_TYPES.MethodDefinition && !parent.computed && parent.key === node))
+      ) {
+        return;
+      }
+      if (targetVars.has(node.name)) {
         // Confirm resolution via scope
         let curr: Scope | null = scope;
         while (curr) {
@@ -234,7 +316,16 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        if (node.argument.type !== AST_NODE_TYPES.CallExpression) {
+        let arg: TSESTree.Node = node.argument;
+        while (
+          arg.type === AST_NODE_TYPES.TSAsExpression ||
+          arg.type === AST_NODE_TYPES.TSTypeAssertion ||
+          arg.type === AST_NODE_TYPES.TSNonNullExpression
+        ) {
+          arg = arg.expression;
+        }
+
+        if (arg.type !== AST_NODE_TYPES.CallExpression) {
           return;
         }
 
@@ -243,23 +334,22 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const call = node.argument;
+        const call = arg;
         const callee = call.callee;
         const targetAwait = coroutineCtx.kind === 'cancGenAsync' ? 'cancGenAwait' : 'cancAwait';
 
-        let isTargetAwait = false;
-        if (callee.type === AST_NODE_TYPES.Identifier && refersTo(callee, context, targetAwait)) {
-          isTargetAwait = true;
-        } else if (
+        // Check for concurrent combinators: cancAwait.all / canc.await.all etc.
+        if (
           callee.type === AST_NODE_TYPES.MemberExpression &&
           !callee.computed &&
+          callee.property.type === AST_NODE_TYPES.Identifier &&
+          ['all', 'allSettled', 'race'].includes(callee.property.name) &&
           refersTo(callee.object, context, targetAwait)
         ) {
-          // e.g. cancAwait.all(...) - already concurrent, do not report!
           return;
         }
 
-        if (!isTargetAwait) {
+        if (!refersTo(callee, context, targetAwait)) {
           return;
         }
 
@@ -283,9 +373,24 @@ export default createRule<RuleOptions, MessageIds>({
         // Check if the argument to cancAwait references any loop variable
         const scope = context.sourceCode.getScope(node);
         const firstArg = call.arguments[0];
-        if (!firstArg || !operandReferencesLoopVar(firstArg, loopVars, scope)) {
-          // Accumulator-dependent or independent of loop variable -> silent
+        if (!firstArg || !operandReferencesAny(firstArg, loopVars, scope)) {
+          // Independent of loop variable -> silent
           return;
+        }
+
+        // Silence if operand reads any variable reassigned in loop body (accumulator)
+        const loopBody = (loopNode as TSESTree.ForOfStatement).body;
+        if (loopBody) {
+          const reassigned = getAssignedIdentifiers(loopBody);
+          const accumulators = new Set<string>();
+          for (const v of reassigned) {
+            if (!loopVars.has(v)) {
+              accumulators.add(v);
+            }
+          }
+          if (accumulators.size > 0 && operandReferencesAny(firstArg, accumulators, scope)) {
+            return;
+          }
         }
 
         context.report({

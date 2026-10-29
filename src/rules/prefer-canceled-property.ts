@@ -1,7 +1,7 @@
 import type { TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
-import { getCancServices, isCancelableExpression, isCancelableType } from '../util/canc-types.js';
+import { hasTypeServices, isCancelableExpression, isCancelablePattern } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 import { getCancSettings } from '../util/settings.js';
 
@@ -19,14 +19,13 @@ export default createRule<RuleOptions, MessageIds>({
     hasSuggestions: true,
     schema: [],
     messages: {
-      preferCanceledProperty: "The 'isCanceled' property is deprecated on cancelables; use 'canceled' instead.",
+      preferCanceledProperty: "'isCanceled' is deprecated. Use 'canceled'.",
       suggestCanceledKey: "Use 'canceled' property instead.",
     },
   },
   defaultOptions: [],
   create(context) {
-    const services = getCancServices(context);
-    if (!services) {
+    if (!hasTypeServices(context)) {
       return {};
     }
 
@@ -109,8 +108,7 @@ export default createRule<RuleOptions, MessageIds>({
           cancelable = isCancelableTarget(pattern.parent.right);
         } else {
           // Check type of pattern directly (e.g. parameter destructuring)
-          const type = services.getTypeAtLocation(pattern);
-          cancelable = isCancelableType(type, services.program.getTypeChecker(), settings);
+          cancelable = isCancelablePattern(pattern, context);
         }
 
         if (!cancelable) {

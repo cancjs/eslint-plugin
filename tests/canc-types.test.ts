@@ -13,11 +13,12 @@ import { ruleTester } from './setup.js';
 
 type MessageIds = 'cancelable' | 'lazy' | 'plainSink' | 'noServices';
 
-// Dummy probe rule: classifies each `let`/`const` declarator initializer by exercising the
-// canc-types helpers, so RuleTester valid/invalid assertions become a behavioral spec for them.
-// A declarator with an initializer whose type is cancelable reports `cancelable`; lazy reports
-// `lazy`; a plain (non-cancelable) promise sink reports `plainSink`. When type services are absent
-// the rule reports `noServices` once on Program (proves graceful degradation).
+// Dummy probe rule: classifies declarators using canc-types helpers
+// Valid and invalid assertions become a behavioral spec for detection
+// Declarator with cancelable type reports cancelable
+// Declarator with lazy type reports lazy
+// Plain non-cancelable promise sink reports plainSink
+// When type services are absent the rule reports noServices on Program
 const probeRule: TSESLint.RuleModule<MessageIds, []> = {
   defaultOptions: [],
   meta: {
@@ -77,10 +78,19 @@ const importLazy = `import { LazyPromise } from '@cancjs/toolbox';\n`;
 describe('canc-types: typed detection', () => {
   ruleTester().run('probe', probeRule, {
     valid: [
-      // Plain native Promise is not cancelable and not a lazy; it IS a plain sink, but a bare
-      // `const p = Promise.resolve(1)` is asserted in the invalid block below. Here: a value that
-      // is neither thenable nor canc produces no report at all.
+      // Plain native Promise is not cancelable and not a lazy
+      // It is a plain sink with bare Promise.resolve asserted below
+      // A value that is neither thenable nor canc produces no report
       `${importPromise}const n = 1;`,
+      // User class named CancelablePromise without canc import -> neither cancelable nor lazy
+      `class CancelablePromise { isCanceled = false; }
+       const p = new CancelablePromise();`,
+      // User type alias named CancelablePromise -> not cancelable
+      `type CancelablePromise<T> = { value: T };
+       const p: CancelablePromise<number> = { value: 1 };`,
+      // User class named LazyPromise without canc import -> not lazy
+      `class LazyPromise { run() {} }
+       const p = new LazyPromise();`,
     ],
     invalid: [
       {
@@ -104,9 +114,9 @@ describe('canc-types: typed detection', () => {
         errors: [{ messageId: 'plainSink' }],
       },
       {
-        // Union Promise | CancelablePromise -> NOT a plain sink (union contains cancelable),
-        // and IS cancelable (a union member matches). The `cancelable` report, not `plainSink`,
-        // proves typeIsPlainPromiseSink returned false for the union.
+        // Union Promise | CancelablePromise is not a plain sink
+        // The union is cancelable because a union member matches
+        // The cancelable report proves typeIsPlainPromiseSink returned false
         code: `${importPromise}declare const u: Promise<number> | CancelablePromise<number>;\nconst p = u;`,
         errors: [{ messageId: 'cancelable' }],
       },

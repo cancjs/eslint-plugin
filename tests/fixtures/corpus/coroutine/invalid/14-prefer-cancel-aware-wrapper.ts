@@ -14,6 +14,7 @@ import {
   cancelify,
   promisify,
   promisifyAll,
+  createAbortSignal,
   LazyPromise,
   createLazyPromise,
   AbortError,

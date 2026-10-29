@@ -1,4 +1,4 @@
-import type { TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCancBindings, getCoroutineContext, refersTo } from '../util/canc-imports.js';
@@ -51,16 +51,37 @@ function isTrackedCancAwaitCall(
 }
 
 function findCancAwaitLocalName(
+  node: TSESTree.Node,
   context: Parameters<Parameters<typeof createRule<RuleOptions, MessageIds>>[0]['create']>[0],
 ): string | null {
   const bindings = getCancBindings(context);
   for (const [localName, binding] of bindings) {
     if (
       !binding.namespace &&
-      binding.source === '@cancjs/coroutine' &&
+      (binding.source === '@cancjs/coroutine' || binding.source.endsWith('/coroutine')) &&
       (binding.exported === 'cancAwait' || binding.exported === 'await')
     ) {
-      return localName;
+      let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
+      let shadowed = false;
+      while (scope) {
+        const variable = scope.variables.find((v) => v.name === localName);
+        if (variable && variable.defs.length > 0) {
+          const isImport = variable.defs.some(
+            (def) =>
+              def.node.type === AST_NODE_TYPES.ImportSpecifier ||
+              def.node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+              def.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+          );
+          if (!isImport) {
+            shadowed = true;
+          }
+          break;
+        }
+        scope = scope.upper;
+      }
+      if (!shadowed) {
+        return localName;
+      }
     }
   }
   return null;
@@ -111,7 +132,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const localCancAwait = findCancAwaitLocalName(context);
+        const localCancAwait = findCancAwaitLocalName(node, context);
 
         context.report({
           node,

@@ -44,6 +44,14 @@ describe('prefer-canceled-property', () => {
       `import { LazyPromise } from '@cancjs/toolbox';
        declare const lp: LazyPromise<number> & { isCanceled: boolean };
        void lp.isCanceled;`,
+      // User class named CancelablePromise without canc import (B1)
+      `class CancelablePromise { isCanceled = false; }
+       const p = new CancelablePromise();
+       if (p.isCanceled) {}`,
+      // User type alias named CancelablePromise without canc import (B1)
+      `type CancelablePromise<T> = Promise<T> & { isCanceled?: boolean };
+       declare const p: CancelablePromise<void>;
+       if (p.isCanceled) {}`,
     ],
     invalid: [
       // 1. Corpus invalid 11: p.isCanceled -> p.canceled

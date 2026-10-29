@@ -28,7 +28,7 @@ import {
   suppressTimeout,
 } from '@cancjs/toolbox';
 
-const lazy = new LazyPromise<void>((resolve) => {
+export const lazy = new LazyPromise<void>((resolve) => {
   const timer = setTimeout(resolve, 100);
   return () => clearTimeout(timer);
 });

@@ -1,4 +1,4 @@
-// Source: coroutine.md > canc/no-cancellation-gap (strict tier) > Correct (block 1, gap closed via cancelify)
+// Source: coroutine.md > canc/no-cancellation-gap > Correct (block 1, closed via cancelify)
 import CancelablePromise, {
   CancelError,
   isCancelError,

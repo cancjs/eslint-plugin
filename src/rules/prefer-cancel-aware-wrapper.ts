@@ -3,6 +3,7 @@ import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
+import { hasTypeServices, isThenableExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'manualCancelWiring';
@@ -23,15 +24,15 @@ function getEnclosingFunction(node: TSESTree.Node): TSESTree.Node | null {
   return null;
 }
 
-function isInsideFinally(node: TSESTree.Node, enclosingFn: TSESTree.Node): boolean {
+function getEnclosingTry(node: TSESTree.Node, enclosingFn: TSESTree.Node): TSESTree.TryStatement | null {
   let curr: TSESTree.Node | undefined = node.parent;
   while (curr && curr !== enclosingFn) {
     if (curr.parent?.type === AST_NODE_TYPES.TryStatement && curr.parent.finalizer === curr) {
-      return true;
+      return curr.parent;
     }
     curr = curr.parent;
   }
-  return false;
+  return null;
 }
 
 function isDescendantOf(child: TSESTree.Node, parent: TSESTree.Node): boolean {
@@ -67,34 +68,25 @@ function isAbortControllerOrSignalInit(
     }
   }
   if (init.type === AST_NODE_TYPES.CallExpression) {
-    const callee = init.callee;
-    if (callee.type === AST_NODE_TYPES.Identifier) {
-      if (
-        callee.name === 'createAbortSignal' ||
-        callee.name === 'createCancelSignal' ||
-        refersTo(callee, context, 'createAbortSignal') ||
-        refersTo(callee, context, 'createCancelSignal')
-      ) {
-        return true;
-      }
-    }
-    if (
-      callee.type === AST_NODE_TYPES.MemberExpression &&
-      !callee.computed &&
-      callee.property.type === AST_NODE_TYPES.Identifier &&
-      ['createAbortSignal', 'createCancelSignal'].includes(callee.property.name)
-    ) {
+    if (refersTo(init.callee, context, 'createAbortSignal') || refersTo(init.callee, context, 'createCancelSignal')) {
       return true;
     }
   }
   return false;
 }
 
-function isPassedToCall(node: TSESTree.Node, coroutineBody: TSESTree.Node): boolean {
+function findCallPassingSignal(
+  node: TSESTree.Node,
+  container: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
   let curr: TSESTree.Node | undefined = node.parent;
-  while (curr && curr !== coroutineBody) {
+  while (curr && curr !== container) {
     if (curr.type === AST_NODE_TYPES.CallExpression) {
       if (curr.callee !== node && curr.arguments.some((arg) => isDescendantOf(node, arg) || arg === node)) {
+        if (hasTypeServices(context) && !isThenableExpression(curr, context)) {
+          return false;
+        }
         return true;
       }
     }
@@ -159,7 +151,8 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         // Must be inside finally block of a TryStatement
-        if (!isInsideFinally(node, genFn)) {
+        const tryStmt = getEnclosingTry(node, genFn);
+        if (!tryStmt) {
           return;
         }
 
@@ -246,7 +239,10 @@ export default createRule<RuleOptions, MessageIds>({
           if (sVar) {
             for (const ref of sVar.references) {
               if (ref.identifier === decl.id) continue;
-              if (isDescendantOf(ref.identifier, genFn.body) && isPassedToCall(ref.identifier, genFn.body)) {
+              if (
+                isDescendantOf(ref.identifier, tryStmt.block) &&
+                findCallPassingSignal(ref.identifier, tryStmt.block, context)
+              ) {
                 signalPassedToCall = true;
                 break;
               }
@@ -263,7 +259,7 @@ export default createRule<RuleOptions, MessageIds>({
               parent.property.type === AST_NODE_TYPES.Identifier &&
               parent.property.name === 'signal'
             ) {
-              if (isDescendantOf(parent, genFn.body) && isPassedToCall(parent, genFn.body)) {
+              if (isDescendantOf(parent, tryStmt.block) && findCallPassingSignal(parent, tryStmt.block, context)) {
                 signalPassedToCall = true;
                 break;
               }

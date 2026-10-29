@@ -1,4 +1,4 @@
-import type { TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { isCoroutineFnIdent } from '../util/canc-imports.js';
@@ -17,6 +17,62 @@ function unwrapParens(node: TSESTree.Node): TSESTree.Node {
     curr = curr.expression;
   }
   return curr;
+}
+
+function isGeneratorTypeName(typeName: TSESTree.EntityName): boolean {
+  if (typeName.type === AST_NODE_TYPES.Identifier) {
+    return typeName.name === 'Generator' || typeName.name === 'AsyncGenerator';
+  }
+  if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+    return isGeneratorTypeName(typeName.right);
+  }
+  return false;
+}
+
+function resolveFunction(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): {
+  fn: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression;
+  isIdentifier: boolean;
+} | null {
+  const unwrapped = unwrapParens(node);
+  if (
+    unwrapped.type === AST_NODE_TYPES.FunctionExpression ||
+    unwrapped.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    unwrapped.type === AST_NODE_TYPES.FunctionDeclaration
+  ) {
+    return { fn: unwrapped, isIdentifier: false };
+  }
+  if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+    const scope = context.sourceCode.getScope(unwrapped);
+    let curr: TSESLint.Scope.Scope | null = scope;
+    let variable: TSESLint.Scope.Variable | undefined;
+    while (curr) {
+      variable = curr.variables.find((v: TSESLint.Scope.Variable) => v.name === unwrapped.name);
+      if (variable) break;
+      curr = curr.upper;
+    }
+    if (!variable || variable.defs.length === 0) {
+      return null;
+    }
+    for (const def of variable.defs) {
+      if (def.node.type === AST_NODE_TYPES.FunctionDeclaration) {
+        return { fn: def.node, isIdentifier: true };
+      }
+      if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
+        const init = unwrapParens(def.node.init);
+        if (
+          init.type === AST_NODE_TYPES.FunctionExpression ||
+          init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          init.type === AST_NODE_TYPES.FunctionDeclaration
+        ) {
+          return { fn: init, isIdentifier: true };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export default createRule<RuleOptions, MessageIds>({
@@ -51,41 +107,39 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const unwrapped = unwrapParens(arg0);
-        if (
-          unwrapped.type !== AST_NODE_TYPES.FunctionExpression &&
-          unwrapped.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-          unwrapped.type !== AST_NODE_TYPES.FunctionDeclaration
-        ) {
+        const resolved = resolveFunction(arg0, context);
+        if (!resolved) {
           return;
         }
 
+        const { fn, isIdentifier } = resolved;
         const driver = context.sourceCode.getText(node.callee);
         const awaitName = isCancGen ? 'cancGenAwait' : 'cancAwait';
+        const reportNode = isIdentifier ? unwrapParens(arg0) : fn;
 
-        if (unwrapped.async && !unwrapped.generator) {
+        if (fn.async && fn.generator) {
           context.report({
-            node: unwrapped,
-            messageId: 'asyncFunction',
-            data: { driver, await: awaitName },
-          });
-          return;
-        }
-
-        if (unwrapped.async && unwrapped.generator) {
-          context.report({
-            node: unwrapped,
+            node: reportNode,
             messageId: 'asyncGenerator',
             data: { driver, await: awaitName },
           });
           return;
         }
 
-        if (unwrapped.returnType) {
-          const typeNode = unwrapped.returnType.typeAnnotation;
+        if (!fn.generator) {
+          context.report({
+            node: reportNode,
+            messageId: 'asyncFunction',
+            data: { driver, await: awaitName },
+          });
+          return;
+        }
+
+        if (fn.returnType) {
+          const typeNode = fn.returnType.typeAnnotation;
           if (typeNode.type === AST_NODE_TYPES.TSAnyKeyword) {
             context.report({
-              node: unwrapped.returnType,
+              node: fn.returnType,
               messageId: 'anyReturnAnnotation',
             });
             return;
@@ -93,16 +147,19 @@ export default createRule<RuleOptions, MessageIds>({
 
           if (
             typeNode.type === AST_NODE_TYPES.TSTypeReference &&
-            typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
-            (typeNode.typeName.name === 'Generator' || typeNode.typeName.name === 'AsyncGenerator') &&
-            typeNode.typeArguments &&
-            typeNode.typeArguments.params.length >= 3 &&
-            typeNode.typeArguments.params[2].type === AST_NODE_TYPES.TSAnyKeyword
+            isGeneratorTypeName(typeNode.typeName) &&
+            typeNode.typeArguments
           ) {
-            context.report({
-              node: unwrapped.returnType,
-              messageId: 'anyReturnAnnotation',
-            });
+            const params = typeNode.typeArguments.params;
+            if (
+              (params.length >= 3 && params[2].type === AST_NODE_TYPES.TSAnyKeyword) ||
+              (params.length === 1 && params[0].type === AST_NODE_TYPES.TSAnyKeyword)
+            ) {
+              context.report({
+                node: fn.returnType,
+                messageId: 'anyReturnAnnotation',
+              });
+            }
           }
         }
       },

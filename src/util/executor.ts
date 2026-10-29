@@ -3,7 +3,7 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { isCancCtorIdent, isLazyCtorIdent } from './canc-imports.js';
 
-type Context = TSESLint.RuleContext<string, unknown[]>;
+type Context = TSESLint.RuleContext<string, readonly unknown[]>;
 
 /** Which tracked constructor a `new` expression targets. */
 export type ExecutorCtorKind = 'cancelable' | 'lazy';
@@ -137,6 +137,7 @@ interface ContextInfo {
   handleCancelParam: TSESTree.Parameter | undefined;
   handleCancelName: string | undefined;
   getSignalName: string | undefined;
+  signalName: string | undefined;
   ctxIdentifierName: string | undefined;
 }
 
@@ -147,6 +148,7 @@ function analyzeContextParam(param: TSESTree.Parameter | undefined): ContextInfo
       handleCancelParam: undefined,
       handleCancelName: undefined,
       getSignalName: undefined,
+      signalName: undefined,
       ctxIdentifierName: undefined,
     };
   }
@@ -159,6 +161,7 @@ function analyzeContextParam(param: TSESTree.Parameter | undefined): ContextInfo
   if (target.type === AST_NODE_TYPES.ObjectPattern) {
     let handleCancelName: string | undefined;
     let getSignalName: string | undefined;
+    let signalName: string | undefined;
     let handleCancelParamNode: TSESTree.Parameter | undefined;
 
     for (const prop of target.properties) {
@@ -173,6 +176,8 @@ function analyzeContextParam(param: TSESTree.Parameter | undefined): ContextInfo
           handleCancelParamNode = prop.value as TSESTree.Parameter;
         } else if (prop.key.name === 'getSignal') {
           getSignalName = boundName;
+        } else if (prop.key.name === 'signal') {
+          signalName = boundName;
         }
       }
     }
@@ -182,6 +187,7 @@ function analyzeContextParam(param: TSESTree.Parameter | undefined): ContextInfo
       handleCancelParam: handleCancelParamNode ?? param,
       handleCancelName,
       getSignalName,
+      signalName,
       ctxIdentifierName: undefined,
     };
   }
@@ -193,6 +199,7 @@ function analyzeContextParam(param: TSESTree.Parameter | undefined): ContextInfo
         handleCancelParam: param,
         handleCancelName: target.name,
         getSignalName: undefined,
+        signalName: undefined,
         ctxIdentifierName: undefined,
       };
     }
@@ -201,6 +208,7 @@ function analyzeContextParam(param: TSESTree.Parameter | undefined): ContextInfo
       handleCancelParam: undefined,
       handleCancelName: undefined,
       getSignalName: undefined,
+      signalName: undefined,
       ctxIdentifierName: target.name,
     };
   }
@@ -210,6 +218,7 @@ function analyzeContextParam(param: TSESTree.Parameter | undefined): ContextInfo
     handleCancelParam: undefined,
     handleCancelName: undefined,
     getSignalName: undefined,
+    signalName: undefined,
     ctxIdentifierName: undefined,
   };
 }
@@ -430,34 +439,56 @@ function collectAbortControllers(handleCancelCalls: HandleCancelCall[]): Set<str
 }
 
 /**
- * Determine whether any getSignal result or its assigned variable reaches a call argument
+ * Determine whether any getSignal result, destructured signal or its assigned variable reaches a call argument
  * or an options property in the executor body.
  */
-function checkSignalForwarded(executor: TSESTree.FunctionLike, getSignalCalls: TSESTree.CallExpression[]): boolean {
-  if (getSignalCalls.length === 0) {
-    return false;
-  }
-
+function checkSignalForwarded(
+  executor: TSESTree.FunctionLike,
+  getSignalCalls: TSESTree.CallExpression[],
+  contextInfo?: ContextInfo,
+): boolean {
   const getSignalCallSet = new Set<TSESTree.CallExpression>(getSignalCalls);
   const signalVars = new Set<string>();
 
-  // 1. Identify local variables bound to a getSignal() call
+  if (contextInfo?.signalName) {
+    signalVars.add(contextInfo.signalName);
+  }
+
+  const isCtxSignalMember = (node: TSESTree.Node): boolean => {
+    return (
+      Boolean(contextInfo?.ctxIdentifierName) &&
+      node.type === AST_NODE_TYPES.MemberExpression &&
+      !node.computed &&
+      node.object.type === AST_NODE_TYPES.Identifier &&
+      node.object.name === contextInfo!.ctxIdentifierName &&
+      node.property.type === AST_NODE_TYPES.Identifier &&
+      node.property.name === 'signal'
+    );
+  };
+
+  // 1. Identify local variables bound to a getSignal() call, destructured signal, or ctx.signal
   walk(executor, (inner) => {
-    if (
-      inner.type === AST_NODE_TYPES.VariableDeclarator &&
-      inner.id.type === AST_NODE_TYPES.Identifier &&
-      inner.init?.type === AST_NODE_TYPES.CallExpression &&
-      getSignalCallSet.has(inner.init)
-    ) {
-      signalVars.add(inner.id.name);
+    if (inner.type === AST_NODE_TYPES.VariableDeclarator && inner.id.type === AST_NODE_TYPES.Identifier && inner.init) {
+      if (
+        (inner.init.type === AST_NODE_TYPES.CallExpression && getSignalCallSet.has(inner.init)) ||
+        (inner.init.type === AST_NODE_TYPES.Identifier && signalVars.has(inner.init.name)) ||
+        isCtxSignalMember(inner.init)
+      ) {
+        signalVars.add(inner.id.name);
+      }
     }
     if (
       inner.type === AST_NODE_TYPES.AssignmentExpression &&
       inner.left.type === AST_NODE_TYPES.Identifier &&
-      inner.right.type === AST_NODE_TYPES.CallExpression &&
-      getSignalCallSet.has(inner.right)
+      inner.right
     ) {
-      signalVars.add(inner.left.name);
+      if (
+        (inner.right.type === AST_NODE_TYPES.CallExpression && getSignalCallSet.has(inner.right)) ||
+        (inner.right.type === AST_NODE_TYPES.Identifier && signalVars.has(inner.right.name)) ||
+        isCtxSignalMember(inner.right)
+      ) {
+        signalVars.add(inner.left.name);
+      }
     }
     return true;
   });
@@ -467,6 +498,9 @@ function checkSignalForwarded(executor: TSESTree.FunctionLike, getSignalCalls: T
       return true;
     }
     if (node.type === AST_NODE_TYPES.Identifier && signalVars.has(node.name)) {
+      return true;
+    }
+    if (isCtxSignalMember(node)) {
       return true;
     }
     return false;
@@ -803,7 +837,7 @@ export function analyzeExecutor(node: TSESTree.NewExpression, context: Context):
     });
   }
 
-  const signalForwarded = checkSignalForwarded(executor, getSignalCalls);
+  const signalForwarded = checkSignalForwarded(executor, getSignalCalls, contextInfo);
 
   return {
     ctorKind,

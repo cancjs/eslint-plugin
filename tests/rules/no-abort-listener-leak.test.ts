@@ -91,6 +91,12 @@ describe('no-abort-listener-leak', () => {
            signal.removeEventListener('abort', onAbort);
          }
        }`,
+      // 11. Destructured signal from createAbortSignal is local
+      `import { createAbortSignal } from '@cancjs/toolbox';
+       function run() {
+         const { signal } = createAbortSignal();
+         signal.addEventListener('abort', () => {});
+       }`,
     ],
     invalid: [
       // 1. Corpus invalid 05 (leakedAbortListener)
@@ -231,6 +237,65 @@ describe('no-abort-listener-leak', () => {
             messageId: 'inlineListenerNoOnce' as const,
             line: 2,
             column: 3,
+          },
+        ],
+      },
+      // 10. Removal inside if in finally is not unconditional
+      {
+        code: `function run(signal: AbortSignal, cond: boolean) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    if (cond) {
+      signal.removeEventListener('abort', onAbort);
+    }
+  }
+}`,
+        errors: [
+          {
+            messageId: 'leakedAbortListener' as const,
+            line: 4,
+            column: 5,
+          },
+        ],
+      },
+      // 11. Duplicate registration not overwritten
+      {
+        code: `function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  signal.addEventListener('abort', onAbort);
+  signal.addEventListener('abort', onAbort);
+}`,
+        errors: [
+          {
+            messageId: 'leakedAbortListener' as const,
+            line: 3,
+            column: 3,
+          },
+          {
+            messageId: 'leakedAbortListener' as const,
+            line: 4,
+            column: 3,
+          },
+        ],
+      },
+      // 12. Early return in finally precedes removal
+      {
+        code: `function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    return;
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
+        errors: [
+          {
+            messageId: 'leakedAbortListener' as const,
+            line: 4,
+            column: 5,
           },
         ],
       },

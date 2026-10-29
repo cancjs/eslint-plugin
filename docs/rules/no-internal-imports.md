@@ -10,14 +10,22 @@ Always import from the documented public entry points or sanctioned subpaths.
 
 The sanctioned public entry points and subpaths for `@cancjs` packages are:
 
-| Package              | Documented public subpaths                                             |
-| -------------------- | ---------------------------------------------------------------------- |
-| `@cancjs/promise`    | root (`@cancjs/promise`), `/native`                                    |
-| `@cancjs/coroutine`  | root (`@cancjs/coroutine`), `/gen`                                     |
-| `@cancjs/toolbox`    | root (`@cancjs/toolbox`), `/native`                                    |
-| `@cancjs/fetch`      | root (`@cancjs/fetch`)                                                 |
-| `@cancjs/decorators` | root (`@cancjs/decorators`)                                            |
-| `@cancjs/node`       | root (`@cancjs/node`), `/fs`, `/child_process`, `/stream`, `/readline` |
+| Package                       | Documented public subpaths                                                                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@cancjs/promise`             | root (`@cancjs/promise`)                                                                                                                                                                                |
+| `@cancjs/coroutine`           | root (`@cancjs/coroutine`), `/gen`                                                                                                                                                                      |
+| `@cancjs/toolbox`             | root (`@cancjs/toolbox`), `/async-iter`                                                                                                                                                                 |
+| `@cancjs/toolbox-native`      | root (`@cancjs/toolbox-native`)                                                                                                                                                                         |
+| `@cancjs/fetch`               | root (`@cancjs/fetch`)                                                                                                                                                                                  |
+| `@cancjs/axios`               | root (`@cancjs/axios`)                                                                                                                                                                                  |
+| `@cancjs/decorators`          | root (`@cancjs/decorators`), `/legacy`, `/babel-legacy`                                                                                                                                                 |
+| `@cancjs/unhandled-rejection` | root (`@cancjs/unhandled-rejection`), `/register`                                                                                                                                                       |
+| `@cancjs/server-express`      | root (`@cancjs/server-express`)                                                                                                                                                                         |
+| `@cancjs/server-fastify`      | root (`@cancjs/server-fastify`)                                                                                                                                                                         |
+| `@cancjs/server-hono`         | root (`@cancjs/server-hono`)                                                                                                                                                                            |
+| `@cancjs/server-koa`          | root (`@cancjs/server-koa`)                                                                                                                                                                             |
+| `@cancjs/server-node`         | root (`@cancjs/server-node`)                                                                                                                                                                            |
+| `@cancjs/node`                | root (`@cancjs/node`), `/fs`, `/fs/sync`, `/fs/register-graceful`, `/fs/extra`, `/child-process`, `/timers`, `/stream`, `/events`, `/dns`, `/readline`, `/crypto`, `/zlib`, `/worker-threads`, `/dgram` |
 
 Custom package namespaces can be recognized by extending ESLint shared settings via `settings.canc.sources`.
 

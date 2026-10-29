@@ -1,4 +1,4 @@
-// Source: hygiene.md > canc/prefer-signal-option > Incorrect (block 1, manual listener never removed)
+// Source: hygiene.md > canc/prefer-signal-option > Incorrect (manual listener never removed)
 import CancelablePromise, {
   CancelError,
   isCancelError,

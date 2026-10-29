@@ -3,39 +3,52 @@ import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { refersTo } from '../util/canc-imports.js';
-import { getCancServices } from '../util/canc-types.js';
+import { isExecutorContextExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
+import { analyzeExecutor } from '../util/executor.js';
 
 export type MessageIds = 'preferSignalAccessor';
 export type RuleOptions = [];
 
-function isTrackedConstructor(node: TSESTree.Node, context: TSESLint.RuleContext<string, readonly unknown[]>): boolean {
-  if (node.type === AST_NODE_TYPES.NewExpression) {
-    const callee = node.callee;
-    if (callee.type === AST_NODE_TYPES.Identifier) {
-      if (
-        callee.name === 'CancelablePromise' ||
-        callee.name === 'LazyPromise' ||
-        refersTo(callee, context, 'CancelablePromise') ||
-        refersTo(callee, context, 'LazyPromise')
-      ) {
-        return true;
-      }
+function isDescendant(child: TSESTree.Node | undefined, ancestor: TSESTree.Node): boolean {
+  let curr = child;
+  while (curr) {
+    if (curr === ancestor) {
+      return true;
     }
+    curr = curr.parent;
   }
   return false;
 }
 
-function isCancelifyCall(node: TSESTree.Node, context: TSESLint.RuleContext<string, readonly unknown[]>): boolean {
-  if (node.type === AST_NODE_TYPES.CallExpression) {
-    const callee = node.callee;
-    if (callee.type === AST_NODE_TYPES.Identifier) {
-      if (callee.name === 'cancelify' || refersTo(callee, context, 'cancelify')) {
+function hasSignalCollision(fn: TSESTree.Node, context: TSESLint.RuleContext<string, readonly unknown[]>): boolean {
+  const fnScope = context.sourceCode.getScope(fn);
+
+  function checkScope(scope: Scope): boolean {
+    if (scope !== fnScope && scope.set.has('signal')) {
+      return true;
+    }
+    for (const ref of scope.references) {
+      if (ref.identifier.name === 'signal') {
+        const defNode = ref.resolved?.defs[0]?.node;
+        if (!ref.resolved || !defNode || !isDescendant(defNode, fn)) {
+          return true;
+        }
+      }
+    }
+    for (const child of scope.childScopes) {
+      if (checkScope(child)) {
         return true;
       }
     }
+    return false;
   }
-  return false;
+
+  if (fnScope.set.has('signal')) {
+    return true;
+  }
+
+  return checkScope(fnScope);
 }
 
 function isExecutorOrCancelifyCallback(
@@ -48,14 +61,17 @@ function isExecutorOrCancelifyCallback(
   }
 
   if (parent.type === AST_NODE_TYPES.NewExpression && parent.arguments[0] === fn) {
-    if (isTrackedConstructor(parent, context)) {
+    if (analyzeExecutor(parent, context) !== null) {
       return { isExecutor: true, isCancelify: false };
     }
   }
 
   if (parent.type === AST_NODE_TYPES.CallExpression && parent.arguments[0] === fn) {
-    if (isCancelifyCall(parent, context)) {
+    if (refersTo(parent.callee, context, 'cancelify')) {
       return { isExecutor: false, isCancelify: true };
+    }
+    if (refersTo(parent.callee, context, 'createLazyPromise') || refersTo(parent.callee, context, 'lazy')) {
+      return { isExecutor: true, isCancelify: false };
     }
   }
 
@@ -78,14 +94,9 @@ export default createRule<RuleOptions, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const services = getCancServices(context);
-
     function isExecutorContextObject(node: TSESTree.Node): boolean {
-      if (services?.program) {
-        const type = services.getTypeAtLocation(node);
-        if (type.getProperty('handleCancel') !== undefined && type.getProperty('getSignal') !== undefined) {
-          return true;
-        }
+      if (isExecutorContextExpression(node, context)) {
+        return true;
       }
 
       // AST check: is it a parameter of an executor (param 2) or cancelify (param 0)?
@@ -115,13 +126,6 @@ export default createRule<RuleOptions, MessageIds>({
               if (isCancelify && paramIndex === 0) {
                 return true;
               }
-            }
-            // Helper function parameter named ctx or context
-            if (
-              def.name.type === AST_NODE_TYPES.Identifier &&
-              (def.name.name === 'ctx' || def.name.name === 'context')
-            ) {
-              return true;
             }
           }
         }
@@ -192,7 +196,7 @@ export default createRule<RuleOptions, MessageIds>({
           isRenamed && node.value.type === AST_NODE_TYPES.Identifier ? node.value.name : 'getSignal';
 
         // Check if 'signal' collides in scope (only relevant for non-renamed)
-        const hasCollision = !isRenamed && scope.set.has('signal');
+        const hasCollision = !isRenamed && hasSignalCollision(fn, context);
 
         function generateFix(fixer: TSESLint.RuleFixer) {
           const fixes: TSESLint.RuleFix[] = [];

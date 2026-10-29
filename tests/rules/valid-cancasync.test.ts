@@ -112,6 +112,65 @@ describe('valid-cancasync', () => {
           },
         ],
       },
+      // Plain sync arrow function
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               const load = cancAsync(() => 42);`,
+        errors: [
+          {
+            messageId: 'asyncFunction' as const,
+            line: 2,
+            data: { driver: 'cancAsync', await: 'cancAwait' },
+          },
+        ],
+      },
+      // Identifier-passed generator with any return
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               function* g(): any {}
+               cancAsync(g);`,
+        errors: [
+          {
+            messageId: 'anyReturnAnnotation' as const,
+            line: 2,
+          },
+        ],
+      },
+      // Identifier-passed plain async function
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               async function fn() {}
+               cancAsync(fn);`,
+        errors: [
+          {
+            messageId: 'asyncFunction' as const,
+            line: 3,
+            data: { driver: 'cancAsync', await: 'cancAwait' },
+          },
+        ],
+      },
+      // Qualified Generator with any in TNext slot
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               const load = cancAsync(function* (): ns.Generator<unknown, number, any> {});`,
+        errors: [
+          {
+            messageId: 'anyReturnAnnotation' as const,
+            line: 2,
+          },
+        ],
+      },
+      // 1-arg Generator<any>
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               const load = cancAsync(function* (): Generator<any> {});`,
+        errors: [
+          {
+            messageId: 'anyReturnAnnotation' as const,
+            line: 2,
+          },
+        ],
+      },
     ],
   });
 });

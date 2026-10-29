@@ -175,6 +175,34 @@ describe('no-async-loop-callback', () => {
           },
         ],
       },
+      // Identifier callback pointing to async function
+      {
+        code: `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+               declare function processOrder(order: any): Promise<void>;
+               const callback = async (order: any) => { await processOrder(order); };
+               const run = cancAsync(function* (source: any) {
+                 yield* cancForAwait(source, callback);
+               });`,
+        errors: [
+          {
+            messageId: 'asyncLoopCallback' as const,
+            line: 5,
+          },
+        ],
+      },
     ],
+  });
+
+  const typedTester = ruleTester({ types: true });
+  typedTester.run('no-async-loop-callback (typed)', rule, {
+    valid: [
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       import CancelablePromise from '@cancjs/promise';
+       declare function fetchCancelable(n: number): CancelablePromise<void>;
+       const run = cancAsync(function* (source: AsyncIterable<number>) {
+         yield* cancForAwait(source, (n) => fetchCancelable(n));
+       });`,
+    ],
+    invalid: [],
   });
 });

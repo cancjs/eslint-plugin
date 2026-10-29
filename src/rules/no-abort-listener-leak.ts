@@ -2,6 +2,7 @@ import { DefinitionType } from '@typescript-eslint/scope-manager';
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
+import { refersTo } from '../util/canc-imports.js';
 import createRule from '../util/create-rule.js';
 import { analyzeExecutor } from '../util/executor.js';
 
@@ -28,6 +29,7 @@ interface CodePath {
 
 interface Registration {
   id: string;
+  matchKey: string;
   signalKey: string;
   fnName: string;
   node: TSESTree.CallExpression;
@@ -35,7 +37,8 @@ interface Registration {
 
 interface SegmentOp {
   type: 'add' | 'remove';
-  id: string;
+  id?: string;
+  matchKey?: string;
   reg?: Registration;
 }
 
@@ -81,6 +84,22 @@ function isInsideTrackedExecutor(node: TSESTree.Node, context: TSESLint.RuleCont
       }
     }
     curr = curr.parent;
+  }
+  return false;
+}
+
+function isAbortSignalCreator(node: TSESTree.Node, context: TSESLint.RuleContext<MessageIds, RuleOptions>): boolean {
+  if (node.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  if (refersTo(node.callee, context, 'createAbortSignal') || refersTo(node.callee, context, 'createCancelSignal')) {
+    return true;
+  }
+  if (
+    node.callee.type === AST_NODE_TYPES.Identifier &&
+    (node.callee.name === 'createAbortSignal' || node.callee.name === 'createCancelSignal')
+  ) {
+    return true;
   }
   return false;
 }
@@ -136,17 +155,32 @@ function isLocallyCreatedSignal(
         ) {
           return true;
         }
+        if (isAbortSignalCreator(init, context)) {
+          return true;
+        }
         if (init.type === AST_NODE_TYPES.Identifier) {
           const cVar = findVariable(init.name, scope);
           if (cVar) {
             for (const cDef of cVar.defs) {
-              if (
-                cDef.node.type === AST_NODE_TYPES.VariableDeclarator &&
-                cDef.node.init?.type === AST_NODE_TYPES.NewExpression &&
-                cDef.node.init.callee.type === AST_NODE_TYPES.Identifier &&
-                cDef.node.init.callee.name === 'AbortController'
-              ) {
-                return true;
+              if (cDef.node.type === AST_NODE_TYPES.VariableDeclarator && cDef.node.init) {
+                let cInit = cDef.node.init;
+                while (
+                  cInit.type === AST_NODE_TYPES.TSAsExpression ||
+                  cInit.type === AST_NODE_TYPES.TSTypeAssertion ||
+                  cInit.type === AST_NODE_TYPES.TSNonNullExpression
+                ) {
+                  cInit = cInit.expression;
+                }
+                if (
+                  cInit.type === AST_NODE_TYPES.NewExpression &&
+                  cInit.callee.type === AST_NODE_TYPES.Identifier &&
+                  cInit.callee.name === 'AbortController'
+                ) {
+                  return true;
+                }
+                if (isAbortSignalCreator(cInit, context)) {
+                  return true;
+                }
               }
             }
           }
@@ -169,11 +203,7 @@ function isLocallyCreatedSignal(
         ) {
           return true;
         }
-        if (
-          init.type === AST_NODE_TYPES.CallExpression &&
-          init.callee.type === AST_NODE_TYPES.Identifier &&
-          init.callee.name === 'createAbortSignal'
-        ) {
+        if (isAbortSignalCreator(init, context)) {
           return true;
         }
         if (
@@ -185,13 +215,25 @@ function isLocallyCreatedSignal(
           const cVar = findVariable(init.object.name, scope);
           if (cVar) {
             for (const cDef of cVar.defs) {
-              if (
-                cDef.node.type === AST_NODE_TYPES.VariableDeclarator &&
-                cDef.node.init?.type === AST_NODE_TYPES.NewExpression &&
-                cDef.node.init.callee.type === AST_NODE_TYPES.Identifier &&
-                cDef.node.init.callee.name === 'AbortController'
-              ) {
-                return true;
+              if (cDef.node.type === AST_NODE_TYPES.VariableDeclarator && cDef.node.init) {
+                let cInit = cDef.node.init;
+                while (
+                  cInit.type === AST_NODE_TYPES.TSAsExpression ||
+                  cInit.type === AST_NODE_TYPES.TSTypeAssertion ||
+                  cInit.type === AST_NODE_TYPES.TSNonNullExpression
+                ) {
+                  cInit = cInit.expression;
+                }
+                if (
+                  cInit.type === AST_NODE_TYPES.NewExpression &&
+                  cInit.callee.type === AST_NODE_TYPES.Identifier &&
+                  cInit.callee.name === 'AbortController'
+                ) {
+                  return true;
+                }
+                if (isAbortSignalCreator(cInit, context)) {
+                  return true;
+                }
               }
             }
           }
@@ -234,50 +276,51 @@ function isProtectedByFinally(
   while (curr) {
     if (curr.type === AST_NODE_TYPES.TryStatement && curr.finalizer) {
       if (isDescendant(regNode, curr.block)) {
-        let hasRemove = false;
-        const scan = (node: TSESTree.Node): void => {
-          if (hasRemove) return;
+        for (const stmt of curr.finalizer.body) {
           if (
-            node.type === AST_NODE_TYPES.CallExpression &&
-            node.callee.type === AST_NODE_TYPES.MemberExpression &&
-            node.callee.property.type === AST_NODE_TYPES.Identifier &&
-            node.callee.property.name === 'removeEventListener' &&
-            node.arguments.length >= 2
+            stmt.type === AST_NODE_TYPES.ReturnStatement ||
+            stmt.type === AST_NODE_TYPES.ThrowStatement ||
+            stmt.type === AST_NODE_TYPES.BreakStatement ||
+            stmt.type === AST_NODE_TYPES.ContinueStatement
           ) {
-            const arg0 = node.arguments[0];
-            const isAbort =
-              (arg0.type === AST_NODE_TYPES.Literal && arg0.value === 'abort') ||
-              (arg0.type === AST_NODE_TYPES.TemplateLiteral &&
-                arg0.quasis.length === 1 &&
-                arg0.quasis[0].value.raw === 'abort');
-            if (isAbort) {
-              const sig = context.sourceCode.getText(node.callee.object);
-              const fnArg = node.arguments[1];
-              if (sig === signalKey && fnArg.type === AST_NODE_TYPES.Identifier && fnArg.name === fnName) {
-                hasRemove = true;
-                return;
-              }
-            }
+            break;
           }
-          for (const key of Object.keys(node)) {
-            if (key === 'parent') continue;
-            const child = (node as unknown as Record<string, unknown>)[key];
-            if (child && typeof child === 'object') {
-              if (Array.isArray(child)) {
-                for (const item of child) {
-                  if (item && typeof item === 'object' && 'type' in item) {
-                    scan(item as TSESTree.Node);
-                  }
+          if (
+            stmt.type === AST_NODE_TYPES.IfStatement ||
+            stmt.type === AST_NODE_TYPES.SwitchStatement ||
+            stmt.type === AST_NODE_TYPES.TryStatement ||
+            stmt.type === AST_NODE_TYPES.WhileStatement ||
+            stmt.type === AST_NODE_TYPES.DoWhileStatement ||
+            stmt.type === AST_NODE_TYPES.ForStatement ||
+            stmt.type === AST_NODE_TYPES.ForOfStatement ||
+            stmt.type === AST_NODE_TYPES.ForInStatement
+          ) {
+            continue;
+          }
+          if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
+            const expr = stmt.expression;
+            if (
+              expr.type === AST_NODE_TYPES.CallExpression &&
+              expr.callee.type === AST_NODE_TYPES.MemberExpression &&
+              expr.callee.property.type === AST_NODE_TYPES.Identifier &&
+              expr.callee.property.name === 'removeEventListener' &&
+              expr.arguments.length >= 2
+            ) {
+              const arg0 = expr.arguments[0];
+              const isAbort =
+                (arg0.type === AST_NODE_TYPES.Literal && arg0.value === 'abort') ||
+                (arg0.type === AST_NODE_TYPES.TemplateLiteral &&
+                  arg0.quasis.length === 1 &&
+                  arg0.quasis[0].value.raw === 'abort');
+              if (isAbort) {
+                const sig = context.sourceCode.getText(expr.callee.object);
+                const fnArg = expr.arguments[1];
+                if (sig === signalKey && fnArg.type === AST_NODE_TYPES.Identifier && fnArg.name === fnName) {
+                  return true;
                 }
-              } else if ('type' in child) {
-                scan(child as TSESTree.Node);
               }
             }
           }
-        };
-        scan(curr.finalizer);
-        if (hasRemove) {
-          return true;
         }
       }
     }
@@ -295,13 +338,15 @@ export default createRule<RuleOptions, MessageIds>({
     },
     schema: [],
     messages: {
-      leakedAbortListener: "Abort listener '{{name}}' is registered on '{{signal}}' but not removed on all code paths.",
+      leakedAbortListener:
+        "This 'abort' listener is not removed on every path out of the function, so listeners pile up on a long-lived signal. Remove it in a 'finally' block or register it with '{ once: true }'.",
       inlineListenerNoOnce:
-        "Inline listener function cannot be removed later; pass a named function reference or use '{ once: true }'.",
+        "An inline listener cannot be removed later. Register it with '{ once: true }' or keep a reference and call 'removeEventListener'.",
     },
   },
   defaultOptions: [],
   create(context) {
+    let nextRegId = 1;
     const fnStack: FunctionContext[] = [];
 
     function currentFn(): FunctionContext | undefined {
@@ -381,10 +426,15 @@ export default createRule<RuleOptions, MessageIds>({
           const outSet = new Set<string>(inSet);
           const ops = fn.segmentOps.get(seg.id) ?? [];
           for (const op of ops) {
-            if (op.type === 'add') {
+            if (op.type === 'add' && op.id) {
               outSet.add(op.id);
-            } else if (op.type === 'remove') {
-              outSet.delete(op.id);
+            } else if (op.type === 'remove' && op.matchKey) {
+              for (const regId of Array.from(outSet)) {
+                const reg = fn.registrations.get(regId);
+                if (reg && reg.matchKey === op.matchKey) {
+                  outSet.delete(regId);
+                }
+              }
             }
           }
 
@@ -447,10 +497,6 @@ export default createRule<RuleOptions, MessageIds>({
             context.report({
               node: reg.node,
               messageId: 'leakedAbortListener',
-              data: {
-                name: reg.fnName,
-                signal: reg.signalKey,
-              },
             });
           }
         }
@@ -516,7 +562,8 @@ export default createRule<RuleOptions, MessageIds>({
           if (fnArg.type === AST_NODE_TYPES.Identifier) {
             const signalKey = context.sourceCode.getText(node.callee.object);
             const fnName = fnArg.name;
-            const id = `${signalKey}:${fnName}`;
+            const matchKey = `${signalKey}:${fnName}`;
+            const id = `${matchKey}:${nextRegId++}`;
 
             const scope = context.sourceCode.getScope(fnArg);
             const v = findVariable(fnName, scope);
@@ -526,6 +573,7 @@ export default createRule<RuleOptions, MessageIds>({
 
             const reg: Registration = {
               id,
+              matchKey,
               signalKey,
               fnName,
               node,
@@ -534,7 +582,7 @@ export default createRule<RuleOptions, MessageIds>({
 
             if (fn.currentSegment) {
               const ops = fn.segmentOps.get(fn.currentSegment.id) ?? [];
-              ops.push({ type: 'add', id, reg });
+              ops.push({ type: 'add', id, matchKey, reg });
               fn.segmentOps.set(fn.currentSegment.id, ops);
             }
           }
@@ -543,11 +591,11 @@ export default createRule<RuleOptions, MessageIds>({
           if (fnArg.type === AST_NODE_TYPES.Identifier) {
             const signalKey = context.sourceCode.getText(node.callee.object);
             const fnName = fnArg.name;
-            const id = `${signalKey}:${fnName}`;
+            const matchKey = `${signalKey}:${fnName}`;
 
             if (fn.currentSegment) {
               const ops = fn.segmentOps.get(fn.currentSegment.id) ?? [];
-              ops.push({ type: 'remove', id });
+              ops.push({ type: 'remove', matchKey });
               fn.segmentOps.set(fn.currentSegment.id, ops);
             }
           }

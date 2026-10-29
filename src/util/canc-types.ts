@@ -48,14 +48,18 @@ function symbolDeclaredInCancSource(
   symbol: ts.Symbol | undefined,
   settings: ResolvedCancSettings,
   checker?: ts.TypeChecker,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
 ): boolean {
   if (!symbol) {
     return false;
   }
   let target = symbol;
-  if (checker && target.flags & 2097152 /* ts.SymbolFlags.Alias */) {
+  if (checker) {
     try {
-      target = checker.getAliasedSymbol(target);
+      const aliased = checker.getAliasedSymbol(target);
+      if (aliased) {
+        target = aliased;
+      }
     } catch {
       // ignore
     }
@@ -65,7 +69,21 @@ function symbolDeclaredInCancSource(
     ...(target.getDeclarations() ?? []),
     ...(target !== symbol ? (symbol.getDeclarations() ?? []) : []),
   ];
+
   if (declarations.length === 0) {
+    if (context) {
+      const bindings = getCancBindings(context);
+      const name = symbol.getName();
+      const binding = bindings.get(name);
+      if (
+        binding &&
+        settings.sources.some(
+          (s) => binding.source === s || binding.source.startsWith(s + '/') || s.startsWith(binding.source),
+        )
+      ) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -109,6 +127,7 @@ function matchesNominalName(
   settings: ResolvedCancSettings,
   names: string[],
   seen: Set<ts.Type>,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
 ): boolean {
   if (seen.has(type)) {
     return false;
@@ -116,23 +135,39 @@ function matchesNominalName(
   seen.add(type);
 
   for (const part of typeParts(type)) {
-    if (part !== type && matchesNominalName(part, checker, settings, names, seen)) {
+    if (part !== type && matchesNominalName(part, checker, settings, names, seen, context)) {
       return true;
     }
 
     const target = 'target' in part ? (part as { target?: { symbol?: ts.Symbol } }).target : undefined;
     const targetSymbol = target?.symbol;
-    const symbol = part.getSymbol() ?? part.aliasSymbol ?? targetSymbol;
-    const nameMatch = typeNameMatches(symbol, names) || typeNameMatches(targetSymbol, names);
-    const sourceMatch =
-      symbolDeclaredInCancSource(symbol, settings, checker) ||
-      symbolDeclaredInCancSource(targetSymbol, settings, checker);
-    if (nameMatch && sourceMatch) {
-      return true;
+    const partSymbol = part.getSymbol();
+    const aliasSymbol = part.aliasSymbol;
+
+    const candidateSymbols = [partSymbol, aliasSymbol, targetSymbol];
+    for (const sym of candidateSymbols) {
+      if (!sym) continue;
+      if (typeNameMatches(sym, names) && symbolDeclaredInCancSource(sym, settings, checker, context)) {
+        return true;
+      }
+      if (sym.flags & 2097152 /* ts.SymbolFlags.Alias */) {
+        try {
+          const aliased = checker.getAliasedSymbol(sym);
+          if (
+            aliased &&
+            typeNameMatches(aliased, names) &&
+            symbolDeclaredInCancSource(aliased, settings, checker, context)
+          ) {
+            return true;
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
 
     for (const base of baseTypesOf(part, checker)) {
-      if (matchesNominalName(base, checker, settings, names, seen)) {
+      if (matchesNominalName(base, checker, settings, names, seen, context)) {
         return true;
       }
     }
@@ -146,8 +181,13 @@ function matchesNominalName(
  * a configured canc package? Walks unions and the base-type chain so subclasses match. Extra nominal
  * names are contributed by `settings.cancelableTypeNames`.
  */
-export function isCancelableType(type: ts.Type, checker: ts.TypeChecker, settings: ResolvedCancSettings): boolean {
-  return matchesNominalName(type, checker, settings, settings.cancelableTypeNames, new Set());
+export function isCancelableType(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  settings: ResolvedCancSettings,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  return matchesNominalName(type, checker, settings, settings.cancelableTypeNames, new Set(), context);
 }
 
 /**
@@ -155,8 +195,13 @@ export function isCancelableType(type: ts.Type, checker: ts.TypeChecker, setting
  * `isCancelableType`: a lazy promise is cancelable-ish but has different execution semantics, so
  * rules treat it as its own category.
  */
-export function isLazyType(type: ts.Type, checker: ts.TypeChecker, settings: ResolvedCancSettings): boolean {
-  return matchesNominalName(type, checker, settings, settings.lazyTypeNames, new Set());
+export function isLazyType(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  settings: ResolvedCancSettings,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  return matchesNominalName(type, checker, settings, settings.lazyTypeNames, new Set(), context);
 }
 
 /**
@@ -175,35 +220,7 @@ export function isCancelableExpression(
 
   const checker = services.program.getTypeChecker();
   const type = services.getTypeAtLocation(node);
-  if (isCancelableType(type, checker, settings)) {
-    return true;
-  }
-
-  const parts = typeParts(type);
-  const bindings = getCancBindings(context);
-
-  for (const part of parts) {
-    if (isCancelableType(part, checker, settings)) {
-      return true;
-    }
-    const aliasName = part.aliasSymbol?.getName();
-    const typeStr = checker.typeToString(part);
-    const symName = part.getSymbol()?.getName();
-
-    for (const name of settings.cancelableTypeNames) {
-      if (aliasName === name || typeStr.startsWith(name) || symName === name) {
-        const binding = bindings.get(name);
-        if (binding && settings.sources.some((s) => binding.source.includes(s) || s.includes(binding.source))) {
-          return true;
-        }
-        if (aliasName === name || symName === name) {
-          return true;
-        }
-      }
-    }
-  }
-
-  return false;
+  return isCancelableType(type, checker, settings, context);
 }
 
 /**
@@ -220,7 +237,7 @@ export function isLazyExpression(
   }
 
   const type = services.getTypeAtLocation(node);
-  return isLazyType(type, services.program.getTypeChecker(), settings);
+  return isLazyType(type, services.program.getTypeChecker(), settings, context);
 }
 
 /**
@@ -358,36 +375,8 @@ export function isCancelableOrLazyExpression(
   const checker = services.program.getTypeChecker();
   const settings = getCancSettings(context);
   const type = services.getTypeAtLocation(node);
-  if (isCancelableType(type, checker, settings) || isLazyType(type, checker, settings)) {
+  if (isCancelableType(type, checker, settings, context) || isLazyType(type, checker, settings, context)) {
     return true;
-  }
-
-  const aliasName = type.aliasSymbol?.getName();
-  const typeStr = checker.typeToString(type);
-  const bindings = getCancBindings(context);
-
-  for (const name of settings.cancelableTypeNames) {
-    if (aliasName === name || typeStr.startsWith(name)) {
-      const binding = bindings.get(name);
-      if (binding && settings.sources.some((s) => binding.source.includes(s) || s.includes(binding.source))) {
-        return true;
-      }
-      if (aliasName === name) {
-        return true;
-      }
-    }
-  }
-
-  for (const name of settings.lazyTypeNames) {
-    if (aliasName === name || typeStr.startsWith(name)) {
-      const binding = bindings.get(name);
-      if (binding && settings.sources.some((s) => binding.source.includes(s) || s.includes(binding.source))) {
-        return true;
-      }
-      if (aliasName === name) {
-        return true;
-      }
-    }
   }
 
   if (
@@ -494,6 +483,103 @@ export function inlineCallbackReturnsPlainPromise(
 
   for (const ret of returns) {
     if (ret.argument && isPlainPromiseSinkExpression(ret.argument, context)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Report whether typescript type services are available on the rule context.
+ */
+export function hasTypeServices(context: TSESLint.RuleContext<string, readonly unknown[]>): boolean {
+  return getCancServices(context) !== null;
+}
+
+/**
+ * Nominal check for pattern destructuring against cancelable types.
+ */
+export function isCancelablePattern(
+  pattern: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(pattern);
+  return isCancelableType(type, checker, settings, context);
+}
+
+/**
+ * Nominal check for executor context objects (e.g. IExecutorContext or IExecutorCtx)
+ * from configured canc sources.
+ */
+export function isExecutorContextExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(node);
+  if (matchesNominalName(type, checker, settings, ['IExecutorContext', 'IExecutorCtx'], new Set(), context)) {
+    return true;
+  }
+  const handleCancelProp = type.getProperty('handleCancel');
+  if (handleCancelProp && symbolDeclaredInCancSource(handleCancelProp, settings, checker, context)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True when the static type of `node` is thenable (Promise-like).
+ */
+export function isThenableExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const type = services.getTypeAtLocation(node);
+  return isThenableType(type, checker);
+}
+
+/**
+ * True when `fnNode` is a function or callback whose return type is cancelable.
+ */
+export function isCancelableReturnFunction(
+  fnNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+
+  if (fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression && fnNode.body.type !== AST_NODE_TYPES.BlockStatement) {
+    if (isCancelableExpression(fnNode.body, context, settings)) {
+      return true;
+    }
+  }
+
+  const type = services.getTypeAtLocation(fnNode);
+  const signatures = type.getCallSignatures();
+  for (const sig of signatures) {
+    const returnType = sig.getReturnType();
+    if (isCancelableType(returnType, checker, settings, context)) {
       return true;
     }
   }

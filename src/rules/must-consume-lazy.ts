@@ -78,8 +78,8 @@ function isLazyWithResolvers(node: TSESTree.Node, context: TSESLint.RuleContext<
 
 function isUnusedVariable(id: TSESTree.Identifier, context: TSESLint.RuleContext<MessageIds, RuleOptions>): boolean {
   let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(id);
-  // Unused variable report is for local variables only
-  if (scope.type === ScopeType.module || scope.type === ScopeType.global) {
+  // Unused variable report is for local/module variables (excluding global/ambient)
+  if (scope.type === ScopeType.global) {
     return false;
   }
   let variable: TSESLint.Scope.Variable | undefined;
@@ -145,7 +145,7 @@ export default createRule<RuleOptions, MessageIds>({
           expr = unwrapParens(expr.argument);
         }
 
-        if (isLazyCreator(expr, context)) {
+        if (isLazyCreator(expr, context) || isLazyWithResolvers(expr, context)) {
           context.report({
             node: expr,
             messageId: 'unusedLazy',
@@ -171,8 +171,10 @@ export default createRule<RuleOptions, MessageIds>({
               for (const prop of declarator.id.properties) {
                 if (
                   prop.type === AST_NODE_TYPES.Property &&
-                  ((prop.key.type === AST_NODE_TYPES.Identifier && prop.key.name === 'lazy') ||
-                    (prop.key.type === AST_NODE_TYPES.Literal && prop.key.value === 'lazy')) &&
+                  ((prop.key.type === AST_NODE_TYPES.Identifier &&
+                    (prop.key.name === 'lazy' || prop.key.name === 'promise')) ||
+                    (prop.key.type === AST_NODE_TYPES.Literal &&
+                      (prop.key.value === 'lazy' || prop.key.value === 'promise'))) &&
                   prop.value.type === AST_NODE_TYPES.Identifier
                 ) {
                   if (isUnusedVariable(prop.value, context)) {
@@ -183,6 +185,14 @@ export default createRule<RuleOptions, MessageIds>({
                     });
                   }
                 }
+              }
+            } else if (declarator.id.type === AST_NODE_TYPES.Identifier) {
+              if (isUnusedVariable(declarator.id, context)) {
+                context.report({
+                  node: declarator.id,
+                  messageId: 'unusedLazyVar',
+                  data: { name: declarator.id.name },
+                });
               }
             }
             continue;

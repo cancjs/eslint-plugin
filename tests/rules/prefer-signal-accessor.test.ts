@@ -43,6 +43,13 @@ describe('prefer-signal-accessor', () => {
          },
        };
        const s = obj.getSignal();`,
+      // Helper function with ctx parameter but not an executor (B2 zero-FP)
+      `function helper(ctx: any) {
+         return ctx.getSignal();
+       }`,
+      `function handle(ctx: { getSignal(): AbortSignal }) {
+         return ctx.getSignal();
+       }`,
     ],
     invalid: [
       // 1. Corpus invalid 10: ctx.getSignal() -> ctx.signal
@@ -142,23 +149,6 @@ cancelify(({ signal }, id: string) => {
   const s = signal;
   void s;
 });`,
-        errors: [
-          {
-            messageId: 'preferSignalAccessor' as const,
-            line: 2,
-            column: 14,
-          },
-        ],
-      },
-
-      // 6. ctx passed through a helper function
-      {
-        code: `function helper(ctx: any) {
-  return ctx.getSignal();
-}`,
-        output: `function helper(ctx: any) {
-  return ctx.signal;
-}`,
         errors: [
           {
             messageId: 'preferSignalAccessor' as const,

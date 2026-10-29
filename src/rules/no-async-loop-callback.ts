@@ -1,7 +1,8 @@
-import type { TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { refersTo } from '../util/canc-imports.js';
+import { hasTypeServices, isCancelableReturnFunction } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'asyncLoopCallback' | 'convertToGenerator' | 'removeAsync';
@@ -17,6 +18,53 @@ function unwrapCallback(node: TSESTree.Node): TSESTree.Node {
     curr = curr.expression;
   }
   return curr;
+}
+
+function resolveCallback(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): {
+  fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | TSESTree.FunctionDeclaration;
+  reportNode: TSESTree.Node;
+  isIdentifier: boolean;
+} | null {
+  const unwrapped = unwrapCallback(node);
+  if (
+    unwrapped.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    unwrapped.type === AST_NODE_TYPES.FunctionExpression ||
+    unwrapped.type === AST_NODE_TYPES.FunctionDeclaration
+  ) {
+    return { fn: unwrapped, reportNode: unwrapped, isIdentifier: false };
+  }
+  if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+    const scope = context.sourceCode.getScope(unwrapped);
+    let curr: TSESLint.Scope.Scope | null = scope;
+    let variable: TSESLint.Scope.Variable | undefined;
+    while (curr) {
+      variable = curr.variables.find((v: TSESLint.Scope.Variable) => v.name === unwrapped.name);
+      if (variable) break;
+      curr = curr.upper;
+    }
+    if (!variable || variable.defs.length === 0) {
+      return null;
+    }
+    for (const def of variable.defs) {
+      if (def.node.type === AST_NODE_TYPES.FunctionDeclaration) {
+        return { fn: def.node, reportNode: unwrapped, isIdentifier: true };
+      }
+      if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
+        const init = unwrapCallback(def.node.init);
+        if (
+          init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          init.type === AST_NODE_TYPES.FunctionExpression ||
+          init.type === AST_NODE_TYPES.FunctionDeclaration
+        ) {
+          return { fn: init, reportNode: unwrapped, isIdentifier: true };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function hasAwait(node: TSESTree.Node): boolean {
@@ -97,39 +145,43 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const unwrapped = unwrapCallback(cbArg);
-        if (
-          unwrapped.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-          unwrapped.type !== AST_NODE_TYPES.FunctionExpression
-        ) {
+        const resolved = resolveCallback(cbArg, context);
+        if (!resolved) {
           return;
         }
 
-        if (!unwrapped.async) {
+        const { fn, reportNode, isIdentifier } = resolved;
+
+        // Step 4 TYPE carve-out: callbacks returning CancelablePromise are valid
+        if (hasTypeServices(context) && isCancelableReturnFunction(fn, context)) {
           return;
         }
 
-        const containsAwait = hasAwait(unwrapped.body);
+        if (!fn.async) {
+          return;
+        }
+
+        const containsAwait = hasAwait(fn.body);
         const sourceCode = context.sourceCode;
 
-        if (containsAwait) {
+        if (containsAwait || isIdentifier) {
           context.report({
-            node: unwrapped,
+            node: reportNode,
             messageId: 'asyncLoopCallback',
           });
           return;
         }
 
         // Body contains no await: offer suggestion to remove async / convert to generator
-        if (unwrapped.type === AST_NODE_TYPES.FunctionExpression) {
+        if (fn.type === AST_NODE_TYPES.FunctionExpression) {
           context.report({
-            node: unwrapped,
+            node: fn,
             messageId: 'asyncLoopCallback',
             suggest: [
               {
                 messageId: 'convertToGenerator',
                 fix(fixer) {
-                  const asyncToken = sourceCode.getFirstToken(unwrapped);
+                  const asyncToken = sourceCode.getFirstToken(fn);
                   if (!asyncToken || asyncToken.value !== 'async') {
                     return null;
                   }
@@ -145,13 +197,13 @@ export default createRule<RuleOptions, MessageIds>({
         } else {
           // ArrowFunctionExpression
           context.report({
-            node: unwrapped,
+            node: fn,
             messageId: 'asyncLoopCallback',
             suggest: [
               {
                 messageId: 'removeAsync',
                 fix(fixer) {
-                  const asyncToken = sourceCode.getFirstToken(unwrapped);
+                  const asyncToken = sourceCode.getFirstToken(fn);
                   if (!asyncToken || asyncToken.value !== 'async') {
                     return null;
                   }

@@ -43,8 +43,9 @@ export default createRule<RuleOptions, MessageIds>({
     schema: [],
     messages: {
       keywordAlias:
-        "Do not import '{{name}}' as a bare keyword-looking binding. Import canonical '{{canonical}}' from '{{source}}' instead, or use a namespace import.",
-      preferAlias: "Prefer importing canonical '{{canonical}}' from '{{source}}' instead of alias '{{name}}'.",
+        "'{{name}}' as a bare import looks like a keyword and is easy to add by accident. Import '{{canonical}}' instead, or use the namespace form.",
+      preferAlias:
+        "'{{name}} as {{local}}' renames an export that already has a canonical name. Import '{{canonical}}' directly.",
     },
   },
   defaultOptions: [],
@@ -87,6 +88,7 @@ export default createRule<RuleOptions, MessageIds>({
             data: {
               name: importedName,
               canonical,
+              local: specifier.local.name,
               source,
             },
             fix(fixer) {

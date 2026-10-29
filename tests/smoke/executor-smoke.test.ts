@@ -280,8 +280,7 @@ describe('executor rules phase smoke over built artifacts', () => {
         if (
           (rel.endsWith('09-require-signal-forwarding-no-controller.ts') ||
             rel.endsWith('01-must-consume-lazy-consumed-later.ts') ||
-            rel.endsWith('02-must-consume-lazy-returned.ts') ||
-            rel.endsWith('06-must-consume-lazy-toolbox-native.ts')) &&
+            rel.endsWith('02-must-consume-lazy-returned.ts')) &&
           m.ruleId === 'canc/executor-cancel-wiring'
         ) {
           return false;

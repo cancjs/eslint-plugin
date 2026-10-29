@@ -33,7 +33,7 @@ interface Feed {
 }
 declare function openFeed(signal: AbortSignal): Promise<Feed>;
 
-const feed = new LazyPromise<Feed>((resolve, reject, { handleCancel }) => {
+export const feed = new LazyPromise<Feed>((resolve, reject, { handleCancel }) => {
   const controller = new AbortController();
   handleCancel(() => controller.abort());
   openFeed(controller.signal).then(resolve, reject);

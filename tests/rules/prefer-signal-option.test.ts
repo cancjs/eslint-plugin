@@ -50,6 +50,16 @@ describe('prefer-signal-option', () => {
        new CancelablePromise((resolve, reject, { getSignal }) => {
          const s = getSignal();
        });`,
+      // Mid-flight abort check inside nested timer/event callback is silent
+      `import CancelablePromise from '@cancjs/promise';
+       function run(signal: AbortSignal) {
+         return new CancelablePromise((resolve) => {
+           setTimeout(() => {
+             if (signal.aborted) return;
+             resolve(1);
+           }, 10);
+         });
+       }`,
     ],
     invalid: [
       {

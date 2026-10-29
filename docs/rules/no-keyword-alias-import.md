@@ -1,12 +1,12 @@
 # canc/no-keyword-alias-import
 
-Disallow importing keyword alias names `async` and `await` from coroutine packages.
+Disallow importing keyword alias names (`async`, `await`, `forAwait`, `delegate`, `throw`) from coroutine packages.
 
-The `@cancjs/coroutine` and `@cancjs/coroutine/gen` packages export aliases named `async` and `await` primarily for namespace import usage (`import * as canc from '@cancjs/coroutine'; canc.async(...)`).
+The `@cancjs/coroutine` and `@cancjs/coroutine/gen` packages export aliases named `async`, `await`, `forAwait`, `delegate`, and `throw` primarily for namespace import usage (`import * as canc from '@cancjs/coroutine'; canc.async(...)`, `canc.await(...)`, `canc.forAwait(...)`, `canc.delegate(...)`, `canc.throw(...)`).
 
-Importing these exports as bare named bindings (`import { async, await }`) introduces identifiers that visually mimic reserved JavaScript keywords. In addition, IDE auto-import features can mistakenly suggest these bindings in place of actual language keywords. Renaming them on import (such as `import { async as cancAsync }`) is similarly discouraged because canonical named exports already exist.
+Importing these exports as bare named bindings (`import { async, await, forAwait, delegate, throw as cancThrow }`) introduces identifiers that visually mimic reserved JavaScript keywords or renames canonical exports. In addition, IDE auto-import features can mistakenly suggest these bindings in place of actual language keywords. Renaming them on import (such as `import { async as cancAsync }`) is similarly discouraged because canonical named exports already exist.
 
-Always use canonical named imports (`cancAsync`, `cancAwait`, `cancGenAsync`, `cancGenAwait`) or use namespace imports.
+Always use canonical named imports (`cancAsync`, `cancAwait`, `cancForAwait`, `cancGenAsync`, `cancGenAwait`, `cancGenForAwait`, `cancGenDelegate`, `cancThrow`, `cancGenThrow`) or use namespace imports.
 
 ## Rule details
 

@@ -86,6 +86,31 @@ describe('prefer-cancel-aware-wrapper', () => {
          }
          inner();
        });`,
+
+      // 7. Synchronous call receiving signal (not a thenable)
+      `import { cancAsync } from '@cancjs/coroutine';
+       declare function syncFn(s: AbortSignal): void;
+       const run = cancAsync(function* () {
+         const c = new AbortController();
+         try {
+           syncFn(c.signal);
+         } finally {
+           c.abort();
+         }
+       });`,
+
+      // 8. Signal call outside the try statement whose finally aborts
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function fetchWithSignal(url: string, signal: AbortSignal): Promise<void>;
+       const run = cancAsync(function* (url: string) {
+         const c = new AbortController();
+         yield* cancAwait(fetchWithSignal(url, c.signal));
+         try {
+           // other work
+         } finally {
+           c.abort();
+         }
+       });`,
     ],
     invalid: [
       // 1. Corpus invalid 14 (createAbortSignal with destructuring + abort in finally)

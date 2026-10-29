@@ -182,7 +182,14 @@ export default createRule<RuleOptions, MessageIds>({
           rejectNames.add(shape.params.reject.name);
         }
 
-        function checkNode(curr: TSESTree.Node): void {
+        function checkNode(curr: TSESTree.Node, insideNestedFn: boolean = false): void {
+          const isNestedFn =
+            insideNestedFn ||
+            (curr !== executor &&
+              (curr.type === AST_NODE_TYPES.FunctionExpression ||
+                curr.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+                curr.type === AST_NODE_TYPES.FunctionDeclaration));
+
           if (curr.type === AST_NODE_TYPES.CallExpression) {
             let callee = unwrapParens(curr.callee);
             if (callee.type === AST_NODE_TYPES.ChainExpression) {
@@ -244,7 +251,7 @@ export default createRule<RuleOptions, MessageIds>({
               }
             }
 
-            if (signalIdent && isExternalSignal(signalIdent, executor, context)) {
+            if (!isNestedFn && signalIdent && isExternalSignal(signalIdent, executor, context)) {
               if (branchRejectsOrReturns(curr.consequent, rejectNames)) {
                 context.report({
                   node: curr,
@@ -263,11 +270,11 @@ export default createRule<RuleOptions, MessageIds>({
               if (Array.isArray(child)) {
                 for (const item of child) {
                   if (item && typeof item === 'object' && 'type' in item) {
-                    checkNode(item as TSESTree.Node);
+                    checkNode(item as TSESTree.Node, isNestedFn);
                   }
                 }
               } else if ('type' in child) {
-                checkNode(child as TSESTree.Node);
+                checkNode(child as TSESTree.Node, isNestedFn);
               }
             }
           }

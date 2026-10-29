@@ -58,6 +58,9 @@ describe('must-consume-lazy (untyped)', () => {
       `import { LazyPromise } from '@cancjs/toolbox';
        const { lazy } = LazyPromise.withResolvers();
        lazy.execute();`,
+      `import { LazyPromise } from '@cancjs/toolbox';
+       const { promise } = LazyPromise.withResolvers();
+       promise.execute();`,
       // Type-only creator without parser services degrades silently
       `declare function getLazy(): any;
        getLazy();`,
@@ -149,6 +152,46 @@ describe('must-consume-lazy (untyped)', () => {
             messageId: 'unusedLazyVar' as const,
             line: 3,
             data: { name: 'p' },
+          },
+        ],
+      },
+      // top-level module-scope unused variable
+      {
+        code: `import { LazyPromise } from '@cancjs/toolbox';
+const unused = LazyPromise.try(() => 1);`,
+        errors: [
+          {
+            messageId: 'unusedLazyVar' as const,
+            line: 2,
+            data: { name: 'unused' },
+          },
+        ],
+      },
+      // withResolvers unused promise
+      {
+        code: `import { LazyPromise } from '@cancjs/toolbox';
+function test() {
+  const { promise, resolve } = LazyPromise.withResolvers<number>();
+}`,
+        errors: [
+          {
+            messageId: 'unusedLazyVar' as const,
+            line: 3,
+            data: { name: 'promise' },
+          },
+        ],
+      },
+      // withResolvers unaccessed result variable
+      {
+        code: `import { LazyPromise } from '@cancjs/toolbox';
+function test() {
+  const r = LazyPromise.withResolvers<number>();
+}`,
+        errors: [
+          {
+            messageId: 'unusedLazyVar' as const,
+            line: 3,
+            data: { name: 'r' },
           },
         ],
       },

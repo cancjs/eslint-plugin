@@ -1,4 +1,4 @@
-// Source: coroutine.md > canc/no-async-loop-callback > Incorrect (async callback in cancGenForAwait)
+// Source: coroutine.md > canc/no-async-loop-callback > Incorrect (async cb in cancGenForAwait)
 import CancelablePromise, {
   CancelError,
   isCancelError,

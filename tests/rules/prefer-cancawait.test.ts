@@ -104,6 +104,21 @@ describe('prefer-cancawait', () => {
           },
         ],
       },
+      // When cancAwait is shadowed by a local variable, report without fix
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+               const load = cancAsync(function* () {
+                 const cancAwait = 1;
+                 yield Promise.resolve(cancAwait);
+               });`,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancAwait' as const,
+            line: 4,
+          },
+        ],
+      },
     ],
   });
 });
