@@ -7,6 +7,8 @@ export interface TierEntry {
 }
 
 export const TIERS: Record<string, TierEntry> = {
+  'canc-throw-tail-position': { recommended: 'error' },
+  'exhaustive-catch': { recommended: 'warn' },
   'executor-cancel-wiring': { strict: 'error' },
   'executor-param-names': { stylistic: 'warn' },
   'handle-cancel-first': { recommended: 'error' },
@@ -17,11 +19,14 @@ export const TIERS: Record<string, TierEntry> = {
   'no-cancellation-gap': { strict: 'error' },
   'no-coroutine-dialect-mismatch': { recommended: 'error' },
   'no-executor-return': { recommended: 'error' },
+  'no-failure-widening': { recommended: 'warn' },
   'no-internal-imports': { recommended: 'error' },
   'no-keyword-alias-import': { recommended: 'warn' },
+  'no-throw-in-chain-callback': { recommended: 'warn' },
   'no-unstarred-cancawait': { recommended: 'error' },
   'no-yield-await-in-loop': { strict: 'error' },
   'prefer-canc-combinators': { recommended: 'error' },
+  'prefer-canc-throw': { recommended: 'warn' },
   'prefer-cancawait': { recommended: 'warn' },
   'prefer-cancel-aware-wrapper': { strict: 'error' },
   'prefer-canceled-property': { recommended: 'warn' },
@@ -29,6 +34,7 @@ export const TIERS: Record<string, TierEntry> = {
   'prefer-signal-accessor': { recommended: 'warn' },
   'prefer-signal-option': { recommended: 'warn' },
   'prefer-signal-over-controller': { recommended: 'warn', strict: 'error' },
+  'require-error-discriminant': { recommended: 'warn' },
   'require-signal-forwarding': { recommended: 'warn' },
   'valid-canc-params': { recommended: 'error' },
   'valid-cancasync': { recommended: 'error' },
