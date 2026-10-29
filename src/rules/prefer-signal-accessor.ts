@@ -119,7 +119,9 @@ export default createRule<RuleOptions, MessageIds>({
             const fn = def.node;
             if (fn.type === AST_NODE_TYPES.FunctionExpression || fn.type === AST_NODE_TYPES.ArrowFunctionExpression) {
               const { isExecutor, isCancelify } = isExecutorOrCancelifyCallback(fn, context);
-              const paramIndex = fn.params.indexOf(def.name);
+              const paramIndex = fn.params.findIndex(
+                (p) => p === def.name || (p.type === AST_NODE_TYPES.AssignmentPattern && p.left === def.name),
+              );
               if (isExecutor && paramIndex === 2) {
                 return true;
               }
@@ -175,7 +177,10 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         const pattern = node.parent;
-        const fn = pattern.parent;
+        let fn = pattern.parent;
+        if (fn?.type === AST_NODE_TYPES.AssignmentPattern) {
+          fn = fn.parent;
+        }
         if (
           !fn ||
           (fn.type !== AST_NODE_TYPES.FunctionExpression && fn.type !== AST_NODE_TYPES.ArrowFunctionExpression)
@@ -184,12 +189,23 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         const { isExecutor, isCancelify } = isExecutorOrCancelifyCallback(fn, context);
-        const paramIndex = fn.params.indexOf(pattern);
+        const paramIndex = fn.params.findIndex(
+          (p) => p === pattern || (p.type === AST_NODE_TYPES.AssignmentPattern && p.left === pattern),
+        );
         if (!(isExecutor && paramIndex === 2) && !(isCancelify && paramIndex === 0)) {
           return;
         }
 
-        const scope = context.sourceCode.getScope(fn.body);
+        function getVariableInScope(name: string): TSESLint.Scope.Variable | undefined {
+          let curr: Scope | null = context.sourceCode.getScope(node.value);
+          while (curr) {
+            const v = curr.set.get(name);
+            if (v) return v;
+            curr = curr.upper;
+          }
+          return undefined;
+        }
+
         const isRenamed =
           !node.shorthand && node.value.type === AST_NODE_TYPES.Identifier && node.value.name !== 'getSignal';
         const localBindingName =
@@ -204,7 +220,7 @@ export default createRule<RuleOptions, MessageIds>({
             // { getSignal: gs } -> { signal: gs }
             fixes.push(fixer.replaceText(node.key, 'signal'));
             // Rewrite calls to gs() to gs
-            const variable = scope.set.get(localBindingName);
+            const variable = getVariableInScope(localBindingName);
             if (variable) {
               for (const ref of variable.references) {
                 if (ref.identifier === node.value) continue;
@@ -218,7 +234,7 @@ export default createRule<RuleOptions, MessageIds>({
             // { getSignal } -> { signal }
             fixes.push(fixer.replaceText(node, 'signal'));
             // Rewrite calls to getSignal() to signal
-            const variable = scope.set.get('getSignal');
+            const variable = getVariableInScope('getSignal');
             if (variable) {
               for (const ref of variable.references) {
                 if (ref.identifier === node.key) continue;

@@ -97,6 +97,35 @@ describe('no-abort-listener-leak', () => {
          const { signal } = createAbortSignal();
          signal.addEventListener('abort', () => {});
        }`,
+      // 12. Finally block with void removeEventListener
+      `function run(signal: AbortSignal) {
+         const onAbort = () => {};
+         try {
+           signal.addEventListener('abort', onAbort);
+         } finally {
+           void signal.removeEventListener('abort', onAbort);
+         }
+       }`,
+      // 13. Finally block with optional chaining
+      `function run(signal: AbortSignal | null) {
+         const onAbort = () => {};
+         try {
+           signal?.addEventListener('abort', onAbort);
+         } finally {
+           signal?.removeEventListener('abort', onAbort);
+         }
+       }`,
+      // 14. Finally block with try-catch
+      `function run(signal: AbortSignal) {
+         const onAbort = () => {};
+         try {
+           signal.addEventListener('abort', onAbort);
+         } finally {
+           try {
+             signal.removeEventListener('abort', onAbort);
+           } catch {}
+         }
+       }`,
     ],
     invalid: [
       // 1. Corpus invalid 05 (leakedAbortListener)

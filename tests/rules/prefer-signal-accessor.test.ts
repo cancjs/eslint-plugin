@@ -157,6 +157,48 @@ cancelify(({ signal }, id: string) => {
           },
         ],
       },
+
+      // 6. Parameter default value with destructuring
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, { getSignal } = {} as any) => {
+  const s = getSignal();
+  void s;
+});`,
+        output: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, { signal } = {} as any) => {
+  const s = signal;
+  void s;
+});`,
+        errors: [
+          {
+            messageId: 'preferSignalAccessor' as const,
+            line: 2,
+            column: 43,
+          },
+        ],
+      },
+
+      // 7. Parameter default value on identifier context
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, ctx = {} as any) => {
+  const s = ctx.getSignal();
+  void s;
+});`,
+        output: `import CancelablePromise from '@cancjs/promise';
+new CancelablePromise((resolve, reject, ctx = {} as any) => {
+  const s = ctx.signal;
+  void s;
+});`,
+        errors: [
+          {
+            messageId: 'preferSignalAccessor' as const,
+            line: 3,
+            column: 17,
+          },
+        ],
+      },
     ],
   });
 

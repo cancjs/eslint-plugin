@@ -106,6 +106,27 @@ describe('no-yield-await-in-loop', () => {
            yield* cancAwait(fetchItem(obj.id));
          }
        });`,
+
+      // 10. while loop where condition variable is accumulator assigned from yield*
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function step(curr: number): Promise<number>;
+       const run = cancAsync(function* () {
+         let acc = 10;
+         while (acc > 0) {
+           acc = yield* cancAwait(step(acc));
+         }
+         return acc;
+       });`,
+
+      // 11. while loop with cursor pagination
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function fetchPage(cursor: string): Promise<string | null>;
+       const run = cancAsync(function* () {
+         let cursor: string | null = 'start';
+         while (cursor) {
+           cursor = yield* cancAwait(fetchPage(cursor));
+         }
+       });`,
     ],
     invalid: [
       // 1. Corpus invalid 15: for-of loop referencing id

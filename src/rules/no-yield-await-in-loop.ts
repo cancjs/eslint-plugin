@@ -149,7 +149,7 @@ function getLoopVariables(loopNode: TSESTree.Node): Set<string> {
     }
   } else if (loopNode.type === AST_NODE_TYPES.WhileStatement || loopNode.type === AST_NODE_TYPES.DoWhileStatement) {
     if (loopNode.test && loopNode.body) {
-      const assignedInBody = getAssignedIdentifiers(loopNode.body);
+      const indexVars = getPureIndexVariables(loopNode.body);
       function extractTestVars(node: TSESTree.Node) {
         if (node.type === AST_NODE_TYPES.Identifier) {
           const parent = node.parent;
@@ -160,7 +160,7 @@ function getLoopVariables(loopNode: TSESTree.Node): Set<string> {
           ) {
             return;
           }
-          if (assignedInBody.has(node.name)) {
+          if (indexVars.has(node.name)) {
             vars.add(node.name);
           }
           return;
@@ -184,6 +184,85 @@ function getLoopVariables(loopNode: TSESTree.Node): Set<string> {
   }
 
   return vars;
+}
+
+function getPureIndexVariables(body: TSESTree.Node): Set<string> {
+  const indexVars = new Set<string>();
+  const nonIndexVars = new Set<string>();
+
+  function extractPattern(pattern: TSESTree.Node, targetSet: Set<string>) {
+    if (pattern.type === AST_NODE_TYPES.Identifier) {
+      targetSet.add(pattern.name);
+    } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
+      for (const prop of pattern.properties) {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          extractPattern(prop.value, targetSet);
+        } else if (prop.type === AST_NODE_TYPES.RestElement) {
+          extractPattern(prop.argument, targetSet);
+        }
+      }
+    } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
+      for (const elem of pattern.elements) {
+        if (elem) {
+          extractPattern(elem, targetSet);
+        }
+      }
+    } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
+      extractPattern(pattern.left, targetSet);
+    } else if (pattern.type === AST_NODE_TYPES.RestElement) {
+      extractPattern(pattern.argument, targetSet);
+    }
+  }
+
+  function walk(node: TSESTree.Node) {
+    if (
+      node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      return;
+    }
+
+    if (node.type === AST_NODE_TYPES.UpdateExpression && node.argument.type === AST_NODE_TYPES.Identifier) {
+      if (!nonIndexVars.has(node.argument.name)) {
+        indexVars.add(node.argument.name);
+      }
+    } else if (
+      node.type === AST_NODE_TYPES.AssignmentExpression &&
+      node.left.type === AST_NODE_TYPES.Identifier &&
+      (node.operator === '+=' || node.operator === '-=') &&
+      node.right.type === AST_NODE_TYPES.Literal &&
+      typeof node.right.value === 'number'
+    ) {
+      if (!nonIndexVars.has(node.left.name)) {
+        indexVars.add(node.left.name);
+      }
+    } else if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+      const assigned = new Set<string>();
+      extractPattern(node.left, assigned);
+      for (const name of assigned) {
+        nonIndexVars.add(name);
+        indexVars.delete(name);
+      }
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) walk(item as TSESTree.Node);
+          }
+        } else if ('type' in child) {
+          walk(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+
+  walk(body);
+  return indexVars;
 }
 
 function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {

@@ -266,6 +266,53 @@ function hasOnceOption(optionsNode: TSESTree.Node | undefined): boolean {
   return false;
 }
 
+function matchesRemovalCall(
+  node: TSESTree.Node,
+  signalKey: string,
+  fnName: string,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): boolean {
+  let expr = node;
+  while (
+    expr.type === AST_NODE_TYPES.TSAsExpression ||
+    expr.type === AST_NODE_TYPES.TSTypeAssertion ||
+    expr.type === AST_NODE_TYPES.TSNonNullExpression
+  ) {
+    expr = expr.expression;
+  }
+
+  if (expr.type === AST_NODE_TYPES.UnaryExpression && expr.operator === 'void') {
+    expr = expr.argument;
+  }
+
+  if (expr.type === AST_NODE_TYPES.ChainExpression) {
+    expr = expr.expression;
+  }
+
+  if (
+    expr.type === AST_NODE_TYPES.CallExpression &&
+    expr.callee.type === AST_NODE_TYPES.MemberExpression &&
+    expr.callee.property.type === AST_NODE_TYPES.Identifier &&
+    expr.callee.property.name === 'removeEventListener' &&
+    expr.arguments.length >= 2
+  ) {
+    const arg0 = expr.arguments[0];
+    const isAbort =
+      (arg0.type === AST_NODE_TYPES.Literal && arg0.value === 'abort') ||
+      (arg0.type === AST_NODE_TYPES.TemplateLiteral &&
+        arg0.quasis.length === 1 &&
+        arg0.quasis[0].value.raw === 'abort');
+    if (isAbort) {
+      const sig = context.sourceCode.getText(expr.callee.object);
+      const fnArg = expr.arguments[1];
+      if (sig === signalKey && fnArg.type === AST_NODE_TYPES.Identifier && fnArg.name === fnName) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function isProtectedByFinally(
   regNode: TSESTree.Node,
   fnName: string,
@@ -288,7 +335,6 @@ function isProtectedByFinally(
           if (
             stmt.type === AST_NODE_TYPES.IfStatement ||
             stmt.type === AST_NODE_TYPES.SwitchStatement ||
-            stmt.type === AST_NODE_TYPES.TryStatement ||
             stmt.type === AST_NODE_TYPES.WhileStatement ||
             stmt.type === AST_NODE_TYPES.DoWhileStatement ||
             stmt.type === AST_NODE_TYPES.ForStatement ||
@@ -297,28 +343,19 @@ function isProtectedByFinally(
           ) {
             continue;
           }
-          if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
-            const expr = stmt.expression;
-            if (
-              expr.type === AST_NODE_TYPES.CallExpression &&
-              expr.callee.type === AST_NODE_TYPES.MemberExpression &&
-              expr.callee.property.type === AST_NODE_TYPES.Identifier &&
-              expr.callee.property.name === 'removeEventListener' &&
-              expr.arguments.length >= 2
-            ) {
-              const arg0 = expr.arguments[0];
-              const isAbort =
-                (arg0.type === AST_NODE_TYPES.Literal && arg0.value === 'abort') ||
-                (arg0.type === AST_NODE_TYPES.TemplateLiteral &&
-                  arg0.quasis.length === 1 &&
-                  arg0.quasis[0].value.raw === 'abort');
-              if (isAbort) {
-                const sig = context.sourceCode.getText(expr.callee.object);
-                const fnArg = expr.arguments[1];
-                if (sig === signalKey && fnArg.type === AST_NODE_TYPES.Identifier && fnArg.name === fnName) {
+          if (stmt.type === AST_NODE_TYPES.TryStatement && stmt.block) {
+            for (const tryStmt of stmt.block.body) {
+              if (tryStmt.type === AST_NODE_TYPES.ExpressionStatement) {
+                if (matchesRemovalCall(tryStmt.expression, signalKey, fnName, context)) {
                   return true;
                 }
               }
+            }
+            continue;
+          }
+          if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
+            if (matchesRemovalCall(stmt.expression, signalKey, fnName, context)) {
+              return true;
             }
           }
         }

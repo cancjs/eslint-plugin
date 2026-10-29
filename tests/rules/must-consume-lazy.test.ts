@@ -195,6 +195,20 @@ function test() {
           },
         ],
       },
+      // withResolvers omitting promise/lazy entirely
+      {
+        code: `import { LazyPromise } from '@cancjs/toolbox';
+function test() {
+  const { resolve, reject } = LazyPromise.withResolvers<number>();
+  resolve(1);
+}`,
+        errors: [
+          {
+            messageId: 'unusedLazy' as const,
+            line: 3,
+          },
+        ],
+      },
     ],
   });
 });

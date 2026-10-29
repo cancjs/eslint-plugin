@@ -3,6 +3,7 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCancBindings, getCoroutineContext, refersTo } from '../util/canc-imports.js';
 import createRule from '../util/create-rule.js';
+import { getCancSettings } from '../util/settings.js';
 
 export interface Options {
   allowBareYield?: boolean;
@@ -55,12 +56,13 @@ function findCancAwaitLocalName(
   context: Parameters<Parameters<typeof createRule<RuleOptions, MessageIds>>[0]['create']>[0],
 ): string | null {
   const bindings = getCancBindings(context);
+  const settings = getCancSettings(context);
   for (const [localName, binding] of bindings) {
-    if (
-      !binding.namespace &&
-      (binding.source === '@cancjs/coroutine' || binding.source.endsWith('/coroutine')) &&
-      (binding.exported === 'cancAwait' || binding.exported === 'await')
-    ) {
+    const isTrackedSource =
+      binding.source === '@cancjs/coroutine' ||
+      binding.source.endsWith('/coroutine') ||
+      settings.sources.some((s) => binding.source === s || binding.source.startsWith(s + '/'));
+    if (!binding.namespace && isTrackedSource && (binding.exported === 'cancAwait' || binding.exported === 'await')) {
       let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
       let shadowed = false;
       while (scope) {

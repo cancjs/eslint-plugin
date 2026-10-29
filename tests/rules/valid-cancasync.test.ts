@@ -171,6 +171,28 @@ describe('valid-cancasync', () => {
           },
         ],
       },
+      // 2-arg Generator<any, number>
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               const load = cancAsync(function* (): Generator<any, number> {});`,
+        errors: [
+          {
+            messageId: 'anyReturnAnnotation' as const,
+            line: 2,
+          },
+        ],
+      },
+      // 2-arg Generator<void, any>
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               const load = cancAsync(function* (): Generator<void, any> {});`,
+        errors: [
+          {
+            messageId: 'anyReturnAnnotation' as const,
+            line: 2,
+          },
+        ],
+      },
     ],
   });
 });

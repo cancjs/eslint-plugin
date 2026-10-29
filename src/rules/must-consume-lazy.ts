@@ -168,6 +168,7 @@ export default createRule<RuleOptions, MessageIds>({
 
           if (isLazyWithResolvers(declarator.init, context)) {
             if (declarator.id.type === AST_NODE_TYPES.ObjectPattern) {
+              let hasLazyProp = false;
               for (const prop of declarator.id.properties) {
                 if (
                   prop.type === AST_NODE_TYPES.Property &&
@@ -177,6 +178,7 @@ export default createRule<RuleOptions, MessageIds>({
                       (prop.key.value === 'lazy' || prop.key.value === 'promise'))) &&
                   prop.value.type === AST_NODE_TYPES.Identifier
                 ) {
+                  hasLazyProp = true;
                   if (isUnusedVariable(prop.value, context)) {
                     context.report({
                       node: prop.value,
@@ -185,6 +187,12 @@ export default createRule<RuleOptions, MessageIds>({
                     });
                   }
                 }
+              }
+              if (!hasLazyProp) {
+                context.report({
+                  node: declarator.init,
+                  messageId: 'unusedLazy',
+                });
               }
             } else if (declarator.id.type === AST_NODE_TYPES.Identifier) {
               if (isUnusedVariable(declarator.id, context)) {

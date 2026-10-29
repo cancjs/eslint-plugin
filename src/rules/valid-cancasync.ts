@@ -152,8 +152,9 @@ export default createRule<RuleOptions, MessageIds>({
           ) {
             const params = typeNode.typeArguments.params;
             if (
-              (params.length >= 3 && params[2].type === AST_NODE_TYPES.TSAnyKeyword) ||
-              (params.length === 1 && params[0].type === AST_NODE_TYPES.TSAnyKeyword)
+              (params.length >= 3 &&
+                (params[1].type === AST_NODE_TYPES.TSAnyKeyword || params[2].type === AST_NODE_TYPES.TSAnyKeyword)) ||
+              (params.length < 3 && params.some((p) => p.type === AST_NODE_TYPES.TSAnyKeyword))
             ) {
               context.report({
                 node: fn.returnType,
