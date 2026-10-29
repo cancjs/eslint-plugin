@@ -30,6 +30,7 @@ const markers02 = readMarkers(invalid02Path);
 const markers03 = readMarkers(invalid03Path);
 
 const tester = ruleTester({ types: false });
+const typedTester = ruleTester();
 
 describe('valid-cancasync', () => {
   tester.run('valid-cancasync', rule, {
@@ -49,6 +50,25 @@ describe('valid-cancasync', () => {
       `function* plainGen(): any {}`,
       `import { cancAsync } from '@cancjs/coroutine';
        cancAsync(123 as any);`,
+      // any in the yield slot only leaves TNext at its default
+      `import { cancAsync } from '@cancjs/coroutine';
+       const load = cancAsync(function* (): Generator<any> {});`,
+      `import { cancAsync } from '@cancjs/coroutine';
+       const load = cancAsync(function* (): Generator<any, number> { return 1; });`,
+      // parameter of a function declaration is not the enclosing function
+      `import { cancAsync } from '@cancjs/coroutine';
+       function wrap(genFn) { return cancAsync(genFn); }`,
+      `import { cancAsync } from '@cancjs/coroutine';
+       const wrap = (genFn) => cancAsync(genFn);`,
+      `import { cancAsync } from '@cancjs/coroutine';
+       class Runner { run(genFn) { return cancAsync(genFn); } }`,
+      // sync function returning a generator object
+      `import { cancAsync } from '@cancjs/coroutine';
+       function* steps() { yield 1; }
+       const load = cancAsync(() => steps());`,
+      // untyped lane cannot prove a sync function wrong
+      `import { cancAsync } from '@cancjs/coroutine';
+       const load = cancAsync(() => 42);`,
     ],
     invalid: [
       {
@@ -112,18 +132,6 @@ describe('valid-cancasync', () => {
           },
         ],
       },
-      // Plain sync arrow function
-      {
-        code: `import { cancAsync } from '@cancjs/coroutine';
-               const load = cancAsync(() => 42);`,
-        errors: [
-          {
-            messageId: 'asyncFunction' as const,
-            line: 2,
-            data: { driver: 'cancAsync', await: 'cancAwait' },
-          },
-        ],
-      },
       // Identifier-passed generator with any return
       {
         code: `import { cancAsync } from '@cancjs/coroutine';
@@ -160,28 +168,6 @@ describe('valid-cancasync', () => {
           },
         ],
       },
-      // 1-arg Generator<any>
-      {
-        code: `import { cancAsync } from '@cancjs/coroutine';
-               const load = cancAsync(function* (): Generator<any> {});`,
-        errors: [
-          {
-            messageId: 'anyReturnAnnotation' as const,
-            line: 2,
-          },
-        ],
-      },
-      // 2-arg Generator<any, number>
-      {
-        code: `import { cancAsync } from '@cancjs/coroutine';
-               const load = cancAsync(function* (): Generator<any, number> {});`,
-        errors: [
-          {
-            messageId: 'anyReturnAnnotation' as const,
-            line: 2,
-          },
-        ],
-      },
       // 2-arg Generator<void, any>
       {
         code: `import { cancAsync } from '@cancjs/coroutine';
@@ -190,6 +176,44 @@ describe('valid-cancasync', () => {
           {
             messageId: 'anyReturnAnnotation' as const,
             line: 2,
+          },
+        ],
+      },
+    ],
+  });
+
+  typedTester.run('valid-cancasync (typed)', rule, {
+    valid: [
+      `import { cancAsync } from '@cancjs/coroutine';
+       function* steps(): Generator<number, void, unknown> { yield 1; }
+       const load = cancAsync(() => steps());`,
+      `import { cancAsync } from '@cancjs/coroutine';
+       declare function anything(): any;
+       const load = cancAsync(() => anything());`,
+      `import { cancAsync } from '@cancjs/coroutine';
+       function wrap(genFn: () => Generator<unknown, number, unknown>) { return cancAsync(genFn); }`,
+    ],
+    invalid: [
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               const load = cancAsync(() => 42);`,
+        errors: [
+          {
+            messageId: 'asyncFunction' as const,
+            line: 2,
+            data: { driver: 'cancAsync', await: 'cancAwait' },
+          },
+        ],
+      },
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               function load(): string { return 'x'; }
+               cancAsync(load);`,
+        errors: [
+          {
+            messageId: 'asyncFunction' as const,
+            line: 3,
+            data: { driver: 'cancAsync', await: 'cancAwait' },
           },
         ],
       },

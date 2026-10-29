@@ -2,6 +2,7 @@ import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { isCoroutineFnIdent } from '../util/canc-imports.js';
+import { isNonIteratorReturnFunction } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'asyncFunction' | 'asyncGenerator' | 'anyReturnAnnotation';
@@ -56,11 +57,12 @@ function resolveFunction(
     if (!variable || variable.defs.length === 0) {
       return null;
     }
+    // parameter defs point at the owning function, so match the def name too
     for (const def of variable.defs) {
-      if (def.node.type === AST_NODE_TYPES.FunctionDeclaration) {
+      if (def.node.type === AST_NODE_TYPES.FunctionDeclaration && def.node.id === def.name) {
         return { fn: def.node, isIdentifier: true };
       }
-      if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
+      if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.id === def.name && def.node.init) {
         const init = unwrapParens(def.node.init);
         if (
           init.type === AST_NODE_TYPES.FunctionExpression ||
@@ -126,7 +128,8 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        if (!fn.generator) {
+        // a sync function may return a generator object, so only types can prove it wrong
+        if (!fn.generator && (fn.async || isNonIteratorReturnFunction(fn, context))) {
           context.report({
             node: reportNode,
             messageId: 'asyncFunction',
@@ -151,11 +154,9 @@ export default createRule<RuleOptions, MessageIds>({
             typeNode.typeArguments
           ) {
             const params = typeNode.typeArguments.params;
-            if (
-              (params.length >= 3 &&
-                (params[1].type === AST_NODE_TYPES.TSAnyKeyword || params[2].type === AST_NODE_TYPES.TSAnyKeyword)) ||
-              (params.length < 3 && params.some((p) => p.type === AST_NODE_TYPES.TSAnyKeyword))
-            ) {
+            const isAnyAt = (index: number): boolean =>
+              params.length > index && params[index].type === AST_NODE_TYPES.TSAnyKeyword;
+            if (isAnyAt(1) || isAnyAt(2)) {
               context.report({
                 node: fn.returnType,
                 messageId: 'anyReturnAnnotation',
