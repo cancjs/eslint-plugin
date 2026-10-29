@@ -94,6 +94,21 @@ describe('canc-types: typed detection', () => {
     ],
     invalid: [
       {
+        // Alias of an object type with the canc shape, declared outside a canc package -> plain sink only
+        code: `type CancelablePromise<T> = { then: Promise<T>['then']; cancel(): void; isCanceled: boolean };
+               declare const src: CancelablePromise<number>;
+               const p = src;`,
+        errors: [{ messageId: 'plainSink' }],
+      },
+      {
+        // Same through an interface carrying the canc shape
+        code: `interface Shape<T> extends Promise<T> { cancel(): void; isCanceled: boolean }
+               type CancelablePromise<T> = Shape<T>;
+               declare const src: CancelablePromise<number>;
+               const p = src;`,
+        errors: [{ messageId: 'plainSink' }],
+      },
+      {
         // CancelablePromise variable -> cancelable
         code: `${importPromise}const p = CancelablePromise.resolve(1);`,
         errors: [{ messageId: 'cancelable' }],

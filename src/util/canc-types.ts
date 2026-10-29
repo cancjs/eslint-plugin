@@ -40,6 +40,9 @@ function normalizePath(filePath: string): string {
 }
 
 /**
+// Mirrors ts.SymbolFlags.Alias; typescript is a type-only import here, so the enum is not available at runtime.
+const SYMBOL_FLAG_ALIAS = 2097152;
+
  * A symbol is a canc entity when at least one of its declarations lives in a declaration file under
  * one of the configured canc packages. Path-based nominal check: no runtime dependency on the real
  * packages, works against the hand-derived fixture stubs and against real installs alike.
@@ -54,12 +57,9 @@ function symbolDeclaredInCancSource(
     return false;
   }
   let target = symbol;
-  if (checker) {
+  if (checker && symbol.flags & SYMBOL_FLAG_ALIAS) {
     try {
-      const aliased = checker.getAliasedSymbol(target);
-      if (aliased) {
-        target = aliased;
-      }
+      target = checker.getAliasedSymbol(target);
     } catch {
       // ignore
     }
@@ -150,14 +150,10 @@ function matchesNominalName(
       if (typeNameMatches(sym, names) && symbolDeclaredInCancSource(sym, settings, checker, context)) {
         return true;
       }
-      if (sym.flags & 2097152 /* ts.SymbolFlags.Alias */) {
+      if (sym.flags & SYMBOL_FLAG_ALIAS) {
         try {
           const aliased = checker.getAliasedSymbol(sym);
-          if (
-            aliased &&
-            typeNameMatches(aliased, names) &&
-            symbolDeclaredInCancSource(aliased, settings, checker, context)
-          ) {
+          if (typeNameMatches(aliased, names) && symbolDeclaredInCancSource(aliased, settings, checker, context)) {
             return true;
           }
         } catch {
