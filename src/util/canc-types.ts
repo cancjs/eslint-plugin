@@ -157,6 +157,23 @@ export function isCancelableExpression(
 }
 
 /**
+ * Resolve the static type of an expression node and report whether it is a LazyPromise.
+ */
+export function isLazyExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings,
+): boolean {
+  const services = getCancServices(context);
+  if (!services) {
+    return false;
+  }
+
+  const type = services.getTypeAtLocation(node);
+  return isLazyType(type, services.program.getTypeChecker(), settings);
+}
+
+/**
  * True when `type` is a plain (non-cancelable) promise sink: it is Promise-compatible (thenable) but
  * is NOT cancelable and does NOT include a cancelable member in a union. This is the shape that
  * silently swallows cancellation, so passing a cancelable value into such a sink is the core defect
