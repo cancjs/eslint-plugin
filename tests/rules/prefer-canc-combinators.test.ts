@@ -192,6 +192,52 @@ CancelablePromise.all([p]);`,
         },
       ],
     },
+    {
+      code: `import type { CancelablePromise } from '@cancjs/promise';
+declare const p: CancelablePromise<number>;
+Promise.all([p]);`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferCancCombinator',
+          data: { method: 'all' },
+          line: 3,
+          column: 1,
+          suggestions: [
+            {
+              messageId: 'suggestUseCancelablePromise',
+              data: { method: 'all' },
+              output: `import type { CancelablePromise } from '@cancjs/promise';
+declare const p: CancelablePromise<number>;
+CancelablePromise.all([p]);`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `import { type CancelablePromise } from '@cancjs/promise';
+declare const p: CancelablePromise<number>;
+Promise.all([p]);`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferCancCombinator',
+          data: { method: 'all' },
+          line: 3,
+          column: 1,
+          suggestions: [
+            {
+              messageId: 'suggestUseCancelablePromise',
+              data: { method: 'all' },
+              output: `import { type CancelablePromise } from '@cancjs/promise';
+declare const p: CancelablePromise<number>;
+CancelablePromise.all([p]);`,
+            },
+          ],
+        },
+      ],
+    },
   ],
 };
 
