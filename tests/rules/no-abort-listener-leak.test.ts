@@ -68,7 +68,8 @@ describe('no-abort-listener-leak', () => {
          controller.signal.addEventListener('abort', () => {});
        }`,
       // 7. Locally created signal via createAbortSignal
-      `function run() {
+      `import { createAbortSignal } from '@cancjs/toolbox';
+       function run() {
          const signal = createAbortSignal();
          signal.addEventListener('abort', () => {});
        }`,
@@ -148,6 +149,56 @@ describe('no-abort-listener-leak', () => {
             line: markers09[0].line,
           },
         ],
+      },
+      // Registration in a deferred callback is not covered by the outer finally
+      {
+        code: `function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  try {
+    setTimeout(() => {
+      signal.addEventListener('abort', onAbort);
+    });
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 5 }],
+      },
+      // Conditional return in finally skips the removal
+      {
+        code: `function run(signal: AbortSignal, c: boolean) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    if (c) return;
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 4 }],
+      },
+      // Nested try in finally: a throwing call before the removal skips it
+      {
+        code: `function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    try {
+      flush();
+      signal.removeEventListener('abort', onAbort);
+    } catch {}
+  }
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 4 }],
+      },
+      // A createAbortSignal that is not imported from a canc source is not trusted
+      {
+        code: `function run() {
+  const signal = createAbortSignal();
+  signal.addEventListener('abort', () => {});
+}`,
+        errors: [{ messageId: 'inlineListenerNoOnce' as const, line: 3 }],
       },
       // 3. Early return before remove
       {

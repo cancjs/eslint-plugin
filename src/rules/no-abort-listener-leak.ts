@@ -96,12 +96,6 @@ function isAbortSignalCreator(node: TSESTree.Node, context: TSESLint.RuleContext
   if (refersTo(node.callee, context, 'createAbortSignal') || refersTo(node.callee, context, 'createCancelSignal')) {
     return true;
   }
-  if (
-    node.callee.type === AST_NODE_TYPES.Identifier &&
-    (node.callee.name === 'createAbortSignal' || node.callee.name === 'createCancelSignal')
-  ) {
-    return true;
-  }
   return false;
 }
 
@@ -314,6 +308,77 @@ function matchesRemovalCall(
   return false;
 }
 
+const JUMP_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.ReturnStatement,
+  AST_NODE_TYPES.ThrowStatement,
+  AST_NODE_TYPES.BreakStatement,
+  AST_NODE_TYPES.ContinueStatement,
+]);
+
+function isFunctionNode(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  );
+}
+
+function mayJump(node: TSESTree.Node): boolean {
+  if (JUMP_TYPES.has(node.type)) {
+    return true;
+  }
+  if (isFunctionNode(node)) {
+    return false;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+    const children: unknown[] = Array.isArray(value) ? value : [value];
+    for (const child of children) {
+      if (child && typeof child === 'object' && 'type' in child && mayJump(child as TSESTree.Node)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isRemovalStatement(
+  stmt: TSESTree.Statement | undefined,
+  fnName: string,
+  signalKey: string,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): boolean {
+  return (
+    stmt?.type === AST_NODE_TYPES.ExpressionStatement && matchesRemovalCall(stmt.expression, signalKey, fnName, context)
+  );
+}
+
+function finallyRemovesListener(
+  finalizer: TSESTree.BlockStatement,
+  fnName: string,
+  signalKey: string,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): boolean {
+  for (const stmt of finalizer.body) {
+    if (isRemovalStatement(stmt, fnName, signalKey, context)) {
+      return true;
+    }
+    // a nested try only guarantees a removal that nothing before it can throw past
+    if (
+      stmt.type === AST_NODE_TYPES.TryStatement &&
+      isRemovalStatement(stmt.block.body[0], fnName, signalKey, context)
+    ) {
+      return true;
+    }
+    if (mayJump(stmt)) {
+      return false;
+    }
+  }
+  return false;
+}
+
 function isProtectedByFinally(
   regNode: TSESTree.Node,
   fnName: string,
@@ -321,46 +386,14 @@ function isProtectedByFinally(
   context: TSESLint.RuleContext<MessageIds, RuleOptions>,
 ): boolean {
   let curr: TSESTree.Node | undefined = regNode.parent;
-  while (curr) {
-    if (curr.type === AST_NODE_TYPES.TryStatement && curr.finalizer) {
-      if (isDescendant(regNode, curr.block)) {
-        for (const stmt of curr.finalizer.body) {
-          if (
-            stmt.type === AST_NODE_TYPES.ReturnStatement ||
-            stmt.type === AST_NODE_TYPES.ThrowStatement ||
-            stmt.type === AST_NODE_TYPES.BreakStatement ||
-            stmt.type === AST_NODE_TYPES.ContinueStatement
-          ) {
-            break;
-          }
-          if (
-            stmt.type === AST_NODE_TYPES.IfStatement ||
-            stmt.type === AST_NODE_TYPES.SwitchStatement ||
-            stmt.type === AST_NODE_TYPES.WhileStatement ||
-            stmt.type === AST_NODE_TYPES.DoWhileStatement ||
-            stmt.type === AST_NODE_TYPES.ForStatement ||
-            stmt.type === AST_NODE_TYPES.ForOfStatement ||
-            stmt.type === AST_NODE_TYPES.ForInStatement
-          ) {
-            continue;
-          }
-          if (stmt.type === AST_NODE_TYPES.TryStatement && stmt.block) {
-            for (const tryStmt of stmt.block.body) {
-              if (tryStmt.type === AST_NODE_TYPES.ExpressionStatement) {
-                if (matchesRemovalCall(tryStmt.expression, signalKey, fnName, context)) {
-                  return true;
-                }
-              }
-            }
-            continue;
-          }
-          if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
-            if (matchesRemovalCall(stmt.expression, signalKey, fnName, context)) {
-              return true;
-            }
-          }
-        }
-      }
+  while (curr && !isFunctionNode(curr)) {
+    if (
+      curr.type === AST_NODE_TYPES.TryStatement &&
+      curr.finalizer &&
+      isDescendant(regNode, curr.block) &&
+      finallyRemovesListener(curr.finalizer, fnName, signalKey, context)
+    ) {
+      return true;
     }
     curr = curr.parent;
   }
