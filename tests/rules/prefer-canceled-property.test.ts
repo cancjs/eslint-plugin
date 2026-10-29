@@ -55,6 +55,13 @@ describe('prefer-canceled-property', () => {
       `type CancelablePromise<T> = Promise<T>;
        declare const p: CancelablePromise<void> & { isCanceled: boolean };
        if (p.isCanceled) {}`,
+      // Local aliases and interfaces carrying the canc shape stay silent
+      `interface CancelablePromise<T> extends Promise<T> { cancel(): void; isCanceled: boolean }
+       declare const p: CancelablePromise<void>;
+       if (p.isCanceled) {}`,
+      `type CancelablePromise<T> = { then: Promise<T>['then']; cancel(): void; isCanceled: boolean };
+       declare const p: CancelablePromise<void>;
+       if (p.isCanceled) {}`,
     ],
     invalid: [
       // 1. Corpus invalid 11: p.isCanceled -> p.canceled
