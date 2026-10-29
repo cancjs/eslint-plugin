@@ -2,10 +2,9 @@ import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCancBindings } from '../util/canc-imports.js';
-import { getCancServices, isCancelableType } from '../util/canc-types.js';
+import { getCancServices } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
-import { getFailureMembers, isWidened } from '../util/failure-types.js';
-import { getCancSettings } from '../util/settings.js';
+import { isFailureWidened } from '../util/failure-checker-no-failure-widening.js';
 
 export type MessageIds = 'failureWidening';
 
@@ -176,9 +175,6 @@ export default createRule<RuleOptions, MessageIds>({
     if (!services?.program || !services.esTreeNodeToTSNodeMap) {
       return {};
     }
-    const cancServices = services;
-    const checker = cancServices.program.getTypeChecker();
-    const settings = getCancSettings(context);
 
     const allowWithComment = options?.allowWithComment ?? 'canc-allow-widening';
     const allowVariableWidening = options?.allowVariableAnnotationWidening !== false;
@@ -202,22 +198,8 @@ export default createRule<RuleOptions, MessageIds>({
       }
 
       const innermost = unwrapCastChain(node);
-      const sourceType = cancServices.getTypeAtLocation(innermost);
 
-      // Verify that source type is a canc cancelable type (Invariant 3 & B3)
-      if (!isCancelableType(sourceType, checker, settings, context)) {
-        return;
-      }
-
-      const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
-      if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
-        return;
-      }
-
-      const targetType = cancServices.getTypeAtLocation(node.typeAnnotation);
-      const targetFailures = getFailureMembers(targetType, checker, settings, context);
-
-      if (isWidened(sourceFailures, targetFailures, checker)) {
+      if (isFailureWidened(innermost, node.typeAnnotation, context)) {
         let replacement: string | undefined;
 
         if (node.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
@@ -291,20 +273,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const sourceType = cancServices.getTypeAtLocation(node.argument);
-        if (!isCancelableType(sourceType, checker, settings, context)) {
-          return;
-        }
-
-        const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
-        if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
-          return;
-        }
-
-        const targetType = cancServices.getTypeAtLocation(fn.returnType.typeAnnotation);
-        const targetFailures = getFailureMembers(targetType, checker, settings, context);
-
-        if (isWidened(sourceFailures, targetFailures, checker)) {
+        if (isFailureWidened(node.argument, fn.returnType.typeAnnotation, context)) {
           context.report({
             node: fn.returnType,
             messageId: 'failureWidening',
@@ -327,20 +296,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const sourceType = cancServices.getTypeAtLocation(node.body);
-        if (!isCancelableType(sourceType, checker, settings, context)) {
-          return;
-        }
-
-        const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
-        if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
-          return;
-        }
-
-        const targetType = cancServices.getTypeAtLocation(node.returnType.typeAnnotation);
-        const targetFailures = getFailureMembers(targetType, checker, settings, context);
-
-        if (isWidened(sourceFailures, targetFailures, checker)) {
+        if (isFailureWidened(node.body, node.returnType.typeAnnotation, context)) {
           context.report({
             node: node.returnType,
             messageId: 'failureWidening',
@@ -363,20 +319,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const sourceType = cancServices.getTypeAtLocation(node.init);
-        if (!isCancelableType(sourceType, checker, settings, context)) {
-          return;
-        }
-
-        const sourceFailures = getFailureMembers(sourceType, checker, settings, context);
-        if (!sourceFailures.defined || sourceFailures.listed.length === 0) {
-          return;
-        }
-
-        const targetType = cancServices.getTypeAtLocation(node.id.typeAnnotation.typeAnnotation);
-        const targetFailures = getFailureMembers(targetType, checker, settings, context);
-
-        if (isWidened(sourceFailures, targetFailures, checker)) {
+        if (isFailureWidened(node.init, node.id.typeAnnotation.typeAnnotation, context)) {
           context.report({
             node: node.id.typeAnnotation,
             messageId: 'failureWidening',
