@@ -69,7 +69,7 @@ const DEFAULT_SETTINGS: ResolvedCancSettings = {
   ],
 };
 
-export function getCancSettings(context: TSESLint.RuleContext<string, unknown[]>): ResolvedCancSettings {
+export function getCancSettings(context: TSESLint.RuleContext<string, readonly unknown[]>): ResolvedCancSettings {
   const settings = context.settings.canc as CancSettings | undefined;
 
   if (!settings) {

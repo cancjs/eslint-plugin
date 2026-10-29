@@ -18,7 +18,7 @@ export interface CancBinding {
   namespace: boolean;
 }
 
-type Context = TSESLint.RuleContext<string, unknown[]>;
+type Context = TSESLint.RuleContext<string, readonly unknown[]>;
 
 const bindingCache = new WeakMap<object, Map<string, CancBinding>>();
 

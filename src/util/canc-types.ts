@@ -2,7 +2,8 @@ import type { ParserServicesWithTypeInformation } from '@typescript-eslint/types
 import { AST_NODE_TYPES, type TSESLint, type TSESTree } from '@typescript-eslint/utils';
 import type * as ts from 'typescript';
 
-import type { ResolvedCancSettings } from './settings.js';
+import { getCancBindings } from './canc-imports.js';
+import { getCancSettings, type ResolvedCancSettings } from './settings.js';
 
 /**
  * Return typed parser services when the linted file has full type information available, otherwise
@@ -43,9 +44,28 @@ function normalizePath(filePath: string): string {
  * one of the configured canc packages. Path-based nominal check: no runtime dependency on the real
  * packages, works against the hand-derived fixture stubs and against real installs alike.
  */
-function symbolDeclaredInCancSource(symbol: ts.Symbol | undefined, settings: ResolvedCancSettings): boolean {
-  const declarations = symbol?.getDeclarations();
-  if (!declarations || declarations.length === 0) {
+function symbolDeclaredInCancSource(
+  symbol: ts.Symbol | undefined,
+  settings: ResolvedCancSettings,
+  checker?: ts.TypeChecker,
+): boolean {
+  if (!symbol) {
+    return false;
+  }
+  let target = symbol;
+  if (checker && target.flags & 2097152 /* ts.SymbolFlags.Alias */) {
+    try {
+      target = checker.getAliasedSymbol(target);
+    } catch {
+      // ignore
+    }
+  }
+
+  const declarations = [
+    ...(target.getDeclarations() ?? []),
+    ...(target !== symbol ? (symbol.getDeclarations() ?? []) : []),
+  ];
+  if (declarations.length === 0) {
     return false;
   }
 
@@ -105,7 +125,8 @@ function matchesNominalName(
     const symbol = part.getSymbol() ?? part.aliasSymbol ?? targetSymbol;
     const nameMatch = typeNameMatches(symbol, names) || typeNameMatches(targetSymbol, names);
     const sourceMatch =
-      symbolDeclaredInCancSource(symbol, settings) || symbolDeclaredInCancSource(targetSymbol, settings);
+      symbolDeclaredInCancSource(symbol, settings, checker) ||
+      symbolDeclaredInCancSource(targetSymbol, settings, checker);
     if (nameMatch && sourceMatch) {
       return true;
     }
@@ -274,4 +295,179 @@ export function hasCancelableElements(
 
   const argType = services.getTypeAtLocation(argNode);
   return typeHasCancelableElement(argType, checker, settings);
+}
+
+/**
+ * True when expression `node` is typed as a plain (non-cancelable) promise sink.
+ * Degrades safely to false when no parser services or program exist.
+ */
+export function isPlainPromiseSinkExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(node);
+  return typeIsPlainPromiseSink(type, checker, settings);
+}
+
+/**
+ * True when expression `node` is typed as a CancelablePromise or LazyPromise.
+ */
+export function isCancelableOrLazyExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(node);
+  if (isCancelableType(type, checker, settings) || isLazyType(type, checker, settings)) {
+    return true;
+  }
+
+  const aliasName = type.aliasSymbol?.getName();
+  const typeStr = checker.typeToString(type);
+  const bindings = getCancBindings(context);
+
+  for (const name of settings.cancelableTypeNames) {
+    if (aliasName === name || typeStr.startsWith(name)) {
+      const binding = bindings.get(name);
+      if (binding && settings.sources.some((s) => binding.source.includes(s) || s.includes(binding.source))) {
+        return true;
+      }
+      if (aliasName === name) {
+        return true;
+      }
+    }
+  }
+
+  for (const name of settings.lazyTypeNames) {
+    if (aliasName === name || typeStr.startsWith(name)) {
+      const binding = bindings.get(name);
+      if (binding && settings.sources.some((s) => binding.source.includes(s) || s.includes(binding.source))) {
+        return true;
+      }
+      if (aliasName === name) {
+        return true;
+      }
+    }
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    node.callee.type === AST_NODE_TYPES.MemberExpression &&
+    !node.callee.computed &&
+    node.callee.property.type === AST_NODE_TYPES.Identifier &&
+    ['then', 'catch', 'finally'].includes(node.callee.property.name)
+  ) {
+    return isCancelableOrLazyExpression(node.callee.object, context);
+  }
+
+  return false;
+}
+
+/**
+ * Check combinator argument (array of promises or iterable) and return any elements
+ * that are plain promise sinks.
+ */
+export function checkCombinatorGapElements(
+  argNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): TSESTree.Node[] {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return [];
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+
+  if (argNode.type === AST_NODE_TYPES.ArrayExpression) {
+    const gaps: TSESTree.Node[] = [];
+    for (const elem of argNode.elements) {
+      if (!elem) continue;
+      const target = elem.type === AST_NODE_TYPES.SpreadElement ? elem.argument : elem;
+      const elemType = services.getTypeAtLocation(target);
+      if (typeIsPlainPromiseSink(elemType, checker, settings)) {
+        gaps.push(target);
+      }
+    }
+    return gaps;
+  }
+
+  const argType = services.getTypeAtLocation(argNode);
+  const indexType = checker.getIndexTypeOfType(argType, 1 /* IndexKind.Number */);
+  if (indexType && typeIsPlainPromiseSink(indexType, checker, settings)) {
+    return [argNode];
+  }
+  return [];
+}
+
+/**
+ * Check if an inline callback (ArrowFunctionExpression or FunctionExpression) returns
+ * a plain-promise-typed value.
+ */
+export function inlineCallbackReturnsPlainPromise(
+  cbNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  if (cbNode.type !== AST_NODE_TYPES.ArrowFunctionExpression && cbNode.type !== AST_NODE_TYPES.FunctionExpression) {
+    return false;
+  }
+
+  if (cbNode.async) {
+    return true;
+  }
+
+  if (cbNode.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return isPlainPromiseSinkExpression(cbNode.body, context);
+  }
+
+  const returns: TSESTree.ReturnStatement[] = [];
+  function findReturns(node: TSESTree.Node): void {
+    if (
+      node !== cbNode &&
+      (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        node.type === AST_NODE_TYPES.FunctionExpression ||
+        node.type === AST_NODE_TYPES.FunctionDeclaration)
+    ) {
+      return;
+    }
+    if (node.type === AST_NODE_TYPES.ReturnStatement) {
+      returns.push(node);
+      return;
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) {
+              findReturns(item as TSESTree.Node);
+            }
+          }
+        } else if ('type' in child) {
+          findReturns(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+
+  findReturns(cbNode.body);
+
+  for (const ret of returns) {
+    if (ret.argument && isPlainPromiseSinkExpression(ret.argument, context)) {
+      return true;
+    }
+  }
+
+  return false;
 }
