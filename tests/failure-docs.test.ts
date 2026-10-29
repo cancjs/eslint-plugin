@@ -35,6 +35,26 @@ function extractSchemaOptionKeys(schema: unknown): string[] {
   return keys;
 }
 
+function collectNestedPropertyNames(node: unknown, depth = 0): string[] {
+  if (!node || typeof node !== 'object') {
+    return [];
+  }
+  const names: string[] = [];
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key === 'properties' && value && typeof value === 'object') {
+      if (depth > 0) {
+        names.push(...Object.keys(value));
+      }
+      for (const child of Object.values(value as Record<string, unknown>)) {
+        names.push(...collectNestedPropertyNames(child, depth + 1));
+      }
+    } else {
+      names.push(...collectNestedPropertyNames(value, depth));
+    }
+  }
+  return names;
+}
+
 function extractDocOptionHeadings(content: string): string[] {
   const optionsSection = content.split(/^## Options\s*$/m)[1];
   if (!optionsSection) {
@@ -84,6 +104,25 @@ describe('failure family rule documentation', () => {
         );
       }
     }
+  });
+
+  it('names every nested matcher field of each option schema in the rule page', () => {
+    for (const ruleName of FAILURE_RULES) {
+      const pagePath = path.join(docsDir, `${ruleName}.md`);
+      const content = fs.readFileSync(pagePath, 'utf8');
+      const rule = (rules as Record<string, { meta?: { schema?: unknown } }>)[ruleName];
+      const nested = [...new Set(collectNestedPropertyNames(rule.meta?.schema))];
+      for (const field of nested) {
+        expect(content, `Doc page '${ruleName}.md' does not mention matcher field '${field}'`).toContain(
+          `\`${field}\``,
+        );
+      }
+    }
+  });
+
+  it('require-error-discriminant states that static members are not discriminants', () => {
+    const content = fs.readFileSync(path.join(docsDir, 'require-error-discriminant.md'), 'utf8');
+    expect(content).toMatch(/static (members|fields)[^.]*(not|never)[^.]*(count|satisfy|discriminant)/i);
   });
 
   it('documents that CancelError is never reported on prefer-canc-throw and no-throw-in-chain-callback', () => {
