@@ -1,0 +1,250 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { describe } from 'vitest';
+
+import rule from '../../src/rules/exhaustive-catch.js';
+import { readMarkers } from '../helpers/corpus.js';
+import { ruleTester } from '../setup.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const corpusDir = path.resolve(__dirname, '../fixtures/corpus/failure');
+
+const invalid05Path = path.join(corpusDir, 'invalid/05-exhaustive-catch-unhandled.ts');
+const invalid16Path = path.join(corpusDir, 'invalid/16-exhaustive-catch-timeout.ts');
+const invalid06Path = path.join(corpusDir, 'invalid/06-exhaustive-catch-no-rethrow.ts');
+const invalid07Path = path.join(corpusDir, 'invalid/07-exhaustive-catch-open-set.ts');
+
+const valid14Path = path.join(corpusDir, 'valid/14-closed-set-fully-narrowed.ts');
+const valid15Path = path.join(corpusDir, 'valid/15-open-set-fallback-rethrow.ts');
+const valid16Path = path.join(corpusDir, 'valid/16-timeout-handled.ts');
+
+const codeInvalid05 = fs.readFileSync(invalid05Path, 'utf8');
+const codeInvalid16 = fs.readFileSync(invalid16Path, 'utf8');
+const codeInvalid06 = fs.readFileSync(invalid06Path, 'utf8');
+const codeInvalid07 = fs.readFileSync(invalid07Path, 'utf8');
+
+const codeValid14 = fs.readFileSync(valid14Path, 'utf8');
+const codeValid15 = fs.readFileSync(valid15Path, 'utf8');
+const codeValid16 = fs.readFileSync(valid16Path, 'utf8');
+
+const markers05 = readMarkers(invalid05Path);
+const markers16 = readMarkers(invalid16Path);
+const markers06 = readMarkers(invalid06Path);
+const markers07 = readMarkers(invalid07Path);
+
+const typedTester = ruleTester({ types: true });
+const untypedTester = ruleTester({ types: false });
+
+describe('exhaustive-catch (typed lane)', () => {
+  typedTester.run('exhaustive-catch', rule, {
+    valid: [
+      // Valid corpus twins
+      codeValid14,
+      codeValid15,
+      codeValid16,
+      // Closed set fully narrowed without rethrow (valid)
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       import type CancelablePromise from '@cancjs/promise';
+       class ErrorA extends Error {}
+       class ErrorB extends Error {}
+       declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+       export const run = cancAsync(function* () {
+         try {
+           yield* cancAwait(getUnion());
+         } catch (e) {
+           if (e instanceof ErrorA) {
+             console.log('A');
+           } else if (e instanceof ErrorB) {
+             console.log('B');
+           }
+         }
+       });`,
+      // Open set without fallback but requireUnlistedFallback: false (valid)
+      {
+        code: codeInvalid07,
+        options: [{ requireUnlistedFallback: false }],
+      },
+      // Native Promise step contributes nothing (silent)
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function getNative(): Promise<string>;
+       export const run = cancAsync(function* () {
+         try {
+           yield* cancAwait(getNative());
+         } catch (e) {
+           console.error(e);
+         }
+       });`,
+      // One-arg undeclared CancelablePromise step (silent: report nothing)
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       import type CancelablePromise from '@cancjs/promise';
+       declare function getUndeclared(): CancelablePromise<string>;
+       export const run = cancAsync(function* () {
+         try {
+           yield* cancAwait(getUndeclared());
+         } catch (e) {
+           console.error(e);
+         }
+       });`,
+      // yield* inside nested arrow function (excluded from try step walk)
+      `import { cancAsync } from '@cancjs/coroutine';
+       import type CancelablePromise from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare function getA(): CancelablePromise<string, ErrorA>;
+       export const run = cancAsync(function* () {
+         try {
+           const helper = function* () {
+             yield* getA();
+           };
+           console.log('safe');
+         } catch (e) {
+           console.error(e);
+         }
+       });`,
+      // Delegate failure is never (silent)
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       import type CancelablePromise from '@cancjs/promise';
+       declare function getNever(): CancelablePromise<string, never>;
+       export const run = cancAsync(function* () {
+         try {
+           yield* cancAwait(getNever());
+         } catch (e) {
+           console.error(e);
+         }
+       });`,
+      // Try / finally without catch (never report)
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       import type CancelablePromise from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare function getA(): CancelablePromise<string, ErrorA>;
+       export const run = cancAsync(function* () {
+         try {
+           yield* cancAwait(getA());
+         } finally {
+           console.log('clean');
+         }
+       });`,
+      // Unconditional rethrow in catch body
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       import type CancelablePromise from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare function getA(): CancelablePromise<string, ErrorA>;
+       export const run = cancAsync(function* () {
+         try {
+           yield* cancAwait(getA());
+         } catch (e) {
+           console.error(e);
+           throw e;
+         }
+       });`,
+      // Catch rethrowing inside an else branch
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       import type CancelablePromise from '@cancjs/promise';
+       class ErrorA extends Error {}
+       class ErrorB extends Error {}
+       declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+       export const run = cancAsync(function* () {
+         try {
+           yield* cancAwait(getUnion());
+         } catch (e) {
+           if (e instanceof ErrorA) {
+             console.log('A');
+           } else {
+             throw e;
+           }
+         }
+       });`,
+      // Exclude option drops matching class
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+               import type CancelablePromise from '@cancjs/promise';
+               class AssertionError extends Error {}
+               declare function getAssert(): CancelablePromise<string, AssertionError>;
+               export const run = cancAsync(function* () {
+                 try {
+                   yield* cancAwait(getAssert());
+                 } catch (e) {
+                   console.error(e);
+                 }
+               });`,
+        options: [{ exclude: ['AssertionError'] }],
+      },
+    ],
+    invalid: [
+      // 1. Timeout step fixture: names = TimeoutError only, Unlisted never named!
+      {
+        code: codeInvalid16,
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            line: markers16[0].line,
+            data: { names: 'TimeoutError' },
+          },
+        ],
+      },
+      // 2. Unhandled failure with two errors (ErrorA, ErrorB)
+      {
+        code: codeInvalid05,
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            line: markers05[0].line,
+            data: { names: 'ErrorA, ErrorB' },
+          },
+        ],
+      },
+      // 3. noRethrow: ErrorA handled, ErrorB dropped without rethrow
+      {
+        code: codeInvalid06,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: markers06[0].line,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: codeInvalid06.replace('    }\n  }', '    }\n    throw e;\n  }'),
+              },
+            ],
+          },
+        ],
+      },
+      // 4. missingUnlistedFallback on open set
+      {
+        code: codeInvalid07,
+        output: null,
+        errors: [
+          {
+            messageId: 'missingUnlistedFallback',
+            line: markers07[0].line,
+            suggestions: [
+              {
+                messageId: 'missingUnlistedFallback',
+                output: codeInvalid07.replace('    }\n  }', '    }\n    throw e;\n  }'),
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+});
+
+describe('exhaustive-catch (untyped lane)', () => {
+  untypedTester.run('exhaustive-catch-untyped', rule, {
+    valid: [
+      // Without parser services, rule degrades silently with zero messages
+      codeInvalid05,
+      codeInvalid16,
+      codeInvalid06,
+      codeInvalid07,
+    ],
+    invalid: [],
+  });
+});

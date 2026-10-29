@@ -1,5 +1,6 @@
 import type { TypeOrValueSpecifier } from '@typescript-eslint/type-utils';
 import { typeMatchesSpecifier, typeOrValueSpecifiersSchema } from '@typescript-eslint/type-utils';
+import type { JSONSchema4 } from '@typescript-eslint/utils/json-schema';
 import type ts from 'typescript';
 
 export interface ExtendsSpecifier {
@@ -13,7 +14,7 @@ export interface ClassMatcherOptions {
   exclude?: ClassMatcher[];
 }
 
-export const classMatcherSchema = {
+export const classMatcherSchema: JSONSchema4 = {
   type: 'array',
   items: {
     oneOf: [

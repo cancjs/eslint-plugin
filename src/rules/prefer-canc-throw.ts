@@ -223,7 +223,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        if (isExcludedThrow(node.argument, compiledExclude, checker, program, tsNode)) {
+        if (isExcludedThrow(node.argument, compiledExclude, checker, program ?? undefined, tsNode)) {
           return;
         }
 

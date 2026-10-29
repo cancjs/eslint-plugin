@@ -128,40 +128,13 @@ function findFailureProperty(type: ts.Type, checker: ts.TypeChecker): ts.Symbol 
   return undefined;
 }
 
-export function getFailureMembers(type: ts.Type, checker: ts.TypeChecker): FailureMembers {
-  if (type.isUnion()) {
-    const results = type.types.map((t) => getFailureMembers(t, checker));
-    const anyDefined = results.length > 0 && results.some((r) => r.defined);
-    const anyOpen = results.some((r) => r.open);
-    const listedMap = new Map<string, ts.Type>();
-    for (const r of results) {
-      for (const t of r.listed) {
-        const id = checker.typeToString(t);
-        if (!listedMap.has(id)) {
-          listedMap.set(id, t);
-        }
-      }
-    }
-    return {
-      listed: Array.from(listedMap.values()),
-      open: anyOpen,
-      defined: anyDefined,
-    };
-  }
-
-  const failureProp = findFailureProperty(type, checker);
-  if (!failureProp) {
-    return { listed: [], open: false, defined: false };
-  }
-
-  const loc = failureProp.valueDeclaration ?? failureProp.declarations?.[0];
-  const failureType = loc ? checker.getTypeOfSymbolAtLocation(failureProp, loc) : undefined;
-  if (!failureType) {
-    return { listed: [], open: false, defined: false };
-  }
-
+function extractFromFailureType(failureType: ts.Type, checker: ts.TypeChecker): FailureMembers {
   if (failureType.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) {
     return { listed: [], open: false, defined: false };
+  }
+
+  if (failureType.flags & ts.TypeFlags.Never) {
+    return { listed: [], open: false, defined: true };
   }
 
   const rawParts = failureType.isUnion() ? failureType.types : [failureType];
@@ -183,4 +156,74 @@ export function getFailureMembers(type: ts.Type, checker: ts.TypeChecker): Failu
     open,
     defined: true,
   };
+}
+
+export function getFailureMembers(type: ts.Type, checker: ts.TypeChecker): FailureMembers {
+  if (type.isUnion()) {
+    const results = type.types.map((t) => getFailureMembers(t, checker));
+    const anyDefined = results.length > 0 && results.some((r) => r.defined);
+    const anyOpen = results.some((r) => r.open);
+    const listedMap = new Map<string, ts.Type>();
+    for (const r of results) {
+      for (const t of r.listed) {
+        const id = checker.typeToString(t);
+        if (!listedMap.has(id)) {
+          listedMap.set(id, t);
+        }
+      }
+    }
+    return {
+      listed: Array.from(listedMap.values()),
+      open: anyOpen,
+      defined: anyDefined,
+    };
+  }
+
+  // 1. Direct [FAILURE] property lookup
+  const failureProp = findFailureProperty(type, checker);
+  if (failureProp) {
+    const loc = failureProp.valueDeclaration ?? failureProp.declarations?.[0];
+    const failureType = loc ? checker.getTypeOfSymbolAtLocation(failureProp, loc) : undefined;
+    if (failureType) {
+      const res = extractFromFailureType(failureType, checker);
+      if (res.defined) {
+        return res;
+      }
+    }
+  }
+
+  // 2. Intersection
+  if (type.isIntersection()) {
+    for (const t of type.types) {
+      const res = getFailureMembers(t, checker);
+      if (res.defined) {
+        return res;
+      }
+    }
+  }
+
+  // 3. Generator unwrapping (yield* step)
+  const symName = type.aliasSymbol?.name ?? type.symbol?.name;
+  if (symName === 'Generator' || symName === 'AsyncGenerator') {
+    const typeRef = type as ts.TypeReference;
+    const args = type.aliasTypeArguments ?? typeRef.typeArguments ?? checker.getTypeArguments(typeRef);
+    if (args && args.length > 0) {
+      const yieldResult = getFailureMembers(args[0], checker);
+      if (yieldResult.defined) {
+        return yieldResult;
+      }
+    }
+  }
+
+  // 4. CancelablePromise, AsyncResult, or Failing type arguments
+  if (symName === 'CancelablePromise' || symName === 'AsyncResult' || symName === 'Failing') {
+    const typeRef = type as ts.TypeReference;
+    const args = type.aliasTypeArguments ?? typeRef.typeArguments ?? checker.getTypeArguments(typeRef);
+    const failureArgIndex = symName === 'Failing' ? 0 : 1;
+    if (args && args.length > failureArgIndex) {
+      return extractFromFailureType(args[failureArgIndex], checker);
+    }
+  }
+
+  return { listed: [], open: false, defined: false };
 }

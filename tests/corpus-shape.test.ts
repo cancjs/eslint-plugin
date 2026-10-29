@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest';
 
 import { CATALOG_RULE_IDS, corpusFiles, readMarkers } from './helpers/corpus.js';
 
-describe('corpus shape: 248 fixtures across 7 families', () => {
+describe('corpus shape: 249 fixtures across 7 families', () => {
   const families = ['coroutine', 'error-handling', 'executor', 'flow', 'hygiene', 'lazy', 'failure'] as const;
 
-  it('prints per-family counts summing to 248 files', () => {
+  it('prints per-family counts summing to 249 files', () => {
     const allFiles = corpusFiles();
-    expect(allFiles).toHaveLength(248);
+    expect(allFiles).toHaveLength(249);
 
     const counts: Record<string, { total: number; valid: number; invalid: number }> = {};
     for (const fam of families) {
@@ -23,7 +23,7 @@ describe('corpus shape: 248 fixtures across 7 families', () => {
     const summary = families
       .map((fam) => `${fam}: ${counts[fam].total} (${counts[fam].valid} valid, ${counts[fam].invalid} invalid)`)
       .join(', ');
-    console.log(`Corpus shape: 248 files [${summary}]`);
+    console.log(`Corpus shape: 249 files [${summary}]`);
 
     expect(counts.coroutine.total).toBe(37);
     expect(counts.coroutine.valid).toBe(21);
@@ -49,17 +49,17 @@ describe('corpus shape: 248 fixtures across 7 families', () => {
     expect(counts.lazy.valid).toBe(8);
     expect(counts.lazy.invalid).toBe(7);
 
-    expect(counts.failure.total).toBe(31);
+    expect(counts.failure.total).toBe(32);
     expect(counts.failure.valid).toBe(16);
-    expect(counts.failure.invalid).toBe(15);
+    expect(counts.failure.invalid).toBe(16);
 
     const sum = Object.values(counts).reduce((acc, c) => acc + c.total, 0);
-    expect(sum).toBe(248);
+    expect(sum).toBe(249);
   });
 
   it('every invalid file has at least 1 marker', () => {
     const invalidFiles = corpusFiles(undefined, 'invalid');
-    expect(invalidFiles.length).toBe(97);
+    expect(invalidFiles.length).toBe(98);
 
     const missingMarkers: string[] = [];
     for (const file of invalidFiles) {

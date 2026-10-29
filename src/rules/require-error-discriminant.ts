@@ -227,11 +227,12 @@ export default createRule<RuleOptions, MessageIds>({
 
   create(context) {
     const parserServices = context.sourceCode.parserServices;
-    if (!parserServices?.program) {
+    if (!parserServices?.program || !parserServices.esTreeNodeToTSNodeMap) {
       return {};
     }
 
     const program = parserServices.program;
+    const esTreeNodeToTSNodeMap = parserServices.esTreeNodeToTSNodeMap;
     const checker = program.getTypeChecker();
     const options = compileOptions(context.options[0]);
 
@@ -242,7 +243,7 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         const className = node.id.name;
-        const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node.id);
+        const tsNode = esTreeNodeToTSNodeMap.get(node.id);
         const classSym = checker.getSymbolAtLocation(tsNode);
         if (!classSym) {
           return;
