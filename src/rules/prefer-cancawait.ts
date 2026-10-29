@@ -3,7 +3,6 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCancBindings, getCoroutineContext, refersTo } from '../util/canc-imports.js';
 import createRule from '../util/create-rule.js';
-import { getCancSettings } from '../util/settings.js';
 
 export interface Options {
   allowBareYield?: boolean;
@@ -56,13 +55,12 @@ function findCancAwaitLocalName(
   context: Parameters<Parameters<typeof createRule<RuleOptions, MessageIds>>[0]['create']>[0],
 ): string | null {
   const bindings = getCancBindings(context);
-  const settings = getCancSettings(context);
   for (const [localName, binding] of bindings) {
-    const isTrackedSource =
-      binding.source === '@cancjs/coroutine' ||
-      binding.source.endsWith('/coroutine') ||
-      settings.sources.some((s) => binding.source === s || binding.source.startsWith(s + '/'));
-    if (!binding.namespace && isTrackedSource && (binding.exported === 'cancAwait' || binding.exported === 'await')) {
+    // the gen dialect exports its own await, which mismatches inside cancAsync
+    const isCancAwait =
+      binding.source !== '@cancjs/coroutine/gen' &&
+      (binding.exported === 'cancAwait' || (binding.source === '@cancjs/coroutine' && binding.exported === 'await'));
+    if (!binding.namespace && isCancAwait) {
       let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
       let shadowed = false;
       while (scope) {

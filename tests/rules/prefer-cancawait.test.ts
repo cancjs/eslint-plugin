@@ -104,6 +104,42 @@ describe('prefer-cancawait', () => {
           },
         ],
       },
+      // With both dialects imported, the fix uses the cancAsync dialect await
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               import { await as gAwait } from '@cancjs/coroutine/gen';
+               const load = cancAsync(function* () {
+                 yield Promise.resolve(1);
+               });`,
+        output: null,
+        errors: [{ messageId: 'preferCancAwait' as const, line: 4 }],
+      },
+      {
+        code: `import { await as gAwait } from '@cancjs/coroutine/gen';
+               import { cancAsync, await as cAwait } from '@cancjs/coroutine';
+               const load = cancAsync(function* () {
+                 yield Promise.resolve(1);
+               });`,
+        output: `import { await as gAwait } from '@cancjs/coroutine/gen';
+               import { cancAsync, await as cAwait } from '@cancjs/coroutine';
+               const load = cancAsync(function* () {
+                 yield* cAwait(Promise.resolve(1));
+               });`,
+        errors: [{ messageId: 'preferCancAwait' as const, line: 4 }],
+      },
+      // A configured source that re-exports the coroutine API
+      {
+        code: `import { cancAsync, cancAwait } from 'my-coroutine';
+               const load = cancAsync(function* () {
+                 yield Promise.resolve(1);
+               });`,
+        settings: { canc: { sources: ['my-coroutine'] } },
+        output: `import { cancAsync, cancAwait } from 'my-coroutine';
+               const load = cancAsync(function* () {
+                 yield* cancAwait(Promise.resolve(1));
+               });`,
+        errors: [{ messageId: 'preferCancAwait' as const, line: 3 }],
+      },
       // When cancAwait is shadowed by a local variable, report without fix
       {
         code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
