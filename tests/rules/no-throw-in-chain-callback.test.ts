@@ -124,6 +124,41 @@ describe('no-throw-in-chain-callback (typed lane)', () => {
     ],
 
     invalid: [
+      // Default-import alias: annotated receiver
+      {
+        code: `import CP from '@cancjs/promise';
+declare const p: CP<string>;
+p.then(() => {
+  if (Math.random()) throw new Error('x');
+  return 1;
+});`,
+        output: null,
+        errors: [{ messageId: 'throwInChainCallback', line: 4, data: { method: 'then' } }],
+      },
+
+      // Default-import alias: constructed receiver
+      {
+        code: `import CP from '@cancjs/promise';
+new CP<string>((resolve) => resolve('a')).then(() => {
+  if (Math.random()) throw new Error('x');
+  return 1;
+});`,
+        output: null,
+        errors: [{ messageId: 'throwInChainCallback', line: 3, data: { method: 'then' } }],
+      },
+
+      // Named import: constructed receiver, two links deep
+      {
+        code: `import { CancelablePromise } from '@cancjs/promise';
+new CancelablePromise<string>((resolve) => resolve('a'))
+  .then(() => 1)
+  .then(() => {
+    if (Math.random()) throw new Error('x');
+    return 2;
+  });`,
+        output: null,
+        errors: [{ messageId: 'throwInChainCallback', line: 5, data: { method: 'then' } }],
+      },
       // 1. Corpus invalid 12: throw in then
       {
         code: codeInvalid12,
