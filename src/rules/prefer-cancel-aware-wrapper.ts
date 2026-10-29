@@ -86,10 +86,10 @@ function findCallPassingSignal(
   while (curr && curr !== container) {
     if (curr.type === AST_NODE_TYPES.CallExpression) {
       if (curr.callee !== node && curr.arguments.some((arg) => isDescendantOf(node, arg) || arg === node)) {
-        if (hasTypeServices(context) && !isThenableExpression(curr, context)) {
-          return false;
+        // a non-thenable call (options builder, any-typed helper) may hand the signal on
+        if (!hasTypeServices(context) || isThenableExpression(curr, context)) {
+          return true;
         }
-        return true;
       }
     }
     curr = curr.parent;

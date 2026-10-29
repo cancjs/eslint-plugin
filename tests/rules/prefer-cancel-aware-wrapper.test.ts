@@ -148,6 +148,36 @@ const run = cancAsync(function* (id: string) {
           },
         ],
       },
+      // Signal wrapped in an options object before reaching the call
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function rawFetch(id: string, init: { signal: AbortSignal }): Promise<void>;
+declare function withDefaults(init: { signal: AbortSignal }): { signal: AbortSignal };
+const run = cancAsync(function* (id: string) {
+  const controller = new AbortController();
+  try {
+    yield* cancAwait(rawFetch(id, withDefaults({ signal: controller.signal })));
+  } finally {
+    controller.abort();
+  }
+});`,
+        errors: [{ messageId: 'manualCancelWiring' as const, line: 9, column: 5 }],
+      },
+      // Signal passed through an any-returning helper
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+declare function pick(value: unknown): any;
+const run = cancAsync(function* (id: string) {
+  const controller = new AbortController();
+  try {
+    yield* cancAwait(rawFetch(id, pick(controller.signal)));
+  } finally {
+    controller.abort();
+  }
+});`,
+        errors: [{ messageId: 'manualCancelWiring' as const, line: 9, column: 5 }],
+      },
     ],
   });
 
