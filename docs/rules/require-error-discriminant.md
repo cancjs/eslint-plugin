@@ -4,11 +4,13 @@ Require error classes used in declared failure unions to declare a discriminant 
 
 TypeScript checks and compares types structurally rather than nominally. Two distinct error classes that both extend `Error` without declaring unique fields share an identical structural type shape. When used in a failure union (such as `CancelablePromise<string, NotFoundError | UnauthorizedError>`), attempting to narrow or subtract one class using `Exclude` or type predicates inadvertently matches and removes both classes.
 
-To guarantee that failure union members can be distinguished and narrowed safely, every error class used in a failure type must declare:
+To guarantee that failure union members can be distinguished and narrowed safely, every error class used in a failure type must declare, on its instances, one of the following:
 
 1. A unique discriminant property (for example, `readonly kind = 'NotFoundError';`),
 2. A literal `name` property (for example, `override readonly name = 'NotFoundError' as const;`), or
 3. A unique brand key or symbol (for example, `readonly [BRAND] = true;`).
+
+Static members never count. A static field lives on the class constructor, not on its instances, so two classes that differ only by a static field still have identical instance types and still collapse in a union.
 
 ## Rule details
 
@@ -20,6 +22,16 @@ export class NotFoundError extends Error {}
 export class ConflictError extends Error {}
 
 declare function findUser(): CancelablePromise<User, NotFoundError | ConflictError>;
+
+// Static fields are not part of the instance type, so these still collapse
+export class TimeoutError extends Error {
+  static readonly code = 'TIMEOUT';
+}
+export class QuotaError extends Error {
+  static readonly code = 'QUOTA';
+}
+
+declare function sync(): CancelablePromise<void, TimeoutError | QuotaError>;
 ```
 
 ### Correct
@@ -54,11 +66,34 @@ This rule accepts an optional configuration object:
 
 ### include
 
-Default: `[]`. An array of class matchers specifying error classes to check for discriminants (when non-empty, only classes matching `include` that are also used as failure types in the program are checked).
+Default: `[]`. An array of class matchers specifying error classes to check for discriminants (when non-empty, only classes matching `include` that are also used as failure types in the program are checked). Matchers are described under Class matchers below.
 
 ### exclude
 
-Default: `[]`. An array of class matchers specifying error classes that are exempt from the discriminant requirement. Matchers can be string class names, regular expressions, or structured matcher objects.
+Default: `[]`. An array of class matchers specifying error classes that are exempt from the discriminant requirement. Matchers are described under Class matchers below.
+
+## Class matchers
+
+The `include` and `exclude` option takes a list of class matchers. A matcher is one of the following.
+
+- A string. A bare name such as `LegacyError` matches that class name exactly. A string wrapped in slashes, such as `/^Internal/`, is a regular expression tested against the class name. The `g` and `y` flags are rejected.
+- An object with `from` set to `"file"`, a `name`, and an optional `path`. It matches a class declared in the file at `path`, or in any project file when `path` is omitted.
+- An object with `from` set to `"lib"` and a `name`. It matches a class declared by the TypeScript standard library.
+- An object with `from` set to `"package"`, a `name`, and a `package`. It matches a class exported by that package.
+- An object with `extends`, such as `{ "extends": "BaseError" }` or `{ "extends": "/Error$/" }`. It matches any class that has the named class as an ancestor, directly or through other classes.
+
+In the three `from` forms, `name` is a single string or an array of strings. Object matchers are resolved through type information and are skipped when it is unavailable.
+
+```json
+{
+  "exclude": [
+    "LegacyError",
+    "/^Internal/",
+    { "from": "package", "name": "HttpError", "package": "http-errors" },
+    { "extends": "AssertionError" }
+  ]
+}
+```
 
 ## When not to use it
 

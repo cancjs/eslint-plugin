@@ -111,7 +111,30 @@ Default: `true`. When set to `true`, a catch block guarding a step with an open 
 
 ### exclude
 
-Default: `[]`. An array of class matchers specifying failure classes that do not require exhaustive handling in catch blocks.
+Default: `[]`. An array of class matchers specifying failure classes that do not require exhaustive handling in catch blocks. Matchers are described under Class matchers below.
+
+## Class matchers
+
+The `exclude` option takes a list of class matchers. A matcher is one of the following.
+
+- A string. A bare name such as `LegacyError` matches that class name exactly. A string wrapped in slashes, such as `/^Internal/`, is a regular expression tested against the class name. The `g` and `y` flags are rejected.
+- An object with `from` set to `"file"`, a `name`, and an optional `path`. It matches a class declared in the file at `path`, or in any project file when `path` is omitted.
+- An object with `from` set to `"lib"` and a `name`. It matches a class declared by the TypeScript standard library.
+- An object with `from` set to `"package"`, a `name`, and a `package`. It matches a class exported by that package.
+- An object with `extends`, such as `{ "extends": "BaseError" }` or `{ "extends": "/Error$/" }`. It matches any class that has the named class as an ancestor, directly or through other classes.
+
+In the three `from` forms, `name` is a single string or an array of strings. Object matchers are resolved through type information and are skipped when it is unavailable.
+
+```json
+{
+  "exclude": [
+    "LegacyError",
+    "/^Internal/",
+    { "from": "package", "name": "HttpError", "package": "http-errors" },
+    { "extends": "AssertionError" }
+  ]
+}
+```
 
 ## When not to use it
 
