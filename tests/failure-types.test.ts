@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   getFailureMembers,
+  getProgramFailureSymbols,
   isCancelErrorCtorNode,
   isCancelErrorType,
   isUnlistedMarker,
@@ -28,11 +29,33 @@ function getTypeByName(sourceFile: ts.SourceFile, checker: ts.TypeChecker, name:
   throw new Error(`Symbol ${name} not found in ${sourceFile.fileName}`);
 }
 
+function getClassSymbol(sourceFile: ts.SourceFile, checker: ts.TypeChecker, name: string): ts.Symbol {
+  const type = getTypeByName(sourceFile, checker, name);
+  const symbol = type.getSymbol();
+  if (!symbol) {
+    throw new Error(`Class ${name} has no symbol`);
+  }
+  return symbol;
+}
+
+const defaultSettings = {
+  sources: ['@cancjs/promise', '@cancjs/coroutine', '@cancjs/toolbox'],
+  cancelableTypeNames: ['CancelablePromise'],
+  lazyTypeNames: ['LazyPromise'],
+  structuralDetection: true,
+  boundaryFunctions: [],
+};
+
 describe('failure-types', () => {
   let checker: ts.TypeChecker;
   let casesFile: ts.SourceFile;
   let copyAFile: ts.SourceFile;
   let copyBFile: ts.SourceFile;
+  let program: ts.Program;
+  let userFile: ts.SourceFile;
+  let mixedFile: ts.SourceFile;
+  let lookalikeFile: ts.SourceFile;
+  let realFile: ts.SourceFile;
 
   beforeAll(() => {
     const configFile = ts.readConfigFile(fixtureTsconfigPath, (p) => ts.sys.readFile(p));
@@ -44,7 +67,7 @@ describe('failure-types', () => {
       fixtureTsconfigPath,
     );
 
-    const program = ts.createProgram(parsed.fileNames, parsed.options);
+    program = ts.createProgram(parsed.fileNames, parsed.options);
     checker = program.getTypeChecker();
 
     const casesPath = path.resolve(path.dirname(fixtureTsconfigPath), 'src/failure-test-cases.ts');
@@ -55,7 +78,13 @@ describe('failure-types', () => {
     copyAFile = program.getSourceFile(copyAPath)!;
     copyBFile = program.getSourceFile(copyBPath)!;
 
-    if (!casesFile || !copyAFile || !copyBFile) {
+    const srcDir = path.resolve(path.dirname(fixtureTsconfigPath), 'src');
+    userFile = program.getSourceFile(path.resolve(srcDir, 'failure-user-carriers.ts'))!;
+    mixedFile = program.getSourceFile(path.resolve(srcDir, 'failure-mixed-unions.ts'))!;
+    lookalikeFile = program.getSourceFile(path.resolve(srcDir, 'failure-lookalikes.ts'))!;
+    realFile = program.getSourceFile(path.resolve(srcDir, 'failure-real-usage.ts'))!;
+
+    if (!casesFile || !copyAFile || !copyBFile || !userFile || !mixedFile || !lookalikeFile || !realFile) {
       throw new Error('Failed to find fixture source files in ts.Program');
     }
   });
@@ -102,6 +131,82 @@ describe('failure-types', () => {
     });
   });
 
+  describe('getFailureMembers carrier gate', () => {
+    it('a user-declared FAILURE symbol is not a failure carrier', () => {
+      const type = getTypeByName(userFile, checker, 'UserSymbolCarrier');
+      const res = getFailureMembers(type, checker);
+      expect(res.defined).toBe(false);
+      expect(res.listed).toEqual([]);
+    });
+
+    it('a local CancelablePromise class with a FAILURE member is not a failure carrier', () => {
+      const type = getTypeByName(userFile, checker, 'LocalNamedCarrier');
+      const res = getFailureMembers(type, checker);
+      expect(res.defined).toBe(false);
+      expect(res.listed).toEqual([]);
+    });
+
+    it('a union with a non-carrier object branch is not defined', () => {
+      const res = getFailureMembers(getTypeByName(mixedFile, checker, 'MixedWithObject'), checker);
+      expect(res.defined).toBe(false);
+      expect(res.listed.map((t) => checker.typeToString(t))).toEqual(['FooError']);
+    });
+
+    it('a union with a primitive branch is not defined', () => {
+      const res = getFailureMembers(getTypeByName(mixedFile, checker, 'MixedWithString'), checker);
+      expect(res.defined).toBe(false);
+    });
+
+    it('a union of carriers merges the listed failures', () => {
+      const res = getFailureMembers(getTypeByName(mixedFile, checker, 'CarrierUnion'), checker);
+      expect(res.defined).toBe(true);
+      expect(res.listed.map((t) => checker.typeToString(t)).sort()).toEqual(['BarError', 'FooError']);
+    });
+
+    it('an undefined branch beside a carrier stays defined', () => {
+      const res = getFailureMembers(getTypeByName(mixedFile, checker, 'CarrierOrUndefined'), checker);
+      expect(res.defined).toBe(true);
+      expect(res.listed.map((t) => checker.typeToString(t))).toEqual(['FooError']);
+    });
+  });
+
+  describe('getProgramFailureSymbols', () => {
+    it('ignores failure positions declared by look-alike CancelablePromise, withFailure, isErrorOf, cancThrow and fail', () => {
+      const symbols = getProgramFailureSymbols(program, checker, defaultSettings);
+      for (const name of [
+        'LookTypeArgError',
+        'LookWithFailureError',
+        'LookIsErrorOfError',
+        'LookThrowError',
+        'LookFailError',
+      ]) {
+        expect(symbols.has(getClassSymbol(lookalikeFile, checker, name)), name).toBe(false);
+      }
+    });
+
+    it('collects failure positions declared by the tracked canc packages', () => {
+      const symbols = getProgramFailureSymbols(program, checker, defaultSettings);
+      for (const name of [
+        'RealTypeArgError',
+        'RealWithFailureError',
+        'RealIsErrorOfError',
+        'RealThrowError',
+        'RealFailError',
+      ]) {
+        expect(symbols.has(getClassSymbol(realFile, checker, name)), name).toBe(true);
+      }
+    });
+
+    it('does not reuse a result computed for different settings on the same program', () => {
+      const restricted = { ...defaultSettings, sources: ['@cancjs/toolbox'] };
+      const fewer = getProgramFailureSymbols(program, checker, restricted);
+      const full = getProgramFailureSymbols(program, checker, defaultSettings);
+      const typeArgError = getClassSymbol(realFile, checker, 'RealTypeArgError');
+      expect(fewer.has(typeArgError)).toBe(false);
+      expect(full.has(typeArgError)).toBe(true);
+    });
+  });
+
   describe('isCancelErrorType', () => {
     it('subclass of CancelError and CancelError & {x:1} -> isCancelErrorType true; plain Error false', () => {
       const sub = getTypeByName(casesFile, checker, 'SubCancelError');
@@ -111,6 +216,12 @@ describe('failure-types', () => {
       expect(isCancelErrorType(sub, checker)).toBe(true);
       expect(isCancelErrorType(inter, checker)).toBe(true);
       expect(isCancelErrorType(plain, checker)).toBe(false);
+    });
+
+    it('matches the brand key exactly, not by substring', () => {
+      for (const name of ['SubstringBrandError', 'LocalNamedSymbolError', 'StringKeyedBrandError']) {
+        expect(isCancelErrorType(getTypeByName(userFile, checker, name), checker), name).toBe(false);
+      }
     });
 
     it('duplicate-copy probe: two fixture files each declaring structurally identical CancelError-branded class -> both true', () => {

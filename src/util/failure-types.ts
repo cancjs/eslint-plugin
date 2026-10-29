@@ -1,3 +1,4 @@
+import type { ParserServicesWithTypeInformation, TSESTreeToTSNode } from '@typescript-eslint/typescript-estree';
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import ts from 'typescript';
@@ -15,43 +16,45 @@ export interface FailureMembers {
   defined: boolean;
 }
 
-function isCancelBrandProperty(prop: ts.Symbol, checker: ts.TypeChecker): boolean {
-  const name = prop.name;
-  if (name.includes('CANCEL_ERROR_BRAND') || name.includes('@cancjs/promise:CancelError')) {
-    return true;
+const CANCEL_ERROR_BRAND_NAME = 'CANCEL_ERROR_BRAND';
+const CANCEL_ERROR_BRAND_KEY = '@cancjs/promise:CancelError';
+
+function isBrandKeyInitializer(initializer: ts.Expression): boolean {
+  if (!ts.isCallExpression(initializer) || initializer.arguments.length !== 1) {
+    return false;
   }
-  const escaped = String(prop.escapedName);
-  if (escaped.includes('CANCEL_ERROR_BRAND') || escaped.includes('@cancjs/promise:CancelError')) {
-    return true;
-  }
-  if (prop.declarations) {
-    for (const d of prop.declarations) {
-      if (ts.isPropertyDeclaration(d) || ts.isPropertySignature(d)) {
-        if (ts.isComputedPropertyName(d.name)) {
-          const expr = d.name.expression;
-          const text = expr.getText();
-          if (text.includes('@cancjs/promise:CancelError') || text.includes('CANCEL_ERROR_BRAND')) {
-            return true;
-          }
-          const sym = checker.getSymbolAtLocation(expr);
-          if (sym) {
-            if (sym.name.includes('CANCEL_ERROR_BRAND') || sym.name.includes('@cancjs/promise:CancelError')) {
-              return true;
-            }
-            if (sym.declarations) {
-              for (const symDecl of sym.declarations) {
-                const declText = symDecl.getText();
-                if (declText.includes('@cancjs/promise:CancelError') || declText.includes('CANCEL_ERROR_BRAND')) {
-                  return true;
-                }
-              }
-            }
-          }
-        }
-      }
+  const callee = initializer.expression;
+  const [arg] = initializer.arguments;
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'Symbol' &&
+    callee.name.text === 'for' &&
+    ts.isStringLiteralLike(arg) &&
+    arg.text === CANCEL_ERROR_BRAND_KEY
+  );
+}
+
+function isBrandKeySymbol(key: ts.Symbol): boolean {
+  return (key.declarations ?? []).some((decl) => {
+    if (!ts.isVariableDeclaration(decl)) {
+      return false;
     }
-  }
-  return false;
+    if (decl.initializer) {
+      return isBrandKeyInitializer(decl.initializer);
+    }
+    return key.name === CANCEL_ERROR_BRAND_NAME && decl.getSourceFile().isDeclarationFile;
+  });
+}
+
+function isCancelBrandProperty(prop: ts.Symbol, checker: ts.TypeChecker): boolean {
+  return (prop.declarations ?? []).some((decl) => {
+    if (!(ts.isPropertyDeclaration(decl) || ts.isPropertySignature(decl)) || !ts.isComputedPropertyName(decl.name)) {
+      return false;
+    }
+    const key = checker.getSymbolAtLocation(decl.name.expression);
+    return key !== undefined && isBrandKeySymbol(key);
+  });
 }
 
 function typeHasCancelBrand(type: ts.Type, checker: ts.TypeChecker): boolean {
@@ -128,7 +131,7 @@ export function isUnlistedMarker(type: ts.Type, checker: ts.TypeChecker): boolea
   if (type.getProperty('_cancUnlisted')) {
     return true;
   }
-  const sym = type.aliasSymbol ?? type.symbol;
+  const sym = type.aliasSymbol ?? type.getSymbol();
   if (sym?.name === 'Unlisted') {
     return true;
   }
@@ -145,7 +148,7 @@ function isCancCarrierType(
   if (isCancelableType(type, checker, settings, context) || isLazyType(type, checker, settings, context)) {
     return true;
   }
-  const sym = type.aliasSymbol ?? type.getSymbol() ?? type.symbol;
+  const sym = type.aliasSymbol ?? type.getSymbol();
   if (sym && symbolDeclaredInCancSource(sym, settings, checker, context)) {
     return true;
   }
@@ -260,7 +263,8 @@ export function getFailureMembers(
     }
 
     const results = carrierParts.map((t) => getFailureMembers(t, checker, resolvedSettings, context));
-    const allDefined = results.every((r) => r.defined);
+    // a non-carrier branch contributes no failure set, so the union cannot be called defined
+    const allDefined = carrierParts.length === parts.length && results.every((r) => r.defined);
     const anyOpen = results.some((r) => r.open);
 
     const listedMap = new Map<string, ts.Type>();
@@ -304,12 +308,12 @@ export function getFailureMembers(
   }
 
   // 3. Generator unwrapping (yield* step)
-  const sym = type.aliasSymbol ?? type.getSymbol() ?? type.symbol;
+  const sym = type.aliasSymbol ?? type.getSymbol();
   const symName = sym?.name;
   if (symName === 'Generator' || symName === 'AsyncGenerator') {
     const typeRef = type as ts.TypeReference;
     const args = type.aliasTypeArguments ?? typeRef.typeArguments ?? checker.getTypeArguments(typeRef);
-    if (args && args.length > 0) {
+    if (args.length > 0) {
       const yieldResult = getFailureMembers(args[0], checker, resolvedSettings, context);
       if (yieldResult.defined) {
         return yieldResult;
@@ -335,7 +339,7 @@ export function getFailureMembers(
         symName === 'Failing' ? 0
         : symName === 'AsyncGenResult' ? 2
         : 1;
-      if (args && args.length > failureArgIndex) {
+      if (args.length > failureArgIndex) {
         return extractFromFailureType(args[failureArgIndex], checker);
       }
     }
@@ -403,7 +407,26 @@ export function isWidened(source: FailureMembers, target: FailureMembers, checke
   return false;
 }
 
-const programFailureSymbolsCache = new WeakMap<ts.Program, Set<ts.Symbol>>();
+const programFailureSymbolsCache = new WeakMap<ts.Program, Map<string, Set<ts.Symbol>>>();
+
+const FAILURE_CARRIER_NAMES = ['AsyncResult', 'AsyncGenResult'];
+const THROW_HELPER_NAMES = ['cancThrow', 'cancGenThrow', 'throw', 'fail'];
+const MATCHER_HELPER_NAMES = ['isErrorOf', 'createIsError', 'withFailure'];
+
+function settingsCacheKey(settings: ResolvedCancSettings): string {
+  return JSON.stringify([settings.sources, settings.cancelableTypeNames, settings.lazyTypeNames]);
+}
+
+function resolveAliasedSymbol(symbol: ts.Symbol, checker: ts.TypeChecker): ts.Symbol {
+  if (!(symbol.flags & ts.SymbolFlags.Alias)) {
+    return symbol;
+  }
+  try {
+    return checker.getAliasedSymbol(symbol);
+  } catch {
+    return symbol;
+  }
+}
 
 export function getProgramFailureSymbols(
   program: ts.Program,
@@ -411,28 +434,30 @@ export function getProgramFailureSymbols(
   settings: ResolvedCancSettings,
   context?: Context,
 ): Set<ts.Symbol> {
-  const cached = programFailureSymbolsCache.get(program);
+  const cacheKey = settingsCacheKey(settings);
+  let perSettings = programFailureSymbolsCache.get(program);
+  if (!perSettings) {
+    perSettings = new Map();
+    programFailureSymbolsCache.set(program, perSettings);
+  }
+  const cached = perSettings.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   const result = new Set<ts.Symbol>();
 
+  function addSymbol(sym: ts.Symbol | undefined): void {
+    if (!sym) {
+      return;
+    }
+    result.add(sym);
+    result.add(resolveAliasedSymbol(sym, checker));
+  }
+
   function addFailureTypes(type: ts.Type): void {
-    const members = getFailureMembers(type, checker, settings, context);
-    for (const mem of members.listed) {
-      const sym = mem.aliasSymbol ?? mem.symbol;
-      if (sym) {
-        result.add(sym);
-        if (sym.flags & ts.SymbolFlags.Alias) {
-          try {
-            const aliased = checker.getAliasedSymbol(sym);
-            if (aliased) result.add(aliased);
-          } catch {
-            // ignore
-          }
-        }
-      }
+    for (const mem of getFailureMembers(type, checker, settings, context).listed) {
+      addSymbol(mem.aliasSymbol ?? mem.getSymbol());
     }
   }
 
@@ -440,36 +465,35 @@ export function getProgramFailureSymbols(
     if (!type) return;
     const types = type.isUnion() ? type.types : [type];
     for (const t of types) {
-      const sym = t.aliasSymbol ?? t.symbol;
+      const sym = t.aliasSymbol ?? t.getSymbol();
       if (sym && sym.name !== 'unknown' && sym.name !== 'never') {
-        result.add(sym);
-        if (sym.flags & ts.SymbolFlags.Alias) {
-          try {
-            const aliased = checker.getAliasedSymbol(sym);
-            if (aliased) result.add(aliased);
-          } catch {
-            // ignore
-          }
-        }
+        addSymbol(sym);
       }
     }
   }
+
+  function isCancNamedSymbol(sym: ts.Symbol | undefined, names: string[]): boolean {
+    if (!sym) {
+      return false;
+    }
+    const target = resolveAliasedSymbol(sym, checker);
+    return names.includes(target.getName()) && symbolDeclaredInCancSource(target, settings, checker, context);
+  }
+
+  function calleeSymbol(expr: ts.Expression): ts.Symbol | undefined {
+    return checker.getSymbolAtLocation(ts.isPropertyAccessExpression(expr) ? expr.name : expr);
+  }
+
+  const failureCarrierNames = [...settings.cancelableTypeNames, ...settings.lazyTypeNames, ...FAILURE_CARRIER_NAMES];
 
   function visit(node: ts.Node): void {
     if (ts.isTypeReferenceNode(node)) {
       const type = checker.getTypeAtLocation(node);
       addFailureTypes(type);
-      const typeName = node.typeName.getText();
-      if (
-        (typeName === 'CancelablePromise' ||
-          typeName === 'LazyPromise' ||
-          typeName === 'AsyncResult' ||
-          typeName === 'AsyncGenResult') &&
-        node.typeArguments &&
-        node.typeArguments.length >= 2
-      ) {
-        const fIndex = typeName === 'AsyncGenResult' ? 2 : 1;
-        if (node.typeArguments.length > fIndex) {
+      if (node.typeArguments && node.typeArguments.length >= 2) {
+        const typeSym = checker.getSymbolAtLocation(node.typeName);
+        const fIndex = typeSym && resolveAliasedSymbol(typeSym, checker).getName() === 'AsyncGenResult' ? 2 : 1;
+        if (isCancNamedSymbol(typeSym, failureCarrierNames) && node.typeArguments.length > fIndex) {
           addDirectFailureType(checker.getTypeFromTypeNode(node.typeArguments[fIndex]));
         }
       }
@@ -491,59 +515,20 @@ export function getProgramFailureSymbols(
       const type = checker.getTypeAtLocation(node);
       addFailureTypes(type);
     } else if (ts.isCallExpression(node)) {
-      if (node.typeArguments && node.typeArguments.length > 0) {
-        const calleeText = node.expression.getText();
-        if (calleeText.includes('withFailure')) {
-          for (const arg of node.typeArguments) {
-            addDirectFailureType(checker.getTypeFromTypeNode(arg));
-          }
+      const callee = calleeSymbol(node.expression);
+      if (node.typeArguments && node.typeArguments.length > 0 && isCancNamedSymbol(callee, ['withFailure'])) {
+        for (const arg of node.typeArguments) {
+          addDirectFailureType(checker.getTypeFromTypeNode(arg));
         }
-      }
-      const expr = node.expression;
-      let isThrow = false;
-      if (ts.isIdentifier(expr)) {
-        if (expr.text === 'cancThrow' || expr.text === 'cancGenThrow') {
-          isThrow = true;
-        }
-      } else if (ts.isPropertyAccessExpression(expr)) {
-        const prop = expr.name.text;
-        const objText = expr.expression.getText();
-        if (
-          ((objText === 'canc' || objText === 'cancGen') && prop === 'throw') ||
-          (objText === 'CancelablePromise' && prop === 'fail')
-        ) {
-          isThrow = true;
-        }
-      }
-      if (isThrow && node.arguments.length > 0) {
-        const argType = checker.getTypeAtLocation(node.arguments[0]);
-        addDirectFailureType(argType);
       }
 
-      let isMatcher = false;
-      if (ts.isIdentifier(expr)) {
-        if (['isErrorOf', 'createIsError', 'withFailure'].includes(expr.text)) {
-          isMatcher = true;
-        }
-      } else if (ts.isPropertyAccessExpression(expr)) {
-        if (['isErrorOf', 'createIsError', 'withFailure'].includes(expr.name.text)) {
-          isMatcher = true;
-        }
+      if (node.arguments.length > 0 && isCancNamedSymbol(callee, THROW_HELPER_NAMES)) {
+        addDirectFailureType(checker.getTypeAtLocation(node.arguments[0]));
       }
-      if (isMatcher) {
+
+      if (isCancNamedSymbol(callee, MATCHER_HELPER_NAMES)) {
         for (const arg of node.arguments) {
-          const argSym = checker.getSymbolAtLocation(arg);
-          if (argSym) {
-            result.add(argSym);
-            if (argSym.flags & ts.SymbolFlags.Alias) {
-              try {
-                const aliased = checker.getAliasedSymbol(argSym);
-                if (aliased) result.add(aliased);
-              } catch {
-                // ignore
-              }
-            }
-          }
+          addSymbol(checker.getSymbolAtLocation(arg));
         }
       }
     }
@@ -557,8 +542,15 @@ export function getProgramFailureSymbols(
     }
   }
 
-  programFailureSymbolsCache.set(program, result);
+  perSettings.set(cacheKey, result);
   return result;
+}
+
+type NodeMap = ParserServicesWithTypeInformation['esTreeNodeToTSNodeMap'];
+
+// the map is typed total, but unmapped nodes yield undefined at runtime
+function tsNodeFor<N extends TSESTree.Node>(map: NodeMap, node: N): TSESTreeToTSNode<N> | undefined {
+  return map.get(node);
 }
 
 export function isClassUsedAsFailureInProgram(classDecl: TSESTree.ClassDeclaration, context: Context): boolean {
@@ -571,13 +563,12 @@ export function isClassUsedAsFailureInProgram(classDecl: TSESTree.ClassDeclarati
   const settings = getCancSettings(context);
   const failureSymbols = getProgramFailureSymbols(program, checker, settings, context);
 
-  const tsNode = services.esTreeNodeToTSNodeMap.get(classDecl);
+  const nodeMap = services.esTreeNodeToTSNodeMap;
+  const tsNode = tsNodeFor(nodeMap, classDecl);
   if (!tsNode) {
     return false;
   }
-  const classSym = checker.getSymbolAtLocation(
-    classDecl.id ? services.esTreeNodeToTSNodeMap.get(classDecl.id) : tsNode,
-  );
+  const classSym = checker.getSymbolAtLocation(classDecl.id ? (tsNodeFor(nodeMap, classDecl.id) ?? tsNode) : tsNode);
   if (!classSym) {
     return false;
   }
@@ -588,7 +579,7 @@ export function isClassUsedAsFailureInProgram(classDecl: TSESTree.ClassDeclarati
   if (classSym.flags & ts.SymbolFlags.Alias) {
     try {
       const aliased = checker.getAliasedSymbol(classSym);
-      if (aliased && failureSymbols.has(aliased)) {
+      if (failureSymbols.has(aliased)) {
         return true;
       }
     } catch {
@@ -597,7 +588,7 @@ export function isClassUsedAsFailureInProgram(classDecl: TSESTree.ClassDeclarati
   }
 
   const instType = services.getTypeAtLocation(classDecl);
-  const instSym = instType.symbol ?? instType.aliasSymbol;
+  const instSym = instType.getSymbol() ?? instType.aliasSymbol;
   if (instSym && failureSymbols.has(instSym)) {
     return true;
   }
@@ -611,6 +602,7 @@ export function classHasDiscriminant(classDecl: TSESTree.ClassDeclaration, conte
     return true;
   }
   const checker = services.program.getTypeChecker();
+  const nodeMap = services.esTreeNodeToTSNodeMap;
   const instanceType = services.getTypeAtLocation(classDecl);
 
   for (const member of classDecl.body.body) {
@@ -627,7 +619,7 @@ export function classHasDiscriminant(classDecl: TSESTree.ClassDeclaration, conte
       }
 
       if (propName === 'message') {
-        const tsMember = services.esTreeNodeToTSNodeMap.get(member);
+        const tsMember = tsNodeFor(nodeMap, member);
         if (tsMember) {
           const propType = checker.getTypeAtLocation(tsMember);
           if (propType.isStringLiteral() || propType.flags & ts.TypeFlags.StringLiteral) {
@@ -637,7 +629,7 @@ export function classHasDiscriminant(classDecl: TSESTree.ClassDeclaration, conte
         continue;
       }
       if (propName === 'name') {
-        const tsMember = services.esTreeNodeToTSNodeMap.get(member);
+        const tsMember = tsNodeFor(nodeMap, member);
         if (tsMember) {
           const propType = checker.getTypeAtLocation(tsMember);
           if (propType.isStringLiteral() || propType.flags & ts.TypeFlags.StringLiteral) {
@@ -662,7 +654,7 @@ export function classHasDiscriminant(classDecl: TSESTree.ClassDeclaration, conte
   if (instanceType.isClassOrInterface() || instanceType.flags & ts.TypeFlags.Object) {
     const baseTypes = checker.getBaseTypes(instanceType as ts.InterfaceType);
     for (const base of baseTypes) {
-      const sym = base.aliasSymbol ?? base.getSymbol() ?? base.symbol;
+      const sym = base.aliasSymbol ?? base.getSymbol();
       if (sym?.name === 'Error') {
         continue;
       }
@@ -702,7 +694,7 @@ export function extendsErrorTransitively(classDecl: TSESTree.ClassDeclaration, c
     if (t.isClassOrInterface() || t.flags & ts.TypeFlags.Object) {
       const baseTypes = checker.getBaseTypes(t as ts.InterfaceType);
       for (const base of baseTypes) {
-        const sym = base.aliasSymbol ?? base.getSymbol() ?? base.symbol;
+        const sym = base.aliasSymbol ?? base.getSymbol();
         if (sym?.name === 'Error') {
           return true;
         }
@@ -723,8 +715,9 @@ export function formatTypeNames(types: ts.Type[], checker: ts.TypeChecker): stri
       if (t.aliasSymbol?.name) {
         return t.aliasSymbol.name;
       }
-      if (t.symbol?.name && t.symbol.name !== '__type') {
-        return t.symbol.name;
+      const typeSymbolName = t.getSymbol()?.name;
+      if (typeSymbolName && typeSymbolName !== '__type') {
+        return typeSymbolName;
       }
       const brandProp = t.getProperty('_cancErrorBrand');
       if (brandProp) {
@@ -774,7 +767,7 @@ export function collectHandledCatchTypes(
     return [];
   }
   const checker = services.program.getTypeChecker();
-  const esTreeNodeToTSNodeMap = services.esTreeNodeToTSNodeMap;
+  const nodeMap = services.esTreeNodeToTSNodeMap;
   const handled: ts.Type[] = [];
 
   function visit(node: TSESTree.Node): void {
@@ -789,7 +782,7 @@ export function collectHandledCatchTypes(
 
     if (node.type === AST_NODE_TYPES.BinaryExpression && node.operator === 'instanceof') {
       if (node.left.type === AST_NODE_TYPES.Identifier && node.left.name === bindingName) {
-        const tsRight = esTreeNodeToTSNodeMap.get(node.right);
+        const tsRight = tsNodeFor(nodeMap, node.right);
         if (tsRight) {
           const rightType = checker.getTypeAtLocation(tsRight);
           const constructs = rightType.getConstructSignatures();
@@ -809,7 +802,7 @@ export function collectHandledCatchTypes(
       );
 
       if (hasBindingArg) {
-        const tsCall = esTreeNodeToTSNodeMap.get(node);
+        const tsCall = tsNodeFor(nodeMap, node);
         if (tsCall) {
           const sig = checker.getResolvedSignature(tsCall);
           if (sig) {
@@ -836,7 +829,7 @@ export function collectHandledCatchTypes(
             if (arg.type !== AST_NODE_TYPES.Identifier || arg.name === bindingName) {
               continue;
             }
-            const tsArg = esTreeNodeToTSNodeMap.get(arg);
+            const tsArg = tsNodeFor(nodeMap, arg);
             if (tsArg) {
               const argType = checker.getTypeAtLocation(tsArg);
               const constructs = argType.getConstructSignatures();
@@ -893,7 +886,7 @@ export function analyzeCatchFailures(
     return null;
   }
   const checker = services.program.getTypeChecker();
-  const esTreeNodeToTSNodeMap = services.esTreeNodeToTSNodeMap;
+  const nodeMap = services.esTreeNodeToTSNodeMap;
   const program = services.program;
   const settings = getCancSettings(context);
 
@@ -902,16 +895,16 @@ export function analyzeCatchFailures(
 
   for (const step of yieldSteps) {
     if (!step.argument) continue;
-    const tsArg = esTreeNodeToTSNodeMap.get(step.argument);
+    const tsArg = tsNodeFor(nodeMap, step.argument);
     if (!tsArg) continue;
     const stepType = checker.getTypeAtLocation(tsArg);
 
     let failures = getFailureMembers(stepType, checker, settings, context);
 
     if (step.argument.type === AST_NODE_TYPES.CallExpression) {
-      const arg0 = step.argument.arguments[0];
-      if (arg0) {
-        const tsArg0 = esTreeNodeToTSNodeMap.get(arg0);
+      if (step.argument.arguments.length > 0) {
+        const arg0 = step.argument.arguments[0];
+        const tsArg0 = tsNodeFor(nodeMap, arg0);
         if (tsArg0) {
           const arg0Type = checker.getTypeAtLocation(tsArg0);
           const arg0Failures = getFailureMembers(arg0Type, checker, settings, context);
@@ -946,7 +939,7 @@ export function analyzeCatchFailures(
 
     for (const member of failures.listed) {
       if (!isCancelErrorType(member, checker, settings)) {
-        const id = member.symbol?.name ?? checker.typeToString(member);
+        const id = member.getSymbol()?.name ?? checker.typeToString(member);
         if (!allListedMap.has(id)) {
           allListedMap.set(id, member);
         }
@@ -960,14 +953,18 @@ export function analyzeCatchFailures(
   }
 
   const isHandled = (t: ts.Type): boolean => {
-    if (matchesType(compiledExclude, t, checker, program) || matchesName(compiledExclude, t.symbol?.name)) {
+    const symbol = t.getSymbol();
+    if (
+      matchesType(compiledExclude, t, checker, program) ||
+      (symbol !== undefined && matchesName(compiledExclude, symbol.name))
+    ) {
       return true;
     }
     return handledTypes.some(
       (h) =>
         isClassOrSubclass(t, h, checker) ||
-        (t.symbol && t.symbol === h.symbol) ||
-        (t.symbol?.name && t.symbol.name === h.symbol?.name) ||
+        (symbol && symbol === h.getSymbol()) ||
+        (symbol?.name && symbol.name === h.getSymbol()?.name) ||
         checker.typeToString(t) === checker.typeToString(h),
     );
   };
