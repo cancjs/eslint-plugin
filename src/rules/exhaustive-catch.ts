@@ -326,10 +326,12 @@ export default createRule<RuleOptions, MessageIds>({
       },
     ],
     messages: {
-      unhandledFailure: 'Catch clause does not handle declared failure(s): {{names}}.',
+      unhandledFailure:
+        'This catch clause does not handle {{names}} and does not rethrow it. Narrow the error with a matcher guard or rethrow it.',
       noRethrow:
-        'Catch clause handles {{handled}} but drops remaining declared failure(s): {{names}} without rethrowing.',
-      missingUnlistedFallback: 'Catch clause on open failure set must include a fallback rethrow for unlisted errors.',
+        'This catch clause handles {{handled}} but silently drops {{names}}. Rethrow errors it does not handle.',
+      missingUnlistedFallback:
+        'The failure set is open, so other errors can still arrive. Rethrow errors that the listed guards do not match.',
     },
   },
   defaultOptions: [

@@ -83,11 +83,11 @@ describe('require-error-discriminant (typed lane)', () => {
             messageId: 'missingDiscriminant',
             line: markers08[0].line,
             column: 14,
-            data: { className: 'StructErrorOne' },
+            data: { name: 'StructErrorOne' },
             suggestions: [
               {
                 messageId: 'missingDiscriminant',
-                data: { className: 'StructErrorOne' },
+                data: { name: 'StructErrorOne' },
                 output: codeInvalid08.replace(
                   'export class StructErrorOne extends Error {}',
                   "export class StructErrorOne extends Error {\n  readonly kind = 'StructErrorOne';\n}",
@@ -99,11 +99,11 @@ describe('require-error-discriminant (typed lane)', () => {
             messageId: 'missingDiscriminant',
             line: markers08[1].line,
             column: 14,
-            data: { className: 'StructErrorTwo' },
+            data: { name: 'StructErrorTwo' },
             suggestions: [
               {
                 messageId: 'missingDiscriminant',
-                data: { className: 'StructErrorTwo' },
+                data: { name: 'StructErrorTwo' },
                 output: codeInvalid08.replace(
                   'export class StructErrorTwo extends Error {}',
                   "export class StructErrorTwo extends Error {\n  readonly kind = 'StructErrorTwo';\n}",
@@ -128,11 +128,11 @@ export declare const p: CancelablePromise<string, CtorOnlyError>;`,
             messageId: 'missingDiscriminant',
             line: 2,
             column: 14,
-            data: { className: 'CtorOnlyError' },
+            data: { name: 'CtorOnlyError' },
             suggestions: [
               {
                 messageId: 'missingDiscriminant',
-                data: { className: 'CtorOnlyError' },
+                data: { name: 'CtorOnlyError' },
                 output: `import type { CancelablePromise } from '@cancjs/promise';
 export class CtorOnlyError extends Error {
   readonly kind = 'CtorOnlyError';
@@ -159,11 +159,11 @@ const task = cancAsync(function* () {
             messageId: 'missingDiscriminant',
             line: 2,
             column: 14,
-            data: { className: 'ThrownStructError' },
+            data: { name: 'ThrownStructError' },
             suggestions: [
               {
                 messageId: 'missingDiscriminant',
-                data: { className: 'ThrownStructError' },
+                data: { name: 'ThrownStructError' },
                 output: `import { cancAsync, cancThrow } from '@cancjs/coroutine';
 export class ThrownStructError extends Error {
   readonly kind = 'ThrownStructError';

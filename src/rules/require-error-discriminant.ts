@@ -220,7 +220,7 @@ export default createRule<RuleOptions, MessageIds>({
     defaultOptions: [{ include: [], exclude: [] }],
     messages: {
       missingDiscriminant:
-        "Error class '{{className}}' declared or used as a failure has no discriminant. Add a readonly discriminant field, a literal 'name' property, or a Symbol.for brand.",
+        'Error class {{name}} has no member that tells it apart from other error classes. TypeScript compares classes by shape, so removing one from a failure union removes every identical class. Add a readonly discriminant field, a literal name, or a Symbol.for brand.',
     },
   },
   defaultOptions: [{ include: [], exclude: [] }],
@@ -277,11 +277,11 @@ export default createRule<RuleOptions, MessageIds>({
         context.report({
           node: node.id,
           messageId: 'missingDiscriminant',
-          data: { className },
+          data: { name: className },
           suggest: [
             {
               messageId: 'missingDiscriminant',
-              data: { className },
+              data: { name: className },
               fix(fixer) {
                 if (node.body.body.length > 0) {
                   return fixer.insertTextBefore(node.body.body[0], `readonly kind = '${className}';\n  `);

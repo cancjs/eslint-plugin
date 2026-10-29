@@ -180,7 +180,7 @@ export default createRule<RuleOptions, MessageIds>({
     ],
     messages: {
       preferCancThrow:
-        "Bare 'throw' is invisible to the inferred failure union. Use 'return yield* {{thrower}}(...)' so TypeScript infers the failure type.",
+        "This throw is not part of the coroutine's declared failure type. Use 'return yield* {{thrower}}(...)' to declare it, or list the error class in the 'exclude' option if it is a programming error.",
     },
   },
   defaultOptions: [
