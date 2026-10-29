@@ -1,6 +1,6 @@
 import type CancelablePromise from '@cancjs/promise';
 
-class SpecificError extends Error {}
+class SpecificError extends Error { readonly kind = 'SpecificError'; }
 
 declare const p: CancelablePromise<string, SpecificError>;
 

@@ -1,7 +1,7 @@
 import type CancelablePromise from '@cancjs/promise';
 
-class ErrorA extends Error {}
-class ErrorB extends Error {}
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
 
 declare function withFailure<F1, F2 = never>(...matchers: any[]): (p: any) => any;
 declare const p: CancelablePromise<string, ErrorA | ErrorB>;

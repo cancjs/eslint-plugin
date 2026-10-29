@@ -7,7 +7,7 @@ import CancelablePromise, {
   makeCancelable,
   createCancelSignal,
 } from '@cancjs/promise';
-import { cancAsync, cancAwait, cancForAwait } from '@cancjs/coroutine';
+import { cancAsync, cancAwait, cancForAwait, cancThrow } from '@cancjs/coroutine';
 import { cancGenAsync, cancGenAwait, cancGenForAwait, cancGenDelegate } from '@cancjs/coroutine/gen';
 import {
   cancelify,
@@ -46,5 +46,5 @@ export const fetchWithRetry = cancAsync(function* () {
       yield* cancAwait(delay(100));
     }
   }
-  throw new Error('Retries exhausted');
+  return yield* cancThrow(new Error('Retries exhausted'));
 });

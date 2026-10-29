@@ -1,7 +1,7 @@
 import { cancAsync, cancAwait } from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
 
-class ErrorA extends Error {}
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
 interface Unlisted {
   readonly _cancUnlisted: true;
 }

@@ -1,8 +1,12 @@
 import type { CancelablePromise, MatchedError } from '@cancjs/promise';
 import { catchErrors, createIsError, withFailure } from '@cancjs/promise';
 
-class HttpError extends Error {}
-class NotFoundError extends Error {}
+class HttpError extends Error {
+  readonly kind = 'HttpError';
+}
+class NotFoundError extends Error {
+  readonly kind = 'NotFoundError';
+}
 
 const isUserFailure = createIsError(HttpError, NotFoundError);
 

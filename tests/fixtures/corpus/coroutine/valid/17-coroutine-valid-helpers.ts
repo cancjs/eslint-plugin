@@ -41,7 +41,7 @@ const runWithHelpers = cancAsync(function* (source: AsyncIterable<Item>) {
     void first;
     void second;
   } catch (e) {
-    yield* canc.throw(e);
+    return yield* canc.throw(e);
   }
 });
 
