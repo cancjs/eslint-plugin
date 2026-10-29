@@ -1,11 +1,13 @@
-import { DefinitionType, type Scope } from '@typescript-eslint/scope-manager';
-import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import type { TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint } from '@typescript-eslint/utils';
 
 import { refersTo } from '../util/canc-imports.js';
 import { isExecutorContextExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 import { analyzeExecutor } from '../util/executor.js';
+
+const { DefinitionType } = TSESLint.Scope;
+type Scope = TSESLint.Scope.Scope;
 
 export type MessageIds = 'preferSignalAccessor';
 export type RuleOptions = [];

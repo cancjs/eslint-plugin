@@ -1,11 +1,12 @@
-import { ScopeType } from '@typescript-eslint/scope-manager';
-import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import type { TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint } from '@typescript-eslint/utils';
 
 import { isHelperIdent, isLazyCtorIdent } from '../util/canc-imports.js';
 import { isLazyExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 import { getCancSettings } from '../util/settings.js';
+
+const { ScopeType } = TSESLint.Scope;
 
 export type MessageIds = 'unusedLazy' | 'unusedLazyVar';
 export type RuleOptions = [];
