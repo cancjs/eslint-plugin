@@ -61,6 +61,26 @@ describe('must-consume-lazy (untyped)', () => {
       `import { LazyPromise } from '@cancjs/toolbox';
        const { promise } = LazyPromise.withResolvers();
        promise.execute();`,
+      `import { LazyPromise } from '@cancjs/toolbox';
+       function test() {
+         const { resolve, ...rest } = LazyPromise.withResolvers<number>();
+         resolve(1);
+       }`,
+      `import { LazyPromise } from '@cancjs/toolbox';
+       function test(fallback: LazyPromise<number>) {
+         const { promise = fallback, resolve } = LazyPromise.withResolvers<number>();
+         resolve(1);
+       }`,
+      `import { LazyPromise } from '@cancjs/toolbox';
+       function test(fallback: LazyPromise<number>) {
+         const { lazy = fallback } = LazyPromise.withResolvers<number>();
+       }`,
+      `import { LazyPromise } from '@cancjs/toolbox';
+       function test() {
+         const wr = LazyPromise.withResolvers<number>();
+         wr.resolve(1);
+         return wr.promise;
+       }`,
       // Type-only creator without parser services degrades silently
       `declare function getLazy(): any;
        getLazy();`,
@@ -192,6 +212,21 @@ function test() {
             messageId: 'unusedLazyVar' as const,
             line: 3,
             data: { name: 'r' },
+          },
+        ],
+      },
+      // resolver methods called but promise/lazy never read
+      {
+        code: `import { LazyPromise } from '@cancjs/toolbox';
+function test() {
+  const wr = LazyPromise.withResolvers<number>();
+  wr.resolve(1);
+}`,
+        errors: [
+          {
+            messageId: 'unusedLazyVar' as const,
+            line: 3,
+            data: { name: 'wr' },
           },
         ],
       },

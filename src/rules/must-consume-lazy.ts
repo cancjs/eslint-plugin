@@ -76,7 +76,22 @@ function isLazyWithResolvers(node: TSESTree.Node, context: TSESLint.RuleContext<
   return false;
 }
 
-function isUnusedVariable(id: TSESTree.Identifier, context: TSESLint.RuleContext<MessageIds, RuleOptions>): boolean {
+function isResolverOnlyAccess(ref: TSESLint.Scope.Reference): boolean {
+  const parent = ref.identifier.parent;
+  return (
+    parent?.type === AST_NODE_TYPES.MemberExpression &&
+    parent.object === ref.identifier &&
+    !parent.computed &&
+    parent.property.type === AST_NODE_TYPES.Identifier &&
+    (parent.property.name === 'resolve' || parent.property.name === 'reject')
+  );
+}
+
+function isUnusedVariable(
+  id: TSESTree.Identifier,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+  ignoreRef?: (ref: TSESLint.Scope.Reference) => boolean,
+): boolean {
   let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(id);
   // Unused variable report is for local/module variables (excluding global/ambient)
   if (scope.type === ScopeType.global) {
@@ -100,6 +115,9 @@ function isUnusedVariable(id: TSESTree.Identifier, context: TSESLint.RuleContext
       continue;
     }
     if (ref.isWrite()) {
+      continue;
+    }
+    if (ignoreRef?.(ref)) {
       continue;
     }
     let currNode: TSESTree.Node = ref.identifier;
@@ -170,6 +188,21 @@ export default createRule<RuleOptions, MessageIds>({
             if (declarator.id.type === AST_NODE_TYPES.ObjectPattern) {
               let hasLazyProp = false;
               for (const prop of declarator.id.properties) {
+                if (prop.type === AST_NODE_TYPES.RestElement) {
+                  hasLazyProp = true;
+                  continue;
+                }
+                if (
+                  prop.type === AST_NODE_TYPES.Property &&
+                  ((prop.key.type === AST_NODE_TYPES.Identifier &&
+                    (prop.key.name === 'lazy' || prop.key.name === 'promise')) ||
+                    (prop.key.type === AST_NODE_TYPES.Literal &&
+                      (prop.key.value === 'lazy' || prop.key.value === 'promise'))) &&
+                  prop.value.type === AST_NODE_TYPES.AssignmentPattern
+                ) {
+                  hasLazyProp = true;
+                  continue;
+                }
                 if (
                   prop.type === AST_NODE_TYPES.Property &&
                   ((prop.key.type === AST_NODE_TYPES.Identifier &&
@@ -195,7 +228,7 @@ export default createRule<RuleOptions, MessageIds>({
                 });
               }
             } else if (declarator.id.type === AST_NODE_TYPES.Identifier) {
-              if (isUnusedVariable(declarator.id, context)) {
+              if (isUnusedVariable(declarator.id, context, isResolverOnlyAccess)) {
                 context.report({
                   node: declarator.id,
                   messageId: 'unusedLazyVar',
