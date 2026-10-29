@@ -1,14 +1,15 @@
 import type { TSESTree } from '@typescript-eslint/utils';
 
 import { getCancServices } from '../util/canc-types.js';
-import { type ClassMatcherOptions, classMatcherSchema, compileOptions, isIncluded } from '../util/class-matcher.js';
+import { type ClassMatcherOptions, classMatcherSchema, compileOptions } from '../util/class-matcher.js';
 import createRule from '../util/create-rule.js';
 import {
-  classHasDiscriminant,
-  extendsErrorTransitively,
-  isCancelErrorType,
-  isClassUsedAsFailureInProgram,
-} from '../util/failure-types.js';
+  classHasInstanceDiscriminant,
+  isCancelErrorClass,
+  isClassSelected,
+  isClassUsedAsCancFailure,
+} from '../util/failure-checker-require-error-discriminant.js';
+import { extendsErrorTransitively } from '../util/failure-types.js';
 
 export type MessageIds = 'missingDiscriminant';
 export type RuleOptions = [ClassMatcherOptions?];
@@ -46,8 +47,6 @@ export default createRule<RuleOptions, MessageIds>({
       return {};
     }
 
-    const program = services.program;
-    const checker = program.getTypeChecker();
     const options = compileOptions(context.options[0]);
 
     return {
@@ -56,26 +55,22 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
+        const classNode = node as TSESTree.ClassDeclaration & { id: TSESTree.Identifier };
         const className = node.id.name;
 
         if (!extendsErrorTransitively(node, context)) {
           return;
         }
 
-        const instanceType = services.getTypeAtLocation(node);
-        if (isCancelErrorType(instanceType, checker)) {
+        if (isCancelErrorClass(node, context) || classHasInstanceDiscriminant(node, context)) {
           return;
         }
 
-        if (classHasDiscriminant(node, context)) {
+        if (!isClassSelected(options, classNode, context)) {
           return;
         }
 
-        if (!isIncluded(options, { name: className, type: instanceType, checker, program }, checker, program)) {
-          return;
-        }
-
-        if (!isClassUsedAsFailureInProgram(node, context)) {
+        if (!isClassUsedAsCancFailure(node, context)) {
           return;
         }
 

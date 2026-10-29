@@ -153,7 +153,7 @@ describe('failure rules phase smoke over built artifacts', () => {
   });
 
   it('matches markers on invalid failure fixtures under built recommended preset', async () => {
-    expect(invalidFiles.length).toBe(16);
+    expect(invalidFiles.length).toBe(17);
 
     const results = await eslintRecommended.lintFiles(invalidFiles);
     for (const r of results) {

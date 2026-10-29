@@ -19,6 +19,10 @@ const codeValid08 = fs.readFileSync(valid08Path, 'utf8');
 
 const markers08 = readMarkers(invalid08Path);
 
+const invalid17Path = path.join(corpusDir, 'invalid/17-require-error-discriminant-static-only.ts');
+const codeInvalid17 = fs.readFileSync(invalid17Path, 'utf8');
+const markers17 = readMarkers(invalid17Path);
+
 const typedTester = ruleTester({ types: true });
 const untypedTester = ruleTester({ types: false });
 
@@ -27,6 +31,23 @@ describe('require-error-discriminant (typed lane)', () => {
     valid: [
       // Valid corpus fixtures (discriminated, and unused empty error)
       codeValid08,
+      // Local look-alike carrier type is not a canc failure declaration
+      `declare class CancelablePromise<T, E = unknown> {
+         t?: T;
+         e?: E;
+       }
+       export class LookAlikeCarrierError extends Error {}
+       export declare function run(): CancelablePromise<void, LookAlikeCarrierError>;`,
+      // Local look-alike withFailure is not a canc failure declaration
+      `declare function withFailure<E>(): void;
+       export class LookAlikeWithFailureError extends Error {}
+       withFailure<LookAlikeWithFailureError>();`,
+      // Local look-alike isErrorOf is not a canc matcher
+      `declare function isErrorOf(error: unknown, ...matchers: unknown[]): boolean;
+       export class LookAlikeMatcherError extends Error {}
+       export function check(e: unknown): boolean {
+         return isErrorOf(e, LookAlikeMatcherError);
+       }`,
       // Class extending another user error class that DOES have a discriminant
       `import type { CancelablePromise } from '@cancjs/promise';
        class BaseUserError extends Error {
@@ -107,6 +128,45 @@ describe('require-error-discriminant (typed lane)', () => {
                 output: codeInvalid08.replace(
                   'export class StructErrorTwo extends Error {}',
                   "export class StructErrorTwo extends Error {\n  readonly kind = 'StructErrorTwo';\n}",
+                ),
+              },
+            ],
+          },
+        ],
+      },
+      // Static-only members are not discriminants
+      {
+        code: codeInvalid17,
+        output: null,
+        errors: [
+          {
+            messageId: 'missingDiscriminant',
+            line: markers17[0].line,
+            column: 14,
+            data: { name: 'StaticCodeErrorA' },
+            suggestions: [
+              {
+                messageId: 'missingDiscriminant',
+                data: { name: 'StaticCodeErrorA' },
+                output: codeInvalid17.replace(
+                  "  static readonly code = 'A';",
+                  "  readonly kind = 'StaticCodeErrorA';\n  static readonly code = 'A';",
+                ),
+              },
+            ],
+          },
+          {
+            messageId: 'missingDiscriminant',
+            line: markers17[1].line,
+            column: 14,
+            data: { name: 'StaticCodeErrorB' },
+            suggestions: [
+              {
+                messageId: 'missingDiscriminant',
+                data: { name: 'StaticCodeErrorB' },
+                output: codeInvalid17.replace(
+                  "  static readonly code = 'B';",
+                  "  readonly kind = 'StaticCodeErrorB';\n  static readonly code = 'B';",
                 ),
               },
             ],
