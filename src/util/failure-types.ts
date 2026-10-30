@@ -377,12 +377,16 @@ export function isClassOrSubclass(t: ts.Type, h: ts.Type, checker: ts.TypeChecke
   return false;
 }
 
+/**
+ * Brand key of an error type. The property type is read from the instantiated symbol, not from its
+ * declaration: a brand declared through a mapped key (`[K in TBrand as '_cancErrorBrand']: K`) has
+ * a declaration that only knows the type parameter, so reading it there yields no literal.
+ */
 function getBrandName(t: ts.Type, checker: ts.TypeChecker): string | undefined {
   const brandProp = t.getProperty('_cancErrorBrand');
   if (brandProp) {
-    const decl = brandProp.valueDeclaration ?? brandProp.declarations?.[0];
-    const brandType = decl ? checker.getTypeOfSymbolAtLocation(brandProp, decl) : undefined;
-    if (brandType?.isStringLiteral()) {
+    const brandType = checker.getTypeOfSymbol(brandProp);
+    if (brandType.isStringLiteral()) {
       return brandType.value;
     }
   }

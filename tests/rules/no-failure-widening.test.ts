@@ -14,20 +14,25 @@ const corpusDir = path.resolve(__dirname, '../fixtures/corpus/failure');
 const invalid09Path = path.join(corpusDir, 'invalid/09-no-failure-widening-cast.ts');
 const invalid10Path = path.join(corpusDir, 'invalid/10-no-failure-widening-return.ts');
 const invalid11Path = path.join(corpusDir, 'invalid/11-no-failure-widening-open-set.ts');
+const invalid18Path = path.join(corpusDir, 'invalid/18-no-failure-widening-mapped-brand.ts');
 
 const valid09Path = path.join(corpusDir, 'valid/09-deliberate-erasure-marker.ts');
 const valid10Path = path.join(corpusDir, 'valid/10-sanctioned-with-failure-forms.ts');
+const valid17Path = path.join(corpusDir, 'valid/17-mapped-brand-annotation.ts');
 
 const codeInvalid09 = fs.readFileSync(invalid09Path, 'utf8');
 const codeInvalid10 = fs.readFileSync(invalid10Path, 'utf8');
 const codeInvalid11 = fs.readFileSync(invalid11Path, 'utf8');
+const codeInvalid18 = fs.readFileSync(invalid18Path, 'utf8');
 
 const codeValid09 = fs.readFileSync(valid09Path, 'utf8');
 const codeValid10 = fs.readFileSync(valid10Path, 'utf8');
+const codeValid17 = fs.readFileSync(valid17Path, 'utf8');
 
 const markers09 = readMarkers(invalid09Path);
 const markers10 = readMarkers(invalid10Path);
 const markers11 = readMarkers(invalid11Path);
+const markers18 = readMarkers(invalid18Path);
 
 const typedTester = ruleTester({ types: true });
 const untypedTester = ruleTester({ types: false });
@@ -38,6 +43,8 @@ describe('no-failure-widening (typed lane)', () => {
       // Valid corpus twins
       codeValid09,
       codeValid10,
+      // Annotation brand declared through a mapped key matches the literal brand of the source
+      codeValid17,
 
       // as const (silent)
       `const x = { a: 1 } as const;`,
@@ -180,6 +187,19 @@ export const widened: CP<string, ErrorA> = p as any;`,
             messageId: 'failureWidening',
             line: markers09[0].line,
             data: { position: 'cast' },
+          },
+        ],
+      },
+
+      // Corpus invalid 18: mapped brand of the annotation differs from the source brand
+      {
+        code: codeInvalid18,
+        output: null,
+        errors: [
+          {
+            messageId: 'failureWidening',
+            line: markers18[0].line,
+            data: { position: 'return type' },
           },
         ],
       },

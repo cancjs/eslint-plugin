@@ -28,6 +28,7 @@ A fixed row is removed from the table once the rule stops reporting it; the line
 - FIX-3: demo-signal-interop/src/compose-vanilla.ts:31 (second listener of the pair above)
 - FIX-3: demo-signal-interop/src/compose-vanilla.ts:65 canc/no-abort-listener-leak: removal through a forEach over the cleanup list in the enclosing finally block is recognised
 - FIX-4: demo-signal-interop/src/in-vanilla.ts:54 canc/no-abort-listener-leak: signals of local controllers reached through an array map are treated as local
+- FIX-5: demo-toolbox/src/inventory-timeout-canc.ts:17 canc/no-failure-widening: a brand declared through a mapped key is read from the instantiated property type, so the annotation matches the source TimeoutError
 
 ## Findings
 
@@ -118,7 +119,6 @@ A fixed row is removed from the table once the rule stops reporting it; the line
 | demo-signal-interop/src/out-canc.ts:62 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
 | demo-signal-interop/src/out-canc.ts:64 | canc/no-swallowed-cancel | swallowedCancel | recommended | x1 | TP | catch absorbs the cancel instead of rethrowing it or using a boundary helper |
 | demo-signal-interop/src/with-signal-canc.ts:28 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
-| demo-toolbox/src/inventory-timeout-canc.ts:17 | canc/no-failure-widening | failureWidening | recommended | x1 | FP | FIX-5: the annotation names the same TimeoutError as the source; the brand of the annotation type reads as any so the match fails |
 | demo-toolbox/src/poll-deploy-canc.ts:13 | canc/no-failure-widening | failureWidening | recommended | x1 | TP | default failure parameter widens the TimeoutError of waitFor to unknown |
 | demo-toolbox/src/suppress-vanilla.ts:16 | canc/prefer-is-cancel-error | preferIsAbortError | recommended | x1 | policy | vanilla contrast file shows the platform name check on purpose; the rule documents flagging it |
 | demo-toolbox/src/toolbox.spec.ts:26 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
