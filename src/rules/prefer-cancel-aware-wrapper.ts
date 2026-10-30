@@ -3,13 +3,19 @@ import { AST_NODE_TYPES, TSESLint } from '@typescript-eslint/utils';
 
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
 import { hasTypeServices, isPrimitiveExpression, isThenableExpression } from '../util/canc-types.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 
 const { DefinitionType } = TSESLint.Scope;
 type Scope = TSESLint.Scope.Scope;
 
 export type MessageIds = 'manualCancelWiring';
-export type RuleOptions = [];
+export type RuleOptions = [FactoryOptions?];
 
 function getEnclosingFunction(node: TSESTree.Node): TSESTree.Node | null {
   let curr = node.parent;
@@ -108,14 +114,24 @@ export default createRule<RuleOptions, MessageIds>({
     docs: {
       description: 'Prefer cancelify or promisify over hand-rolled signal threading and finally abort.',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: factoryOptionsSchema,
+        allOf: factoryOptionsConstraints,
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{}],
     messages: {
       manualCancelWiring:
         "This coroutine creates a signal, passes it to calls, and aborts it in 'finally'. Wrap the operation once with 'cancelify' or 'promisify' so a cancel aborts it without manual cleanup.",
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const factories = resolveFactories(context.options[0]);
+
     return {
       CallExpression(node) {
         // Must be abort() or controller.abort() or cancel()
@@ -144,7 +160,7 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         // Must be in a coroutine context
-        const coroutineCtx = getCoroutineContext(node, context);
+        const coroutineCtx = getCoroutineContext(node, context, factories);
         if (!coroutineCtx) {
           return;
         }
