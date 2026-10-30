@@ -111,6 +111,32 @@ describe('prefer-cancel-aware-wrapper', () => {
            c.abort();
          }
        });`,
+
+      // 9. Signal read into a primitive flag before reaching the awaited call
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function save(id: string, aborted: boolean): Promise<void>;
+       declare function isAborted(signal: AbortSignal): boolean;
+       const run = cancAsync(function* (id: string) {
+         const c = new AbortController();
+         try {
+           yield* cancAwait(save(id, isAborted(c.signal)));
+         } finally {
+           c.abort();
+         }
+       });`,
+
+      // 10. Signal read into a string label before reaching the awaited call
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function log(line: string): Promise<void>;
+       declare function describe(signal: AbortSignal): 'live' | 'aborted';
+       const run = cancAsync(function* () {
+         const c = new AbortController();
+         try {
+           yield* cancAwait(log(describe(c.signal)));
+         } finally {
+           c.abort();
+         }
+       });`,
     ],
     invalid: [
       // 1. Corpus invalid 14 (createAbortSignal with destructuring + abort in finally)

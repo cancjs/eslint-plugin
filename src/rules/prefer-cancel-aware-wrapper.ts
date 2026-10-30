@@ -2,7 +2,7 @@ import type { TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES, TSESLint } from '@typescript-eslint/utils';
 
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
-import { hasTypeServices, isThenableExpression } from '../util/canc-types.js';
+import { hasTypeServices, isPrimitiveExpression, isThenableExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 
 const { DefinitionType } = TSESLint.Scope;
@@ -89,6 +89,10 @@ function findCallPassingSignal(
         // a non-thenable call (options builder, any-typed helper) may hand the signal on
         if (!hasTypeServices(context) || isThenableExpression(curr, context)) {
           return true;
+        }
+        // a primitive result (a flag read from the signal) cannot carry the signal further
+        if (isPrimitiveExpression(curr, context)) {
+          return false;
         }
       }
     }
