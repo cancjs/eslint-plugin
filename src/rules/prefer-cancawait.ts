@@ -2,9 +2,15 @@ import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCancBindings, getCoroutineContext, refersTo } from '../util/canc-imports.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 
-export interface Options {
+export interface Options extends FactoryOptions {
   allowBareYield?: boolean;
 }
 
@@ -103,8 +109,10 @@ export default createRule<RuleOptions, MessageIds>({
             type: 'boolean',
             description: 'Whether to allow bare yields without reporting.',
           },
+          ...factoryOptionsSchema,
         },
         additionalProperties: false,
+        allOf: factoryOptionsConstraints,
       },
     ],
     defaultOptions: [{ allowBareYield: false }],
@@ -116,6 +124,7 @@ export default createRule<RuleOptions, MessageIds>({
   defaultOptions: [{ allowBareYield: false }],
   create(context) {
     const allowBareYield = context.options[0]?.allowBareYield ?? false;
+    const factories = resolveFactories(context.options[0]);
 
     return {
       YieldExpression(node) {
@@ -123,7 +132,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const coroutineCtx = getCoroutineContext(node, context);
+        const coroutineCtx = getCoroutineContext(node, context, factories);
         if (!coroutineCtx || coroutineCtx.kind !== 'cancAsync') {
           return;
         }

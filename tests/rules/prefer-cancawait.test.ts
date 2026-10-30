@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/prefer-cancawait.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -156,5 +157,93 @@ describe('prefer-cancawait', () => {
         ],
       },
     ],
+  });
+});
+
+describe('prefer-cancawait factory options', () => {
+  tester.run('prefer-cancawait', rule, {
+    valid: [
+      // same code without the option: not a coroutine
+      `useX(function* () { yield load(); });`,
+      // gen dialect emits, so a bare yield is correct
+      {
+        code: `useStream(function* () { yield 1; });`,
+        options: [{ additionalGenCoroutineFactories: ['useStream'] }],
+      },
+      {
+        code: `useX(function* () { yield load(); });`,
+        options: [{ additionalCoroutineFactories: ['useX'], allowBareYield: true }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               useX(function* () { yield* cancAwait(load()); });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+      },
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               cancAsync(function* () { yield load(); });`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+      // same name from another source
+      {
+        code: `import { useX } from 'other-lib';
+               useX(function* () { yield load(); });`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+      },
+    ],
+    invalid: [
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               useX(function* () {
+                 yield load();
+               });`,
+        output: `import { cancAwait } from '@cancjs/coroutine';
+               useX(function* () {
+                 yield* cancAwait(load());
+               });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        errors: [{ messageId: 'preferCancAwait' as const, line: 3 }],
+      },
+      {
+        code: `import { useX as u } from '@cancjs/react';
+               u(function* () {
+                 yield load();
+               });`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+        errors: [{ messageId: 'preferCancAwait' as const, line: 3 }],
+      },
+      {
+        code: `ui.useX(function* () {
+                 yield load();
+               });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        errors: [{ messageId: 'preferCancAwait' as const, line: 2 }],
+      },
+      // the built-in stays on when the other dialect is replaced
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               cancAsync(function* () {
+                 yield load();
+               });`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+        errors: [{ messageId: 'preferCancAwait' as const, line: 3 }],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });
