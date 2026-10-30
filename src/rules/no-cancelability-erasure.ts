@@ -16,7 +16,8 @@ import createRule from '../util/create-rule.js';
 import { hasRetainedHandle } from '../util/retained-handle.js';
 import { getCancSettings } from '../util/settings.js';
 
-export type MessageIds = 'erasedArgument' | 'erasedReturn' | 'erasedAssignment' | 'erasedProperty';
+export type MessageIds =
+  'erasedArgument' | 'erasedReturn' | 'erasedReturnAsync' | 'erasedAssignment' | 'erasedProperty';
 
 export interface Options {
   allowExplicitWrap?: boolean;
@@ -38,6 +39,9 @@ const COMBINATOR_METHODS = new Set(['all', 'race', 'any', 'allSettled']);
 
 const FIX_HINT =
   'Keep the cancelable type in the signature, keep a cancel handle in scope, or adopt it explicitly with Promise.resolve(...) or a cast.';
+
+const ASYNC_FIX_HINT =
+  'Drop async and return the cancelable, adopt it explicitly with Promise.resolve(...) or a cast, or keep a cancel handle in scope.';
 
 function isFunctionLike(node: TSESTree.Node): node is TSESTree.FunctionLike {
   return (
@@ -123,6 +127,7 @@ export default createRule<[Options], MessageIds>({
     messages: {
       erasedArgument: `Cancelability erasure: this cancelable promise is passed to a parameter typed as a plain promise, so the receiver cannot cancel it and the work keeps running after the caller stops. ${FIX_HINT}`,
       erasedReturn: `Cancelability erasure: this cancelable promise is returned through a plain promise return type, so callers lose the cancel handle. ${FIX_HINT}`,
+      erasedReturnAsync: `Cancelability erasure: this cancelable promise is returned from an async function, whose result is always a plain promise, so callers lose the cancel handle. ${ASYNC_FIX_HINT}`,
       erasedAssignment: `Cancelability erasure: this cancelable promise is stored under a plain promise type, so later code cannot cancel it. ${FIX_HINT}`,
       erasedProperty: `Cancelability erasure: this cancelable promise is stored in a property typed as a plain promise, so readers of the property cannot cancel it. ${FIX_HINT}`,
     },
@@ -224,7 +229,7 @@ export default createRule<[Options], MessageIds>({
         return;
       }
       if (isCancelableOperand(operand) && isPlainPromiseReturnSink(fn, context)) {
-        context.report({ node: source, messageId: 'erasedReturn' });
+        context.report({ node: source, messageId: fn.async ? 'erasedReturnAsync' : 'erasedReturn' });
       }
     }
 

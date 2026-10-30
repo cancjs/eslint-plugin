@@ -186,6 +186,13 @@ async function run() {
 }`,
   },
   {
+    name: 'async function without a return annotation has no declared sink',
+    code: `${HEAD}
+async function run() {
+  return load();
+}`,
+  },
+  {
     name: 'floating statement is not a sink of this rule',
     code: `${HEAD}
 load();`,
@@ -260,7 +267,13 @@ function run(): Promise<number> {
 async function run(): Promise<number> {
   return load();
 }`,
-    errors: [{ messageId: 'erasedReturn', line: 5, column: 10 }],
+    errors: [{ messageId: 'erasedReturnAsync', line: 5, column: 10 }],
+  },
+  {
+    name: 'async arrow implicit return with an explicit Promise return type',
+    code: `${HEAD}
+const run = async (): Promise<number> => load();`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 4, column: 42 }],
   },
   {
     name: 'arrow implicit return with an explicit Promise return type',
@@ -447,5 +460,14 @@ describe('no-cancelability-erasure typed corpus lane', () => {
         }
       }
     }
+  });
+});
+
+describe('no-cancelability-erasure return messages', () => {
+  it('only the sync variant suggests keeping the cancelable type in the signature', () => {
+    const messages = rule.meta.messages;
+    expect(messages.erasedReturn).toContain('in the signature');
+    expect(messages.erasedReturnAsync).not.toContain('in the signature');
+    expect(messages.erasedReturnAsync).toContain('Drop async');
   });
 });
