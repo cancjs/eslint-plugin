@@ -17,6 +17,7 @@ export const TIERS: Record<string, TierEntry> = {
   'no-abort-listener-leak': { strict: 'error', native: true },
   'no-async-executor': { recommended: 'error' },
   'no-async-loop-callback': { recommended: 'warn' },
+  'no-cancelability-erasure': { recommended: 'error' },
   'no-cancellation-gap': { strict: 'error' },
   'no-coroutine-dialect-mismatch': { recommended: 'error' },
   'no-executor-return': { recommended: 'error' },

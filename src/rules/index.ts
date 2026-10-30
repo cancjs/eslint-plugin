@@ -10,6 +10,7 @@ import mustConsumeLazy from './must-consume-lazy.js';
 import noAbortListenerLeak from './no-abort-listener-leak.js';
 import noAsyncExecutor from './no-async-executor.js';
 import noAsyncLoopCallback from './no-async-loop-callback.js';
+import noCancelabilityErasure from './no-cancelability-erasure.js';
 import noCancellationGap from './no-cancellation-gap.js';
 import noCoroutineDialectMismatch from './no-coroutine-dialect-mismatch.js';
 import noExecutorReturn from './no-executor-return.js';
@@ -45,6 +46,7 @@ export const rules: Record<string, Rule.RuleModule | TSESLint.RuleModule<string,
   'no-abort-listener-leak': noAbortListenerLeak,
   'no-async-executor': noAsyncExecutor,
   'no-async-loop-callback': noAsyncLoopCallback,
+  'no-cancelability-erasure': noCancelabilityErasure,
   'no-cancellation-gap': noCancellationGap,
   'no-coroutine-dialect-mismatch': noCoroutineDialectMismatch,
   'no-executor-return': noExecutorReturn,
