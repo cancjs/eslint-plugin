@@ -248,6 +248,7 @@ export function getFailureMembers(
   checker: ts.TypeChecker,
   settings?: ResolvedCancSettings,
   context?: Context,
+  options: { ignoreNonCarrierBranches?: boolean } = {},
 ): FailureMembers {
   const resolvedSettings =
     settings ??
@@ -273,8 +274,10 @@ export function getFailureMembers(
     }
 
     const results = carrierParts.map((t) => getFailureMembers(t, checker, resolvedSettings, context));
-    // a non-carrier branch contributes no failure set, so the union cannot be called defined
-    const allDefined = carrierParts.length === parts.length && results.every((r) => r.defined);
+    // a non-carrier branch contributes no failure set, so the union cannot be called defined;
+    // a target type only claims failures through its carrier branches, so it may ignore the rest
+    const allDefined =
+      (options.ignoreNonCarrierBranches || carrierParts.length === parts.length) && results.every((r) => r.defined);
     const anyOpen = results.some((r) => r.open);
 
     const listedMap = new Map<string, ts.Type>();

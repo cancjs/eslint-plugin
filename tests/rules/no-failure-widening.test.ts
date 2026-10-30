@@ -110,6 +110,27 @@ describe('no-failure-widening (typed lane)', () => {
        interface Mine<T, E> { readonly [FAILURE]?: E; value: T }
        declare const p: CancelablePromise<string, ErrorA> | Mine<string, ErrorB>;
        export const x = p as unknown as CancelablePromise<string, ErrorA>;`,
+      // Target union with a non-canc branch claims nothing about it: identical failures (silent)
+      `import type { CancelablePromise } from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare const p: CancelablePromise<string, ErrorA>;
+       export const c = p as CancelablePromise<string, ErrorA> | string;`,
+      `import type { CancelablePromise } from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare const p: CancelablePromise<string, ErrorA>;
+       export function f(): CancelablePromise<string, ErrorA> | string {
+         return p;
+       }`,
+      `import type { CancelablePromise } from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare const p: CancelablePromise<string, ErrorA>;
+       export function f(): CancelablePromise<string, ErrorA> | false {
+         return p;
+       }`,
+      `import type { CancelablePromise } from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare const p: CancelablePromise<string, ErrorA>;
+       export const f = (): CancelablePromise<string, ErrorA> | number => p;`,
     ],
 
     invalid: [
@@ -249,6 +270,26 @@ declare const p: CancelablePromise<string, ErrorA> | { z: 1 };
 export const m = p as unknown as CancelablePromise<string>;`,
         output: null,
         errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'cast' } }],
+      },
+      // 11. Target union keeps one canc branch that drops a failure: still widening
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+class ErrorB extends Error {}
+declare const p: CancelablePromise<string, ErrorA | ErrorB>;
+export const c = p as CancelablePromise<string, ErrorA> | string;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 5, data: { position: 'cast' } }],
+      },
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const p: CancelablePromise<string, ErrorA>;
+export function f(): CancelablePromise<string> | false {
+  return p;
+}`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'return type' } }],
       },
     ],
   });

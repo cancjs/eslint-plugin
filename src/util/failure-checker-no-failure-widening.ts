@@ -24,6 +24,8 @@ export function isFailureWidened(
   if (sourceFailures.listed.length === 0) {
     return false;
   }
-  const targetFailures = getFailureMembers(services.getTypeAtLocation(targetNode), checker, settings, context);
+  const targetFailures = getFailureMembers(services.getTypeAtLocation(targetNode), checker, settings, context, {
+    ignoreNonCarrierBranches: true,
+  });
   return isWidened(sourceFailures, targetFailures, checker);
 }
