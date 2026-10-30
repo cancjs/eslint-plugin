@@ -34,7 +34,10 @@ export const safeOperation = cancAsync(function* () {
     return yield* cancAwait(task);
   } catch (err) {
     if (isCancelError(err) || isTimeoutError(err)) {
-      return 'operation aborted or timed out';
+      if (isTimeoutError(err)) {
+        return 'operation timed out';
+      }
+      throw err;
     }
     throw err;
   }

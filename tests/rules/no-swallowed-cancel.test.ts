@@ -26,13 +26,7 @@ const invalidFiles = fs
   .filter((file) => readMarkers(path.join(familyDir, 'invalid', file)).some((m) => m.ruleId === RULE_ID))
   .map((file) => `invalid/${file}`);
 
-// a disjunction guard that returns swallows the cancel, so this file is pinned as invalid below
-const DISJUNCTION_GUARD_RETURN = 'valid/99-adversarial-is-cancel-error-disjunction.ts';
-
-const validFiles = fs
-  .readdirSync(path.join(familyDir, 'valid'))
-  .map((file) => `valid/${file}`)
-  .filter((file) => file !== DISJUNCTION_GUARD_RETURN);
+const validFiles = fs.readdirSync(path.join(familyDir, 'valid')).map((file) => `valid/${file}`);
 
 const invalid01 = corpus('invalid/01-no-swallowed-cancel-coroutine.ts');
 
@@ -85,7 +79,7 @@ const corpusInvalid: InvalidTestCase<MessageIds, Options>[] = [
   },
   {
     name: 'corpus: disjunction guard that returns swallows the cancel',
-    code: corpus(DISJUNCTION_GUARD_RETURN),
+    code: corpus('invalid/17-no-swallowed-cancel-disjunction-guard-return.ts'),
     errors: [{ messageId: 'swallowedCancel', line: 35, column: 5, suggestions: [] }],
   },
 ];
@@ -561,7 +555,7 @@ const untypedSilent = [...corpusTypeOnlyInvalid, ...typeOnlyInvalid];
 describe('canc/no-swallowed-cancel', () => {
   it('covers every corpus file and at least 20 cases', () => {
     const covered = [...corpusInvalid, ...corpusTypeOnlyInvalid].length;
-    expect(covered).toBe(invalidFiles.length + 1);
+    expect(covered).toBe(invalidFiles.length);
     const total = typedInvalid.length + corpusValid.length + inlineValid.length;
     console.log(`no-swallowed-cancel typed cases: ${total} (${typedInvalid.length} invalid)`);
     expect(total).toBeGreaterThanOrEqual(20);
