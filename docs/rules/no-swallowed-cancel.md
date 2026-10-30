@@ -81,6 +81,14 @@ catalogSearch.catch((err) => {
 });
 ```
 
+In a rejection callback or a `catch` clause of an async function, returning `Promise.reject(err)` (or `CancelablePromise.reject(err)`) on the cancel branch rethrows the same error just like `throw err`, and so does the cancel arm of a conditional expression body:
+
+```ts
+catalogSearch.catch((err) => (isCancelError(err) ? Promise.reject(err) : renderFallback()));
+```
+
+Rejecting with a new error, or rejecting with `err` only on the non-cancel branch, still swallows the cancellation.
+
 With `handleErrorBoundary` listed in `settings.canc.boundaryFunctions`:
 
 ```ts
