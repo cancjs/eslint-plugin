@@ -61,7 +61,7 @@ trackPromise(Promise.resolve(fetchUserCancelable()));
 ```
 
 ```ts
-async function getUser(): CancelablePromise<User> {
+function getUser(): CancelablePromise<User> {
   return fetchUserCancelable();
 }
 ```
@@ -76,6 +76,8 @@ const compatible = fetchUserCancelable() satisfies Promise<User>;
 
 ```ts
 import { catchCancel } from '@cancjs/promise';
+
+declare function trackPromise(p: Promise<User>): void;
 
 trackPromise(catchCancel(fetchUserCancelable()));
 ```
@@ -115,7 +117,7 @@ This rule accepts an optional configuration object:
 
 ## Limitations
 
-The rule does not check the return value of a callback passed straight to a call (such as a `.then` callback) unless the callback declares its own return type, since the callee decides what happens to it. Arguments passed to functions declared by the canc packages are not checked, and lazy promises are out of scope. `await` operands, native combinator arguments and floating promises are left to other rules.
+The rule does not check the return value of a callback passed straight to a call (such as a `.then` callback) unless the callback declares its own return type, since the callee decides what happens to it. Arguments passed to functions declared by the canc packages are not checked, and lazy promises are out of scope. `await` operands, native combinator arguments and floating promises are left to other rules. An async function without a return annotation is not reported, because its return has no declared type. On an async function that does declare `Promise<T>`, the message suggests dropping `async` instead of keeping the cancelable type, since an async function cannot return a cancelable promise type.
 
 ## When not to use it
 
