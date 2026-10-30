@@ -5,7 +5,7 @@ export const interopTypescriptEslint: Linter.Config[] = [
   {
     name: 'canc/interop-typescript-eslint',
     rules: {
-      // handleCancel registers a cleanup and returns the promise for chaining, the result needs no handling
+      // handleCancel returns its promise only for chaining
       '@typescript-eslint/no-floating-promises': [
         'error',
         {
