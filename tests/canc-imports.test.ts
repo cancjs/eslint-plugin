@@ -98,7 +98,7 @@ const forAwaitNextRule: TSESLint.RuleModule<'hit', []> = {
 };
 
 describe('canc-imports: getCancBindings', () => {
-  function bindingsFor(code: string): Map<string, CancBinding> {
+  function bindingsFor(code: string, includeTypeOnly = false): Map<string, CancBinding> {
     let captured = new Map<string, CancBinding>();
     const captureRule: TSESLint.RuleModule<'x', []> = {
       meta: { type: 'problem', messages: { x: 'x' }, schema: [] },
@@ -106,7 +106,7 @@ describe('canc-imports: getCancBindings', () => {
       create(context) {
         return {
           Program() {
-            captured = getCancBindings(context);
+            captured = getCancBindings(context, { includeTypeOnly });
           },
         };
       },
@@ -119,6 +119,25 @@ describe('canc-imports: getCancBindings', () => {
     });
     return captured;
   }
+
+  it('leaves out type-only imports by default', () => {
+    const b = bindingsFor(`import type { CancelablePromise } from '@cancjs/promise';
+import { type CancError, LazyPromise } from '@cancjs/promise';`);
+    expect(b.has('CancelablePromise')).toBe(false);
+    expect(b.has('CancError')).toBe(false);
+    expect(b.has('LazyPromise')).toBe(true);
+  });
+
+  it('keeps type-only imports flagged when includeTypeOnly is set', () => {
+    const b = bindingsFor(
+      `import type { CancelablePromise } from '@cancjs/promise';
+import { type CancError, LazyPromise } from '@cancjs/promise';`,
+      true,
+    );
+    expect(b.get('CancelablePromise')?.isTypeOnly).toBe(true);
+    expect(b.get('CancError')?.isTypeOnly).toBe(true);
+    expect(b.get('LazyPromise')?.isTypeOnly).toBeUndefined();
+  });
 
   it('named import records the exported name', () => {
     const b = bindingsFor(`import { CancelablePromise } from '@cancjs/promise';`);

@@ -16,11 +16,19 @@ export interface CancBinding {
   exported: string;
   /** True when the local name is a namespace object (`import * as canc`). */
   namespace: boolean;
+  /** True when imported with `import type` or `import { type X }`. */
+  isTypeOnly?: boolean;
 }
 
 type Context = TSESLint.RuleContext<string, readonly unknown[]>;
 
 const bindingCache = new WeakMap<object, Map<string, CancBinding>>();
+const valueBindingCache = new WeakMap<object, Map<string, CancBinding>>();
+
+export interface CancBindingOptions {
+  /** Keep bindings imported with `import type` or `import { type X }`. Default false. */
+  includeTypeOnly?: boolean;
+}
 
 /**
  * Build (once per file) a map of local identifier name to the canc binding it
@@ -30,25 +38,33 @@ const bindingCache = new WeakMap<object, Map<string, CancBinding>>();
  * Handles named, renamed, default and namespace ESM imports, plus the two
  * common CommonJS forms: `const { x } = require('...')` and
  * `const ns = require('...')`. Re-assignments are not tracked (v1).
+ *
+ * Type-only imports have no runtime binding, so they are left out unless
+ * `includeTypeOnly` is set.
  */
-export function getCancBindings(context: Context): Map<string, CancBinding> {
+export function getCancBindings(context: Context, options: CancBindingOptions = {}): Map<string, CancBinding> {
   const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
 
-  const cached = bindingCache.get(program);
-  if (cached) {
-    return cached;
+  let all = bindingCache.get(program);
+  if (!all) {
+    const sources = new Set(getCancSettings(context).sources);
+    all = new Map<string, CancBinding>();
+    for (const statement of program.body) {
+      collectFromStatement(statement, sources, all);
+    }
+    bindingCache.set(program, all);
+  }
+  if (options.includeTypeOnly) {
+    return all;
   }
 
-  const sources = new Set(getCancSettings(context).sources);
-  const bindings = new Map<string, CancBinding>();
-
-  for (const statement of program.body) {
-    collectFromStatement(statement, sources, bindings);
+  let valueOnly = valueBindingCache.get(program);
+  if (!valueOnly) {
+    valueOnly = new Map([...all].filter(([, binding]) => !binding.isTypeOnly));
+    valueBindingCache.set(program, valueOnly);
   }
-
-  bindingCache.set(program, bindings);
-  return bindings;
+  return valueOnly;
 }
 
 function collectFromStatement(
@@ -73,33 +89,30 @@ function collectFromImport(
   sources: Set<string>,
   bindings: Map<string, CancBinding>,
 ): void {
-  // Type-only imports carry no runtime binding to track.
-  if (node.importKind === 'type') {
-    return;
-  }
   const source = node.source.value;
   if (!sources.has(source)) {
     return;
   }
 
+  const isTypeDecl = node.importKind === 'type';
   for (const specifier of node.specifiers) {
+    const isTypeOnly =
+      isTypeDecl || (specifier.type === AST_NODE_TYPES.ImportSpecifier && specifier.importKind === 'type');
+    const extra = isTypeOnly ? { isTypeOnly: true as const } : {};
     switch (specifier.type) {
       case AST_NODE_TYPES.ImportSpecifier: {
-        if (specifier.importKind === 'type') {
-          break;
-        }
         const exported =
           specifier.imported.type === AST_NODE_TYPES.Identifier ?
             specifier.imported.name
           : String(specifier.imported.value);
-        bindings.set(specifier.local.name, { source, exported, namespace: false });
+        bindings.set(specifier.local.name, { source, exported, namespace: false, ...extra });
         break;
       }
       case AST_NODE_TYPES.ImportDefaultSpecifier:
-        bindings.set(specifier.local.name, { source, exported: 'default', namespace: false });
+        bindings.set(specifier.local.name, { source, exported: 'default', namespace: false, ...extra });
         break;
       case AST_NODE_TYPES.ImportNamespaceSpecifier:
-        bindings.set(specifier.local.name, { source, exported: '*', namespace: true });
+        bindings.set(specifier.local.name, { source, exported: '*', namespace: true, ...extra });
         break;
     }
   }
