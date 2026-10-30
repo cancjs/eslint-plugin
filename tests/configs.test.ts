@@ -152,10 +152,16 @@ describe('interop configs', () => {
     expect(configs.interopTypescriptEslint).toHaveLength(1);
     expect(configs.interopTypescriptEslint[0].name).toBe('canc/interop-typescript-eslint');
     expect(mergedRules('interopTypescriptEslint')).toEqual({
-      '@typescript-eslint/no-floating-promises': ['error', { checkThenables: true }],
+      '@typescript-eslint/no-floating-promises': [
+        'error',
+        {
+          checkThenables: true,
+          allowForKnownSafeCalls: [{ from: 'package', package: '@cancjs/promise', name: ['handleCancel'] }],
+        },
+      ],
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/promise-function-async': 'off',
-      '@typescript-eslint/return-await': ['error', 'in-try-catch'],
+      '@typescript-eslint/return-await': ['error', 'error-handling-correctness-only'],
       '@typescript-eslint/use-unknown-in-catch-callback-variable': 'error',
     });
   });
