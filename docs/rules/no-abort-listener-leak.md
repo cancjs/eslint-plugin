@@ -9,7 +9,7 @@ To prevent listener leaks, you must ensure that:
 1. The listener is removed on all possible completion paths using `signal.removeEventListener('abort', handler)`. A removal in a `finally` block, or in the callback of a promise `.finally(...)` call in the same function, counts. A listener added inside a `new Promise` executor (or a `forEach`/`map` callback) is checked against the function that encloses it, so a removal in that function's `finally` block, including one made through a `forEach` over a list of registered listeners, counts too.
 2. Or the listener is registered with `{ once: true }` when a single event dispatch is sufficient.
 
-Locally instantiated `AbortController` or `createAbortSignal()` instances whose lifespan is confined to the local function scope are not flagged.
+Locally instantiated `AbortController` or `createAbortSignal()` instances whose lifespan is confined to the local function scope are not flagged. This includes the signals of local controllers collected into a `const` array literal and reached through `array.map((signal) => ...)`, as long as the array and every controller behind it are created by the same function.
 
 ## Rule details
 
