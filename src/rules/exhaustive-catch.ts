@@ -35,9 +35,59 @@ function getNearestEnclosingFunction(node: TSESTree.Node): TSESTree.FunctionLike
   return null;
 }
 
+function forEachChild(node: TSESTree.Node, fn: (child: TSESTree.Node) => void): void {
+  for (const [key, child] of Object.entries(node)) {
+    if (key === 'parent') continue;
+    if (child && typeof child === 'object') {
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object' && 'type' in item) {
+            fn(item as TSESTree.Node);
+          }
+        }
+      } else if ('type' in child) {
+        fn(child as TSESTree.Node);
+      }
+    }
+  }
+}
+
+function isFunctionNode(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  );
+}
+
+/** Whether a catch handler rethrows its binding anywhere, so the steps it guards still reach an outer catch. */
+function handlerRethrows(handler: TSESTree.CatchClause, context: Context): boolean {
+  if (!handler.param) {
+    return false;
+  }
+  if (handler.param.type !== AST_NODE_TYPES.Identifier) {
+    return true;
+  }
+  const bindingName = handler.param.name;
+  let found = false;
+  function visit(node: TSESTree.Node): void {
+    if (found || isFunctionNode(node)) {
+      return;
+    }
+    if (isRethrowStatement(node as TSESTree.Statement, bindingName, context)) {
+      found = true;
+      return;
+    }
+    forEachChild(node, visit);
+  }
+  visit(handler.body);
+  return found;
+}
+
 function collectYieldStepsInTry(
   tryBlock: TSESTree.BlockStatement,
   parentTry: TSESTree.TryStatement,
+  context: Context,
 ): TSESTree.YieldExpression[] {
   const steps: TSESTree.YieldExpression[] = [];
 
@@ -52,10 +102,11 @@ function collectYieldStepsInTry(
     }
 
     if (node !== parentTry && node.type === AST_NODE_TYPES.TryStatement) {
-      // without a handler the inner block throws straight to the outer catch
+      // without a handler, or with one that rethrows, the inner block reaches the outer catch
       if (node.handler) {
         visit(node.handler.body);
-      } else {
+      }
+      if (!node.handler || handlerRethrows(node.handler, context)) {
         visit(node.block);
       }
       if (node.finalizer) {
@@ -69,20 +120,7 @@ function collectYieldStepsInTry(
       return;
     }
 
-    for (const [key, child] of Object.entries(node)) {
-      if (key === 'parent') continue;
-      if (child && typeof child === 'object') {
-        if (Array.isArray(child)) {
-          for (const item of child) {
-            if (item && typeof item === 'object' && 'type' in item) {
-              visit(item as TSESTree.Node);
-            }
-          }
-        } else if ('type' in child) {
-          visit(child as TSESTree.Node);
-        }
-      }
-    }
+    forEachChild(node, visit);
   }
 
   visit(tryBlock);
@@ -163,7 +201,10 @@ function isRecognizedGuard(expr: TSESTree.Expression, bindingName: string, conte
   }
 
   if (expr.type === AST_NODE_TYPES.LogicalExpression) {
-    return isRecognizedGuard(expr.left, bindingName, context) || isRecognizedGuard(expr.right, bindingName, context);
+    const left = isRecognizedGuard(expr.left, bindingName, context);
+    const right = isRecognizedGuard(expr.right, bindingName, context);
+    // `||` holds when either side does, so both sides must narrow; `&&` narrows through either side
+    return expr.operator === '&&' ? left || right : left && right;
   }
 
   return false;
@@ -175,55 +216,128 @@ function containsRethrow(stmt: TSESTree.Statement, bindingName: string, context:
     : isRethrowStatement(stmt, bindingName, context);
 }
 
-/** `if (!guard(e)) throw e;`: everything past it is narrowed to what the guard matches. */
-function isNegatedGuardRethrow(stmt: TSESTree.IfStatement, bindingName: string, context: Context): boolean {
+function isNegatedGuard(test: TSESTree.Expression, bindingName: string, context: Context): boolean {
+  if (test.type === AST_NODE_TYPES.UnaryExpression && test.operator === '!') {
+    return isRecognizedGuard(test.argument, bindingName, context);
+  }
   return (
-    stmt.test.type === AST_NODE_TYPES.UnaryExpression &&
-    stmt.test.operator === '!' &&
-    isRecognizedGuard(stmt.test.argument, bindingName, context) &&
-    containsRethrow(stmt.consequent, bindingName, context)
+    test.type === AST_NODE_TYPES.BinaryExpression &&
+    (test.operator === '!==' || test.operator === '!=') &&
+    isRecognizedGuard(test, bindingName, context)
   );
 }
 
+/**
+ * `if (!guard(e)) throw e;` or `if (e.kind !== X) throw e;`: everything past it is narrowed to what the guard
+ * matches.
+ */
+function isNegatedGuardRethrow(stmt: TSESTree.IfStatement, bindingName: string, context: Context): boolean {
+  return isNegatedGuard(stmt.test, bindingName, context) && containsRethrow(stmt.consequent, bindingName, context);
+}
+
+function isBindingMember(expr: TSESTree.Expression, bindingName: string): boolean {
+  return (
+    expr.type === AST_NODE_TYPES.MemberExpression &&
+    expr.object.type === AST_NODE_TYPES.Identifier &&
+    expr.object.name === bindingName
+  );
+}
+
+/** Cases must narrow the binding: `switch (e.kind)`, or `switch (true)` whose cases are all recognized guards. */
+function hasGuardCases(stmt: TSESTree.SwitchStatement, bindingName: string, context: Context): boolean {
+  if (isBindingMember(stmt.discriminant, bindingName)) {
+    return true;
+  }
+  const isSwitchTrue = stmt.discriminant.type === AST_NODE_TYPES.Literal && stmt.discriminant.value === true;
+  return stmt.cases.every((c) => c.test === null || (isSwitchTrue && isRecognizedGuard(c.test, bindingName, context)));
+}
+
 function hasDefaultRethrow(stmt: TSESTree.SwitchStatement, bindingName: string, context: Context): boolean {
+  if (!hasGuardCases(stmt, bindingName, context)) {
+    return false;
+  }
   const defaultCase = stmt.cases.find((c) => c.test === null);
   return defaultCase?.consequent.some((s) => containsRethrow(s, bindingName, context)) ?? false;
 }
 
+const LOOP_OR_SWITCH = new Set<string>([
+  AST_NODE_TYPES.SwitchStatement,
+  AST_NODE_TYPES.ForStatement,
+  AST_NODE_TYPES.ForInStatement,
+  AST_NODE_TYPES.ForOfStatement,
+  AST_NODE_TYPES.WhileStatement,
+  AST_NODE_TYPES.DoWhileStatement,
+]);
+
+/** Whether the node can leave the catch body (return, or break/continue past it) without rethrowing. */
+function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Context, nested: boolean): boolean {
+  if (isFunctionNode(node)) {
+    return false;
+  }
+  if (node.type === AST_NODE_TYPES.ReturnStatement) {
+    return !isRethrowStatement(node, bindingName, context);
+  }
+  if (node.type === AST_NODE_TYPES.BreakStatement || node.type === AST_NODE_TYPES.ContinueStatement) {
+    return node.label !== null || !nested;
+  }
+  if (node.type === AST_NODE_TYPES.IfStatement && isRecognizedGuard(node.test, bindingName, context)) {
+    // an exit under a guard leaves only for the errors the guard matches
+    return node.alternate ? hasSwallowingExit(node.alternate, bindingName, context, nested) : false;
+  }
+  const childNested = nested || LOOP_OR_SWITCH.has(node.type);
+  let found = false;
+  forEachChild(node, (child) => {
+    found ||= hasSwallowingExit(child, bindingName, context, childNested);
+  });
+  return found;
+}
+
 function hasFallbackInCatch(catchBody: TSESTree.BlockStatement, bindingName: string, context: Context): boolean {
   for (const stmt of catchBody.body) {
-    if (isRethrowStatement(stmt, bindingName, context)) {
+    if (isFallbackStatement(stmt, bindingName, context)) {
       return true;
     }
-
-    if (stmt.type === AST_NODE_TYPES.SwitchStatement && hasDefaultRethrow(stmt, bindingName, context)) {
-      return true;
+    // an earlier statement that leaves the catch skips the fallback below it
+    if (hasSwallowingExit(stmt, bindingName, context, false)) {
+      return false;
     }
+  }
 
-    if (stmt.type === AST_NODE_TYPES.IfStatement && isNegatedGuardRethrow(stmt, bindingName, context)) {
-      return true;
-    }
+  return false;
+}
 
-    if (stmt.type === AST_NODE_TYPES.IfStatement) {
-      if (isRecognizedGuard(stmt.test, bindingName, context)) {
-        if (stmt.alternate) {
-          let currAlt: TSESTree.Statement | null = stmt.alternate;
-          let allNarrowed = true;
-          while (currAlt && currAlt.type === AST_NODE_TYPES.IfStatement) {
-            if (!isRecognizedGuard(currAlt.test, bindingName, context)) {
-              allNarrowed = false;
-              break;
-            }
-            currAlt = currAlt.alternate;
+function isFallbackStatement(stmt: TSESTree.Statement, bindingName: string, context: Context): boolean {
+  if (isRethrowStatement(stmt, bindingName, context)) {
+    return true;
+  }
+
+  if (stmt.type === AST_NODE_TYPES.SwitchStatement && hasDefaultRethrow(stmt, bindingName, context)) {
+    return true;
+  }
+
+  if (stmt.type === AST_NODE_TYPES.IfStatement && isNegatedGuardRethrow(stmt, bindingName, context)) {
+    return true;
+  }
+
+  if (stmt.type === AST_NODE_TYPES.IfStatement) {
+    if (isRecognizedGuard(stmt.test, bindingName, context)) {
+      if (stmt.alternate) {
+        let currAlt: TSESTree.Statement | null = stmt.alternate;
+        let allNarrowed = true;
+        while (currAlt && currAlt.type === AST_NODE_TYPES.IfStatement) {
+          if (!isRecognizedGuard(currAlt.test, bindingName, context)) {
+            allNarrowed = false;
+            break;
           }
-          if (allNarrowed && currAlt) {
-            if (
-              currAlt.type === AST_NODE_TYPES.BlockStatement ?
-                currAlt.body.some((s) => isRethrowStatement(s, bindingName, context))
-              : isRethrowStatement(currAlt, bindingName, context)
-            ) {
-              return true;
-            }
+          currAlt = currAlt.alternate;
+        }
+        if (allNarrowed && currAlt) {
+          if (
+            currAlt.type === AST_NODE_TYPES.BlockStatement ?
+              currAlt.body.some((s) => isRethrowStatement(s, bindingName, context))
+            : isRethrowStatement(currAlt, bindingName, context)
+          ) {
+            return true;
           }
         }
       }
@@ -322,7 +436,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const yieldSteps = collectYieldStepsInTry(node.block, node);
+        const yieldSteps = collectYieldStepsInTry(node.block, node, context);
         if (yieldSteps.length === 0) {
           return;
         }

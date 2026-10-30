@@ -34,6 +34,42 @@ const markers16 = readMarkers(invalid16Path);
 const markers06 = readMarkers(invalid06Path);
 const markers07 = readMarkers(invalid07Path);
 
+function unionCatch(catchBody: string): string {
+  return `import { isErrorOf } from '@cancjs/promise';
+import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+declare function log(e: unknown): boolean;
+declare const flag: boolean;
+declare const mode: string;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    ${catchBody}
+  }
+});`;
+}
+
+const q3Or = unionCatch(`if (isErrorOf(e, ErrorA) || log(e)) {
+      console.log('handled');
+    } else {
+      throw e;
+    }`);
+const q3OrCond = unionCatch(`if (e instanceof ErrorA || flag) {
+      console.log('handled');
+    } else {
+      throw e;
+    }`);
+const q3NotOr = unionCatch(`if (!(e instanceof ErrorA || flag)) throw e;
+    console.log('handled');`);
+
+function withThrow(code: string): string {
+  return code.replace(/\n {2}}\n}\);$/, '\n    throw e;\n  }\n});');
+}
+
 const typedTester = ruleTester({ types: true });
 const untypedTester = ruleTester({ types: false });
 
@@ -83,6 +119,39 @@ export const run = cancAsync(function* () {
   } catch (e) {
     switch (true) {
       case e instanceof ErrorA:
+        console.log('A');
+        break;
+      default:
+        throw e;
+    }
+  }
+});`,
+      // Early negated discriminant comparison rethrows the rest
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (e.kind !== 'ErrorA') throw e;
+    console.log(e.kind);
+  }
+});`,
+      // Switch on a binding discriminant with a default rethrow
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    switch (e.kind) {
+      case 'ErrorA':
         console.log('A');
         break;
       default:
@@ -402,6 +471,88 @@ export const run = cancAsync(function* () {
     console.log('swallowed');
   }
 });`,
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
+      },
+      // `||` with a non-guard operand does not narrow: `isErrorOf(e, A) || log(e)`
+      {
+        code: q3Or,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              { messageId: 'noRethrow', data: { names: 'ErrorB', handled: 'ErrorA' }, output: withThrow(q3Or) },
+            ],
+          },
+        ],
+      },
+      // `||` with a non-guard operand does not narrow: `A || cond`
+      {
+        code: q3OrCond,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              { messageId: 'noRethrow', data: { names: 'ErrorB', handled: 'ErrorA' }, output: withThrow(q3OrCond) },
+            ],
+          },
+        ],
+      },
+      // Negated `||` with a non-guard operand is no early rethrow: `!(A || cond)`
+      {
+        code: q3NotOr,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              { messageId: 'noRethrow', data: { names: 'ErrorB', handled: 'ErrorA' }, output: withThrow(q3NotOr) },
+            ],
+          },
+        ],
+      },
+      // Inner catch that logs and rethrows still reaches the swallowing outer catch
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    try {
+      yield* cancAwait(getUnion());
+    } catch (inner) {
+      console.error(inner);
+      throw inner;
+    }
+  } catch (e) {
+    console.log('swallowed');
+  }
+});`,
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
+      },
+      // Switch default rethrow does not count when the cases are not guards
+      {
+        code: unionCatch(`switch (mode) {
+      case 'quiet':
+        break;
+      default:
+        throw e;
+    }`),
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
+      },
+      // Early swallowing exit before the fallback rethrow
+      {
+        code: unionCatch(`if (flag) return;
+    throw e;`),
         output: null,
         errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
       },
