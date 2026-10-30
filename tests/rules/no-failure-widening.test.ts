@@ -140,6 +140,25 @@ describe('no-failure-widening (typed lane)', () => {
     ],
 
     invalid: [
+      // A promise-like branch in the target claims an open failure set: still widening
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+class ErrorB extends Error {}
+declare const p: CancelablePromise<string, ErrorA | ErrorB>;
+export const c = p as CancelablePromise<string, ErrorA | ErrorB> | Promise<string>;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 5, data: { position: 'cast' } }],
+      },
+      {
+        code: `import type { CancelablePromise } from '@cancjs/promise';
+class ErrorA extends Error {}
+class ErrorB extends Error {}
+declare const p: CancelablePromise<string, ErrorA | ErrorB>;
+export const c = p as CancelablePromise<string, ErrorA | ErrorB> | PromiseLike<string>;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 5, data: { position: 'cast' } }],
+      },
       // Default import under a non-canonical local name resolves through the canc symbol
       {
         code: `import type CP from '@cancjs/promise';

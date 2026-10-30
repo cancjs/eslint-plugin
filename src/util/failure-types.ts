@@ -137,6 +137,10 @@ export function isUnlistedMarker(type: ts.Type, checker: ts.TypeChecker): boolea
   return Boolean(memberType.flags & ts.TypeFlags.BooleanLiteral) && checker.typeToString(memberType) === 'true';
 }
 
+/** Whether a branch is a promise or thenable, which claims an open failure set of its own. */
+function isThenableType(type: ts.Type, checker: ts.TypeChecker): boolean {
+  return checker.getPropertyOfType(checker.getApparentType(type), 'then') !== undefined;
+}
 
 function isCancCarrierType(
   type: ts.Type,
@@ -270,8 +274,12 @@ export function getFailureMembers(
     const results = carrierParts.map((t) => getFailureMembers(t, checker, resolvedSettings, context));
     // a non-carrier branch contributes no failure set, so the union cannot be called defined;
     // a target type only claims failures through its carrier branches, so it may ignore the rest
-    const allDefined =
-      (options.ignoreNonCarrierBranches || carrierParts.length === parts.length) && results.every((r) => r.defined);
+    // except a promise-like branch, which claims an open failure set and keeps the union undefined
+    const restIgnorable =
+      carrierParts.length === parts.length ||
+      (Boolean(options.ignoreNonCarrierBranches) &&
+        parts.every((p) => carrierParts.includes(p) || !isThenableType(p, checker)));
+    const allDefined = restIgnorable && results.every((r) => r.defined);
     const anyOpen = results.some((r) => r.open);
 
     const listedMap = new Map<string, ts.Type>();
