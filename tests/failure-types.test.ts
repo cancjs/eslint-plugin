@@ -209,12 +209,14 @@ import { FooError } from './failure-test-cases.js';
 export type CarrierOrObject = CancelablePromise<string, FooError> | { z: 1 };
 `,
       'b3-unlisted.ts': `import type { CancelablePromise } from '@cancjs/promise';
+import { FooError } from './failure-test-cases.js';
 export class Unlisted { readonly note = 1; }
 export type UserUnlisted = Unlisted;
 export type RealUnlisted = CancelablePromise<number, Unlisted>;
 export interface UnlistedCopy { readonly _cancUnlisted: true }
 export interface UnlistedWrongLiteral { readonly _cancUnlisted: false }
 export type CopyOpen = CancelablePromise<number, Unlisted | UnlistedCopy>;
+export type OrNull = CancelablePromise<string, FooError> | null;
 `,
     };
     let virtualProgram: ts.Program;
@@ -261,6 +263,12 @@ export type CopyOpen = CancelablePromise<number, Unlisted | UnlistedCopy>;
       const res = getFailureMembers(virtualType('b3-unlisted.ts', 'CopyOpen'), virtualChecker);
       expect(res.open).toBe(true);
       expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['Unlisted']);
+    });
+
+    it('union filter: a null branch does not make a carrier union undefined', () => {
+      const res = getFailureMembers(virtualType('b3-unlisted.ts', 'OrNull'), virtualChecker);
+      expect(res.defined).toBe(true);
+      expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['FooError']);
     });
   });
 
