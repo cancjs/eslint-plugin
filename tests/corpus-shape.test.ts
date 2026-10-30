@@ -49,9 +49,9 @@ describe('corpus shape: 260 fixtures across 7 families', () => {
     expect(counts.lazy.valid).toBe(8);
     expect(counts.lazy.invalid).toBe(7);
 
-    expect(counts.failure.total).toBe(42);
+    expect(counts.failure.total).toBe(43);
     expect(counts.failure.valid).toBe(26);
-    expect(counts.failure.invalid).toBe(16);
+    expect(counts.failure.invalid).toBe(17);
 
     const sum = Object.values(counts).reduce((acc, c) => acc + c.total, 0);
     expect(sum).toBe(260);
