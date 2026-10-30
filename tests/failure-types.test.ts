@@ -22,7 +22,7 @@ function getTypeByName(sourceFile: ts.SourceFile, checker: ts.TypeChecker, name:
     if (ts.isTypeAliasDeclaration(stmt) && stmt.name.text === name) {
       return checker.getTypeAtLocation(stmt);
     }
-    if (ts.isClassDeclaration(stmt) && stmt.name?.text === name) {
+    if ((ts.isClassDeclaration(stmt) || ts.isInterfaceDeclaration(stmt)) && stmt.name?.text === name) {
       return checker.getTypeAtLocation(stmt);
     }
   }
@@ -36,6 +36,29 @@ function getClassSymbol(sourceFile: ts.SourceFile, checker: ts.TypeChecker, name
     throw new Error(`Class ${name} has no symbol`);
   }
   return symbol;
+}
+
+function createVirtualProgram(files: Record<string, string>): { program: ts.Program; dir: string } {
+  const dir = path.dirname(fixtureTsconfigPath);
+  const configFile = ts.readConfigFile(fixtureTsconfigPath, (p) => ts.sys.readFile(p));
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, dir, undefined, fixtureTsconfigPath);
+  const virtual = new Map<string, string>();
+  for (const [name, text] of Object.entries(files)) {
+    virtual.set(path.resolve(dir, 'src', name).replaceAll('\\', '/'), text);
+  }
+  const host = ts.createCompilerHost(parsed.options);
+  const key = (f: string) => path.resolve(f).replaceAll('\\', '/');
+  const origRead = host.readFile.bind(host);
+  const origExists = host.fileExists.bind(host);
+  const origGet = host.getSourceFile.bind(host);
+  host.readFile = (f) => virtual.get(key(f)) ?? origRead(f);
+  host.fileExists = (f) => virtual.has(key(f)) || origExists(f);
+  host.getSourceFile = (f, lang, onError, shouldCreate) => {
+    const text = virtual.get(key(f));
+    return text === undefined ? origGet(f, lang, onError, shouldCreate) : ts.createSourceFile(f, text, lang);
+  };
+  const roots = [...virtual.keys(), path.resolve(dir, 'src/failure-test-cases.ts')];
+  return { program: ts.createProgram(roots, parsed.options, host), dir };
 }
 
 const defaultSettings = {
@@ -167,6 +190,54 @@ describe('failure-types', () => {
       const res = getFailureMembers(getTypeByName(mixedFile, checker, 'CarrierOrUndefined'), checker);
       expect(res.defined).toBe(true);
       expect(res.listed.map((t) => checker.typeToString(t))).toEqual(['FooError']);
+    });
+  });
+
+  describe('getFailureMembers carrier sub-gates', () => {
+    const files = {
+      'b3-carrier.ts': `import type { CancelablePromise, FAILURE } from '@cancjs/promise';
+import { FooError } from './failure-test-cases.js';
+export type CancSymbolOnNonCarrier = Pick<CancelablePromise<string, FooError>, typeof FAILURE>;
+`,
+      'b3-symbol.ts': `import type { CancelError } from '@cancjs/promise';
+import { FooError } from './failure-test-cases.js';
+declare const FAILURE: unique symbol;
+export interface CarrierWithUserSymbol extends CancelError { readonly [FAILURE]?: FooError }
+`,
+      'b3-union.ts': `import type { CancelablePromise } from '@cancjs/promise';
+import { FooError } from './failure-test-cases.js';
+export type CarrierOrObject = CancelablePromise<string, FooError> | { z: 1 };
+`,
+    };
+    let virtualProgram: ts.Program;
+    let virtualChecker: ts.TypeChecker;
+
+    function virtualType(file: string, name: string): ts.Type {
+      const sf = virtualProgram.getSourceFile(path.resolve(path.dirname(fixtureTsconfigPath), 'src', file))!;
+      return getTypeByName(sf, virtualChecker, name);
+    }
+
+    beforeAll(() => {
+      virtualProgram = createVirtualProgram(files).program;
+      virtualChecker = virtualProgram.getTypeChecker();
+    });
+
+    it('carrier gate: a non-carrier type holding the canc FAILURE symbol is not defined', () => {
+      const res = getFailureMembers(virtualType('b3-carrier.ts', 'CancSymbolOnNonCarrier'), virtualChecker);
+      expect(res.defined).toBe(false);
+      expect(res.listed).toEqual([]);
+    });
+
+    it('symbol match: a carrier whose FAILURE symbol is user-declared is not defined', () => {
+      const res = getFailureMembers(virtualType('b3-symbol.ts', 'CarrierWithUserSymbol'), virtualChecker);
+      expect(res.defined).toBe(false);
+      expect(res.listed).toEqual([]);
+    });
+
+    it('union every-branch: a carrier beside a non-carrier object stays not defined', () => {
+      const res = getFailureMembers(virtualType('b3-union.ts', 'CarrierOrObject'), virtualChecker);
+      expect(res.defined).toBe(false);
+      expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['FooError']);
     });
   });
 
