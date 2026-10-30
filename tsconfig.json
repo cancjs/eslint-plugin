@@ -16,5 +16,9 @@
     "types": ["node", "vitest/globals"]
   },
   "include": ["src", "tests"],
-  "exclude": ["tests/fixtures/corpus", "tests/fixtures/examples-snapshot"]
+  "exclude": [
+    "tests/fixtures/corpus",
+    "tests/fixtures/examples-snapshot",
+    "tests/fixtures/factories"
+  ]
 }
