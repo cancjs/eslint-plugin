@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/no-coroutine-dialect-mismatch.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -168,5 +169,100 @@ describe('no-coroutine-dialect-mismatch', () => {
         ],
       },
     ],
+  });
+});
+
+describe('no-coroutine-dialect-mismatch factory options', () => {
+  tester.run('no-coroutine-dialect-mismatch', rule, {
+    valid: [
+      // same code without the option: not a coroutine
+      `import { cancGenAwait } from '@cancjs/coroutine/gen';
+       useX(function* () { yield* cancGenAwait(load()); });`,
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               useX(function* () { yield* cancAwait(load()); });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+      },
+      {
+        code: `import { cancGenAwait } from '@cancjs/coroutine/gen';
+               useStream(function* () { yield* cancGenAwait(load()); });`,
+        options: [{ additionalGenCoroutineFactories: ['useStream'] }],
+      },
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               import { cancGenAwait } from '@cancjs/coroutine/gen';
+               cancAsync(function* () { yield* cancGenAwait(load()); });`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+      // same name from another source
+      {
+        code: `import { cancGenAwait } from '@cancjs/coroutine/gen';
+               import { useX } from 'other-lib';
+               useX(function* () { yield* cancGenAwait(load()); });`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+      },
+    ],
+    invalid: [
+      {
+        code: `import { cancGenAwait } from '@cancjs/coroutine/gen';
+               useX(function* () {
+                 yield* cancGenAwait(load());
+               });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        errors: [{ messageId: 'iterAwaitInCancAsync' as const, line: 3, data: { helper: 'cancGenAwait' } }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               useStream(function* () {
+                 yield* cancAwait(load());
+               });`,
+        options: [{ additionalGenCoroutineFactories: ['useStream'] }],
+        errors: [{ messageId: 'cancAwaitInIter' as const, line: 3, data: { helper: 'cancAwait' } }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               import { cancelableSetup as setup } from '@cancjs/vue';
+               setup(function* () {
+                 yield* cancAwait(load());
+               });`,
+        options: [{ additionalGenCoroutineFactories: [{ name: 'cancelableSetup', source: '@cancjs/vue' }] }],
+        errors: [{ messageId: 'cancAwaitInIter' as const, line: 4, data: { helper: 'cancAwait' } }],
+      },
+      // a factory listed in the wrong dialect list reports the mismatch
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               ui.useCancelableEffect(function* () {
+                 yield* cancAwait(load());
+               });`,
+        options: [{ additionalGenCoroutineFactories: ['useCancelableEffect'] }],
+        errors: [{ messageId: 'cancAwaitInIter' as const, line: 3, data: { helper: 'cancAwait' } }],
+      },
+      // the built-in stays on when the other dialect is replaced
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               import { cancGenAwait } from '@cancjs/coroutine/gen';
+               cancAsync(function* () {
+                 yield* cancGenAwait(load());
+               });`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+        errors: [{ messageId: 'iterAwaitInCancAsync' as const, line: 4, data: { helper: 'cancGenAwait' } }],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });
