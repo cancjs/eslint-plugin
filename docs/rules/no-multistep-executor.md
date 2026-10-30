@@ -60,6 +60,15 @@ This rule accepts a single options object with the following property:
 
 - `maxOperations` (integer, default `1`): the maximum number of asynchronous operations permitted to be started within an executor.
 
+## Limitations
+
+The check is syntactic, so a few shapes are judged by their form:
+
+- A step that reads a binding of the previous result, including bindings of an object or array pattern (`op().then(({ length }) => op2(String(length)))`), continues the same operation. A pattern binding the next step never reads does not.
+- An `onRejected` callback that neither settles nor rethrows still counts as a step.
+- `resolve(syncCall())` inside a `.then` callback without parameters counts as a step.
+- A call with a plain identifier as callee, such as `resolve(norm(d))`, is treated as handing over an operation.
+
 ## When not to use it
 
 Do not use this rule (or configure a higher `maxOperations` value) when an executor wraps a multi-step retry loop or an acknowledged sequence where intermediate cancellation is handled externally.

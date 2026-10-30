@@ -29,6 +29,12 @@ const titles = new CancelablePromise<RawTitle[]>((resolve, reject, { handleCance
 }).then((data) => data.map((item) => item.title));
 ```
 
+Type assertions, non-null assertions and `satisfies` do not change the value, so `resolve(data as string)` and `resolve(data!)` pass. A literal, a unary applied to a literal, and an object or array made only of literals count as raw values: `resolve(-1)`, `resolve(void 0)` and `resolve({ ok: true })` are not reported.
+
+## Limitations
+
+- A call with a plain identifier as callee, such as `resolve(norm(d))`, is treated as handing over an operation, not as a transform.
+
 ## Options
 
 This rule accepts a single options object with the following property:
