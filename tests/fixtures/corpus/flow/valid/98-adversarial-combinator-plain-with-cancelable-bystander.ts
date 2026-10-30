@@ -35,6 +35,6 @@ declare function cancelableBystander(): CancelablePromise<boolean>;
 export async function runBatch(): Promise<[string, number]> {
   const bystander = cancelableBystander();
   const results = await Promise.all([plainA(), plainB()]);
-  bystander.cancel();
+  void bystander.cancel();
   return results;
 }

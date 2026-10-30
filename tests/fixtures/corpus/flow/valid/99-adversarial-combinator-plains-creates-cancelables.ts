@@ -36,6 +36,6 @@ export async function manageTasks(): Promise<string[]> {
   });
   const plains = getPlainTasks();
   const results = await Promise.all(plains);
-  separateCancelable.cancel();
+  void separateCancelable.cancel();
   return results;
 }
