@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/prefer-canc-throw.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -402,5 +403,179 @@ const run = cancAsync(function* () {
         ],
       },
     ],
+  });
+});
+
+describe('prefer-canc-throw factory options', () => {
+  typedTester.run('prefer-canc-throw factory', rule, {
+    valid: [
+      // same code without the option: not a coroutine
+      `import { cancThrow } from '@cancjs/coroutine';
+class NotFoundError extends Error {}
+useX(function* () {
+  throw new NotFoundError('missing');
+});`,
+      {
+        code: `import { cancThrow } from '@cancjs/coroutine';
+class NotFoundError extends Error {}
+useX(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ additionalGenCoroutineFactories: ['useY'] }],
+      },
+      // the configured exclude list still applies
+      {
+        code: `class NotFoundError extends Error {}
+useX(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'], exclude: ['NotFoundError'] }],
+      },
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+class NotFoundError extends Error {}
+cancAsync(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+      // same name from another source
+      {
+        code: `import { useX } from 'other-lib';
+class NotFoundError extends Error {}
+useX(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+      },
+    ],
+    invalid: [
+      {
+        code: `import { cancThrow } from '@cancjs/coroutine';
+class NotFoundError extends Error {}
+useX(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancThrow' as const,
+            line: 4,
+            column: 3,
+            data: { thrower: 'cancThrow' },
+            suggestions: [
+              {
+                messageId: 'preferCancThrow' as const,
+                data: { thrower: 'cancThrow' },
+                output: `import { cancThrow } from '@cancjs/coroutine';
+class NotFoundError extends Error {}
+useX(function* () {
+  return yield* cancThrow(new NotFoundError('missing'));
+});`,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        code: `import { cancGenThrow } from '@cancjs/coroutine/gen';
+class NotFoundError extends Error {}
+ui.setup(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ additionalGenCoroutineFactories: ['setup'] }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancThrow' as const,
+            line: 4,
+            column: 3,
+            data: { thrower: 'cancGenThrow' },
+            suggestions: [
+              {
+                messageId: 'preferCancThrow' as const,
+                data: { thrower: 'cancGenThrow' },
+                output: `import { cancGenThrow } from '@cancjs/coroutine/gen';
+class NotFoundError extends Error {}
+ui.setup(function* () {
+  return yield* cancGenThrow(new NotFoundError('missing'));
+});`,
+              },
+            ],
+          },
+        ],
+      },
+      // no thrower in scope: report without a suggestion
+      {
+        code: `class NotFoundError extends Error {}
+useX(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancThrow' as const,
+            line: 3,
+            column: 3,
+            data: { thrower: 'canc.throw' },
+            suggestions: [],
+          },
+        ],
+      },
+      {
+        code: `class NotFoundError extends Error {}
+useStream(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ additionalGenCoroutineFactories: ['useStream'] }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancThrow' as const,
+            line: 3,
+            column: 3,
+            data: { thrower: 'cancGen.throw' },
+            suggestions: [],
+          },
+        ],
+      },
+      // the built-in stays on when the other dialect is replaced
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+class NotFoundError extends Error {}
+cancAsync(function* () {
+  throw new NotFoundError('missing');
+});`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferCancThrow' as const,
+            line: 4,
+            column: 3,
+            data: { thrower: 'canc.throw' },
+            suggestions: [],
+          },
+        ],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });
