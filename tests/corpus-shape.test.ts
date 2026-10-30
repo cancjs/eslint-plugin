@@ -4,7 +4,7 @@ import path from 'node:path';
 import tseslintParser from '@typescript-eslint/parser';
 import { describe, expect, it } from 'vitest';
 
-import { CATALOG_RULE_IDS, corpusFiles, readMarkers } from './helpers/corpus.js';
+import { CATALOG_RULE_IDS, corpusFiles, parseMarkerLine, readMarkers } from './helpers/corpus.js';
 
 describe('corpus shape: 261 fixtures across 7 families', () => {
   const families = ['coroutine', 'error-handling', 'executor', 'flow', 'hygiene', 'lazy', 'failure'] as const;
@@ -132,5 +132,24 @@ describe('corpus shape: 261 fixtures across 7 families', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+});
+
+describe('marker comments', () => {
+  it('reads one rule with message id and note', () => {
+    expect(parseMarkerLine('  } catch (e) { // lint: exhaustive-catch:noRethrow drops ErrorB', 12)).toEqual([
+      { line: 12, ruleId: 'exhaustive-catch', messageId: 'noRethrow', note: 'drops ErrorB' },
+    ]);
+  });
+
+  it('reads several comma-joined rules on one line, sharing the note', () => {
+    expect(parseMarkerLine('x(); // lint: no-async-executor,must-consume-lazy:unused async lazy', 3)).toEqual([
+      { line: 3, ruleId: 'no-async-executor', note: 'async lazy' },
+      { line: 3, ruleId: 'must-consume-lazy', messageId: 'unused', note: 'async lazy' },
+    ]);
+  });
+
+  it('ignores lines without a marker', () => {
+    expect(parseMarkerLine('const a = 1; // first operation', 1)).toEqual([]);
   });
 });

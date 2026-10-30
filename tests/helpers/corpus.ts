@@ -54,35 +54,36 @@ export interface CorpusMarker {
   note?: string;
 }
 
+// one marker comment may name several rules on one line: `// lint: rule-a:messageA,rule-b note`
+export function parseMarkerLine(text: string, line: number): CorpusMarker[] {
+  const match =
+    /\/\/\s*lint:\s*([a-zA-Z0-9_-]+(?::[a-zA-Z0-9_-]+)?(?:,[a-zA-Z0-9_-]+(?::[a-zA-Z0-9_-]+)?)*)(?:\s+(.*?))?\s*$/.exec(
+      text,
+    );
+  if (!match) {
+    return [];
+  }
+  const note = match[2]?.trim();
+  return match[1].split(',').map((entry) => {
+    const [ruleId, messageId] = entry.split(':');
+    const marker: CorpusMarker = { line, ruleId };
+    if (messageId) {
+      marker.messageId = messageId;
+    }
+    if (note) {
+      marker.note = note;
+    }
+    return marker;
+  });
+}
+
 export function readMarkers(file: string): CorpusMarker[] {
   const filePath =
     path.isAbsolute(file) ? file
     : fs.existsSync(file) ? path.resolve(file)
     : path.resolve(corpusDir, file);
-  const content = fs.readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
-  const markers: CorpusMarker[] = [];
-  const markerRegex = /\/\/\s*lint:\s*([a-zA-Z0-9_-]+)(?::([a-zA-Z0-9_-]+))?(?:\s+(.*?))?\s*$/;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const match = line.match(markerRegex);
-    if (match) {
-      const marker: CorpusMarker = {
-        line: i + 1,
-        ruleId: match[1],
-      };
-      if (match[2]) {
-        marker.messageId = match[2];
-      }
-      if (match[3]) {
-        marker.note = match[3].trim();
-      }
-      markers.push(marker);
-    }
-  }
-
-  return markers;
+  const lines = fs.readFileSync(filePath, 'utf8').split('\n');
+  return lines.flatMap((text, index) => parseMarkerLine(text, index + 1));
 }
 
 export function corpusFiles(family?: string, kind?: 'valid' | 'invalid'): string[] {
