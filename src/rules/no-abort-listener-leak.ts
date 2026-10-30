@@ -323,20 +323,61 @@ function isFunctionNode(node: TSESTree.Node): boolean {
   );
 }
 
-function mayJump(node: TSESTree.Node): boolean {
+const LOOP_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.ForStatement,
+  AST_NODE_TYPES.ForInStatement,
+  AST_NODE_TYPES.ForOfStatement,
+  AST_NODE_TYPES.WhileStatement,
+  AST_NODE_TYPES.DoWhileStatement,
+]);
+
+interface JumpScope {
+  inLoop: boolean;
+  inSwitch: boolean;
+  labels: ReadonlySet<string>;
+}
+
+const OUTER_SCOPE: JumpScope = { inLoop: false, inSwitch: false, labels: new Set() };
+
+// a break or continue whose target lies inside the scanned statement stays local
+function isLocalJump(node: TSESTree.Node, scope: JumpScope): boolean {
+  if (node.type === AST_NODE_TYPES.BreakStatement) {
+    return node.label ? scope.labels.has(node.label.name) : scope.inLoop || scope.inSwitch;
+  }
+  if (node.type === AST_NODE_TYPES.ContinueStatement) {
+    return node.label ? scope.labels.has(node.label.name) : scope.inLoop;
+  }
+  return false;
+}
+
+function innerScope(node: TSESTree.Node, scope: JumpScope): JumpScope {
+  if (LOOP_TYPES.has(node.type)) {
+    return { ...scope, inLoop: true };
+  }
+  if (node.type === AST_NODE_TYPES.SwitchStatement) {
+    return { ...scope, inSwitch: true };
+  }
+  if (node.type === AST_NODE_TYPES.LabeledStatement) {
+    return { ...scope, labels: new Set([...scope.labels, node.label.name]) };
+  }
+  return scope;
+}
+
+function mayJump(node: TSESTree.Node, scope: JumpScope = OUTER_SCOPE): boolean {
   if (JUMP_TYPES.has(node.type)) {
-    return true;
+    return !isLocalJump(node, scope);
   }
   if (isFunctionNode(node)) {
     return false;
   }
+  const childScope = innerScope(node, scope);
   for (const [key, value] of Object.entries(node)) {
     if (key === 'parent') {
       continue;
     }
     const children: unknown[] = Array.isArray(value) ? value : [value];
     for (const child of children) {
-      if (child && typeof child === 'object' && 'type' in child && mayJump(child as TSESTree.Node)) {
+      if (child && typeof child === 'object' && 'type' in child && mayJump(child as TSESTree.Node, childScope)) {
         return true;
       }
     }

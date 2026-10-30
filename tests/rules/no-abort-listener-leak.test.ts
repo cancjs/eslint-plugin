@@ -127,8 +127,74 @@ describe('no-abort-listener-leak', () => {
            } catch {}
          }
        }`,
+      // A break whose loop lies inside the finally is not a jump out
+      `function run(signal: AbortSignal, xs: boolean[]) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    for (const x of xs) { if (x) break; }
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
+      // A continue whose loop lies inside the finally is not a jump out
+      `function run(signal: AbortSignal, xs: boolean[]) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    for (const x of xs) { if (x) continue; }
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
+      // A break out of a switch inside the finally is local
+      `function run(signal: AbortSignal, xs: boolean[]) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    switch (xs.length) { case 0: break; }
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
+      // A labeled break whose label lies inside the finally is local
+      `function run(signal: AbortSignal, xs: boolean[]) {
+  const onAbort = () => {};
+  try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    inner: for (const x of xs) { for (const y of xs) { if (x && y) break inner; } }
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
     ],
     invalid: [
+      // A labeled break to a loop outside the finally skips the removal
+      {
+        code: `function run(signal: AbortSignal, xs: boolean[]) {
+  const onAbort = () => {};
+  outer: for (const z of xs) { try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    for (const x of xs) { if (x) break outer; }
+    signal.removeEventListener('abort', onAbort);
+  } }
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 4 }],
+      },
+      // A labeled continue to a loop outside the finally skips the removal
+      {
+        code: `function run(signal: AbortSignal, xs: boolean[]) {
+  const onAbort = () => {};
+  outer: for (const z of xs) { try {
+    signal.addEventListener('abort', onAbort);
+  } finally {
+    for (const x of xs) { if (x) continue outer; }
+    signal.removeEventListener('abort', onAbort);
+  } }
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 4 }],
+      },
       // 1. Corpus invalid 05 (leakedAbortListener)
       {
         code: codeInvalid05,
