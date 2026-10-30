@@ -1,5 +1,7 @@
+import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
+import { buildInteropUnicorn } from '../src/configs/interop-unicorn.js';
 import plugin from '../src/index.js';
 import nativePlugin from '../src/native.js';
 import { rules } from '../src/rules/index.js';
@@ -121,5 +123,83 @@ describe('preset tier snapshot', () => {
         expect(actual).toEqual(expected);
       });
     }
+  });
+});
+
+describe('interop configs', () => {
+  const configs = plugin.configs as Record<
+    string,
+    { name?: string; files?: string[]; rules?: Record<string, unknown> }[]
+  >;
+
+  function mergedRules(name: string): Record<string, unknown> {
+    return Object.assign({}, ...configs[name].map((entry) => entry.rules ?? {})) as Record<string, unknown>;
+  }
+
+  it('is exposed under the documented names beside the presets', () => {
+    expect(Object.keys(configs)).toEqual(
+      expect.arrayContaining(['interopTypescriptEslint', 'interopPromise', 'interopUnicorn']),
+    );
+    expect(Object.keys(nativePlugin.configs ?? {})).toEqual(['recommended', 'strict', 'stylistic']);
+  });
+
+  it('typescript-eslint config holds exactly the documented rules', () => {
+    expect(configs.interopTypescriptEslint).toHaveLength(1);
+    expect(configs.interopTypescriptEslint[0].name).toBe('canc/interop-typescript-eslint');
+    expect(mergedRules('interopTypescriptEslint')).toEqual({
+      '@typescript-eslint/no-floating-promises': ['error', { checkThenables: true }],
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/promise-function-async': 'off',
+      '@typescript-eslint/return-await': ['error', 'in-try-catch'],
+      '@typescript-eslint/use-unknown-in-catch-callback-variable': 'error',
+    });
+  });
+
+  it('promise config holds exactly the documented rules, all off', () => {
+    expect(configs.interopPromise).toHaveLength(1);
+    expect(configs.interopPromise[0].name).toBe('canc/interop-promise');
+    expect(mergedRules('interopPromise')).toEqual({
+      'promise/prefer-await-to-then': 'off',
+      'promise/prefer-catch': 'off',
+      'promise/prefer-await-to-callbacks': 'off',
+      'promise/catch-or-return': 'off',
+      'promise/always-return': 'off',
+    });
+  });
+
+  it('unicorn config turns off top-level-await only by default', () => {
+    expect(configs.interopUnicorn).toHaveLength(1);
+    expect(configs.interopUnicorn[0].name).toBe('canc/interop-unicorn');
+    expect(mergedRules('interopUnicorn')).toEqual({ 'unicorn/prefer-top-level-await': 'off' });
+  });
+
+  it('unicorn builder adds a files-limited no-thenable entry only when asked', () => {
+    expect(buildInteropUnicorn({ thenableFiles: [] })).toHaveLength(1);
+    const limited = buildInteropUnicorn({ thenableFiles: ['src/lazy/**'] });
+    expect(limited).toHaveLength(2);
+    expect(limited[1]).toEqual({
+      name: 'canc/interop-unicorn-thenable',
+      files: ['src/lazy/**'],
+      rules: { 'unicorn/no-thenable': 'off' },
+    });
+  });
+
+  async function lint(overrideConfig: object[]) {
+    const eslint = new ESLint({
+      overrideConfigFile: true,
+      overrideConfig: [{ files: ['**/*.ts'] }, ...overrideConfig] as never,
+    });
+    return eslint.lintText('export const value = 1;\n', { filePath: 'sample.ts' });
+  }
+
+  it('promise and unicorn configs lint cleanly with no foreign plugin loaded', async () => {
+    const results = await lint([...configs.interopPromise, ...configs.interopUnicorn]);
+    expect(results[0].messages).toEqual([]);
+    const withThenable = await lint([...buildInteropUnicorn({ thenableFiles: ['**/*.ts'] })]);
+    expect(withThenable[0].messages).toEqual([]);
+  });
+
+  it('typescript-eslint config asks for the plugin to be loaded first', async () => {
+    await expect(lint(configs.interopTypescriptEslint)).rejects.toThrow(/Could not find plugin "@typescript-eslint"/);
   });
 });
