@@ -741,3 +741,25 @@ export function sinkMatchesSomeSpecifier(
   }
   return false;
 }
+
+/**
+ * True when the static type of `node` has a union member that is a plain promise: thenable, but
+ * neither cancelable nor lazy. Such a value may be a plain promise at run time, so code that only
+ * holds it cannot rely on a cancel handle. False without type information.
+ */
+export function hasPlainPromiseMember(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const type = services.getTypeAtLocation(node);
+  if (!type.isUnion()) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  return type.types.some((part) => typeIsPlainPromiseSink(part, checker, settings));
+}

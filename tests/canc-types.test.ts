@@ -4,6 +4,7 @@ import { describe } from 'vitest';
 
 import {
   getCancServices,
+  hasPlainPromiseMember,
   isCancDeclaredCallee,
   isCancelableExpression,
   isCancelableType,
@@ -259,6 +260,67 @@ safe(Promise.resolve(1));`,
       `async function run(): Promise<number> {
   return 1;
 }`,
+    ],
+    invalid: [],
+  });
+});
+
+const plainMemberProbeRule: TSESLint.RuleModule<'plainMember', []> = {
+  defaultOptions: [],
+  meta: {
+    type: 'problem',
+    docs: { description: 'probe plain promise union members' },
+    messages: { plainMember: 'plainMember' },
+    schema: [],
+  },
+  create(context) {
+    return {
+      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+        if (node.init && hasPlainPromiseMember(node.init, context)) {
+          context.report({ node: node.init, messageId: 'plainMember' });
+        }
+      },
+    };
+  },
+};
+
+describe('canc-types: plain promise union members', () => {
+  ruleTester().run('plain-member-probe', plainMemberProbeRule, {
+    valid: [
+      `${importPromise}declare const c: CancelablePromise<number>;
+const p = c;`,
+      `declare const n: Promise<number>;
+const p = n;`,
+      `${importPromise}declare const c: CancelablePromise<number> | undefined;
+const p = c;`,
+      `${importPromise}declare const c: CancelablePromise<number> | number;
+const p = c;`,
+      `${importLazy}declare const l: LazyPromise<number> | undefined;
+const p = l;`,
+    ],
+    invalid: [
+      {
+        code: `${importPromise}declare const u: Promise<number> | CancelablePromise<number>;
+const p = u;`,
+        errors: [{ messageId: 'plainMember', line: 3, column: 11 }],
+      },
+      {
+        code: `${importPromise}declare const u: PromiseLike<string> | CancelablePromise<number> | null;
+const p = u;`,
+        errors: [{ messageId: 'plainMember', line: 3, column: 11 }],
+      },
+      {
+        code: `declare const u: Promise<number> | string;
+const p = u;`,
+        errors: [{ messageId: 'plainMember', line: 2, column: 11 }],
+      },
+    ],
+  });
+
+  ruleTester({ types: false }).run('plain-member-probe-untyped', plainMemberProbeRule, {
+    valid: [
+      `declare const u: Promise<number> | string;
+const p = u;`,
     ],
     invalid: [],
   });
