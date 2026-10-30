@@ -134,6 +134,18 @@ describe('no-failure-widening (typed lane)', () => {
     ],
 
     invalid: [
+      // Default import under a non-canonical local name resolves through the canc symbol
+      {
+        code: `import type CP from '@cancjs/promise';
+
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+
+declare const p: CP<string, ErrorA | ErrorB>;
+export const widened: CP<string, ErrorA> = p as any;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 7, data: { position: 'cast' } }],
+      },
       // 1. Corpus invalid 09: p as any drops failure set
       {
         code: codeInvalid09,

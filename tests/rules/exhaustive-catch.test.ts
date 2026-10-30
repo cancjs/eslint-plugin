@@ -291,6 +291,26 @@ export const run = cancAsync(function* () {
       },
     ],
     invalid: [
+      // Default import under a non-canonical local name resolves through the canc symbol
+      {
+        code: `import type CP from '@cancjs/promise';
+import { cancAsync, cancAwait } from '@cancjs/coroutine';
+
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+
+declare function load(): CP<string, ErrorA | ErrorB>;
+
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    console.error(e);
+  }
+});`,
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', line: 12, data: { names: 'ErrorA, ErrorB' } }],
+      },
       // 1. Timeout step fixture: names = TimeoutError only, Unlisted never named!
       {
         code: codeInvalid16,

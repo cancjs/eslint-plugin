@@ -106,6 +106,56 @@ describe('require-error-discriminant (typed lane)', () => {
       },
     ],
     invalid: [
+      // Default import under a non-canonical local name resolves through the canc symbol
+      {
+        code: `import type CP from '@cancjs/promise';
+
+export class StructErrorOne extends Error {}
+export class StructErrorTwo extends Error {}
+
+export declare const p: CP<string, StructErrorOne | StructErrorTwo>;`,
+        output: null,
+        errors: [
+          {
+            messageId: 'missingDiscriminant',
+            line: 3,
+            data: { name: 'StructErrorOne' },
+            suggestions: [
+              {
+                messageId: 'missingDiscriminant',
+                data: { name: 'StructErrorOne' },
+                output: `import type CP from '@cancjs/promise';
+
+export class StructErrorOne extends Error {
+  readonly kind = 'StructErrorOne';
+}
+export class StructErrorTwo extends Error {}
+
+export declare const p: CP<string, StructErrorOne | StructErrorTwo>;`,
+              },
+            ],
+          },
+          {
+            messageId: 'missingDiscriminant',
+            line: 4,
+            data: { name: 'StructErrorTwo' },
+            suggestions: [
+              {
+                messageId: 'missingDiscriminant',
+                data: { name: 'StructErrorTwo' },
+                output: `import type CP from '@cancjs/promise';
+
+export class StructErrorOne extends Error {}
+export class StructErrorTwo extends Error {
+  readonly kind = 'StructErrorTwo';
+}
+
+export declare const p: CP<string, StructErrorOne | StructErrorTwo>;`,
+              },
+            ],
+          },
+        ],
+      },
       // Corpus invalid file (two empty classes in one failure union)
       {
         code: codeInvalid08,

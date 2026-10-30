@@ -124,6 +124,18 @@ describe('no-throw-in-chain-callback (typed lane)', () => {
     ],
 
     invalid: [
+      // Default type-only import: annotated receiver
+      {
+        code: `import type CP from '@cancjs/promise';
+declare const p: CP<string>;
+p.then(() => {
+  if (Math.random()) throw new Error('x');
+  return 1;
+});`,
+        output: null,
+        errors: [{ messageId: 'throwInChainCallback', line: 4, data: { method: 'then' } }],
+      },
+
       // Default-import alias: annotated receiver
       {
         code: `import CP from '@cancjs/promise';
