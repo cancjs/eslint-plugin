@@ -1,0 +1,20 @@
+// Snapshot of examples/demo-combinators/src/widgets-shared.ts, copied 2026-10-30 from mono master "Exclude cancellation from failure types and simplify failure helpers (#60)"
+import { cancelify } from '@cancjs/toolbox';
+import { createMockApi } from '@shared/mock-api';
+
+export const mockApiBundle = createMockApi({ latency: 50, jitter: 0 });
+export const mockApi = mockApiBundle.api;
+
+export const cancWidgets = {
+  loadOrders: cancelify(({ getSignal }, _id: string) => mockApiBundle.orders.list(getSignal())),
+  checkInventory: cancelify(({ getSignal }, id: string) => mockApiBundle.inventory.check(id, getSignal())),
+  quotePrice: cancelify(({ getSignal }, id: string) => mockApiBundle.prices.quote(id, getSignal())),
+  getDeployStatus: cancelify(({ getSignal }, id: string) => mockApiBundle.deployments.getStatus(id, getSignal())),
+};
+
+export const vanillaWidgets = {
+  loadOrders: (_id: string) => mockApiBundle.orders.list(),
+  checkInventory: (id: string) => mockApiBundle.inventory.check(id),
+  quotePrice: (id: string) => mockApiBundle.prices.quote(id),
+  getDeployStatus: (id: string) => mockApiBundle.deployments.getStatus(id),
+};

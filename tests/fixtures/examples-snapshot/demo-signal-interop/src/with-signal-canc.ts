@@ -1,0 +1,45 @@
+// Snapshot of examples/demo-signal-interop/src/with-signal-canc.ts, copied 2026-10-30 from mono master "Exclude cancellation from failure types and simplify failure helpers (#60)"
+/**
+ * Scenario 5: withSignal wrapper — p-signal style
+ * Canc: { signal } option makes it trivial
+ */
+
+import { CancelablePromise, isCancelError } from '@cancjs/promise';
+import { isAbortError } from '@cancjs/toolbox';
+import { setTimeout } from 'timers/promises';
+
+// Canc wrapper: just { signal } option.
+// Adopts caller's existing AbortSignal (inbound direction).
+// Counterpart: cancelify produces a signal from a CancelablePromise (outbound direction).
+export function withSignalCanc<T>(signal: AbortSignal, work: () => Promise<T>): CancelablePromise<T> {
+  return new CancelablePromise(
+    (resolve, reject) => {
+      work().then(resolve, reject);
+    },
+    { signal },
+  );
+}
+
+export async function withSignalWrapperCanc() {
+  // withSignal wrapper adopting incoming AbortSignal
+  const controller = new AbortController();
+
+  try {
+    const result = await withSignalCanc(controller.signal, async () => {
+      await setTimeout(100);
+      return 'work completed';
+    });
+    console.log('[canc] result:', result);
+  } catch (err: unknown) {
+    if (isAbortError(err) || (isCancelError(err) && err.aborted)) {
+      // Canceled here: nothing below runs
+      console.log('[canc] work aborted');
+    } else {
+      throw err;
+    }
+  }
+
+  // Abort after work starts
+  await setTimeout(50);
+  controller.abort();
+}

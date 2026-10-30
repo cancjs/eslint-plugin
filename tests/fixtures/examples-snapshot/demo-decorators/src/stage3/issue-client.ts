@@ -1,0 +1,59 @@
+// Snapshot of examples/demo-decorators/src/stage3/issue-client.ts, copied 2026-10-30 from mono master "Exclude cancellation from failure types and simplify failure helpers (#60)"
+// Stage-3 flavor: native TS 5+ decorators, `experimentalDecorators: false`.
+// Import path for a real app: `@cancjs/decorators` (the default entry).
+//
+// // importing the wrong flavor throws: "...Import from '@cancjs/decorators/legacy' for TS
+// // experimentalDecorators, or '@cancjs/decorators/babel-legacy' for babel legacy decorators."
+//
+// Getter style returns a ready coroutine while the decorator handles memoization and bindings.
+
+import type { AsyncResult } from '@cancjs/coroutine';
+import * as canc from '@cancjs/coroutine';
+import { AsyncMethod, BindMethod } from '@cancjs/decorators';
+
+import type { CommentAck, Issue, IssuesApi } from '../issue-types.js';
+import { listIssues } from '../util/api-wrapper.js';
+
+function* searchIssuesBody(this: IssueClient, query: string): AsyncResult<Issue[]> {
+  const issues = yield* canc.await(listIssues(this.issuesApi));
+  return issues.filter((issue) => issue.title.toLowerCase().includes(query.toLowerCase()));
+}
+
+function* loadIssueBody(this: IssueClient, id: number): AsyncResult<Issue> {
+  const issues = yield* canc.await(listIssues(this.issuesApi));
+  const found = issues.find((issue) => issue.id === id);
+  if (!found) throw new Error(`no issue ${id}`);
+  return found;
+}
+
+// saveComment reads the issue back and echoes the comment (mock API has no write endpoint).
+// loadIssue's declared type is exact (CancelablePromise<Issue>, decorator-preserved), but
+// canc.async's own return type is always CancelablePromise<unknown> regardless of the generator
+// body's return type, so this one internal call needs a cast; nothing outside this module (the
+// class consumers in main.ts, scenario.ts, issue-client.spec.ts) needs one.
+function* saveCommentBody(this: IssueClient, id: number, comment: string): AsyncResult<CommentAck> {
+  const issue = yield* canc.await(this.loadIssue(id) as Promise<Issue>);
+  return { issueId: id, comment, issueTitle: issue.title };
+}
+
+export class IssueClient {
+  // Not private: the coroutine bodies live outside the class (named functions, for clean type
+  // inference on the getters below) and need to read it via `this.issuesApi`.
+  constructor(readonly issuesApi: IssuesApi) {}
+
+  // Proto-level (default, bind:false): `, this` binds the coroutine itself, so `this` is safe even
+  // detached; the getter runs once and its result is memoized on the instance.
+  @AsyncMethod() get searchIssues() {
+    return canc.async(searchIssuesBody, this);
+  }
+
+  // Per-instance (bind:true): the decorator also binds, so detaching and passing it as a handler
+  // is safe even without `, this` on the coroutine.
+  @BindMethod() get loadIssue() {
+    return canc.async(loadIssueBody, this);
+  }
+
+  @AsyncMethod() get saveComment() {
+    return canc.async(saveCommentBody, this);
+  }
+}
