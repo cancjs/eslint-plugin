@@ -152,7 +152,7 @@ function isCancCarrierType(
     return true;
   }
   const sym = type.aliasSymbol ?? type.getSymbol();
-  if (sym && symbolDeclaredInCancSource(sym, settings, checker, context)) {
+  if (sym && symbolDeclaredInCancSource(sym, settings, checker)) {
     return true;
   }
   if (type.isClassOrInterface()) {
@@ -169,7 +169,6 @@ function isFailureUniqueSymbolProperty(
   prop: ts.Symbol,
   checker: ts.TypeChecker,
   settings: ResolvedCancSettings,
-  context?: Context,
 ): boolean {
   const name = prop.name;
   const escaped = String(prop.escapedName);
@@ -184,7 +183,7 @@ function isFailureUniqueSymbolProperty(
     return false;
   }
 
-  return symbolDeclaredInCancSource(prop, settings, checker, context);
+  return symbolDeclaredInCancSource(prop, settings, checker);
 }
 
 function findFailureProperty(
@@ -199,19 +198,14 @@ function findFailureProperty(
 
   const props = checker.getPropertiesOfType(type);
   for (const prop of props) {
-    if (isFailureUniqueSymbolProperty(prop, checker, settings, context)) {
+    if (isFailureUniqueSymbolProperty(prop, checker, settings)) {
       return prop;
     }
   }
   return undefined;
 }
 
-function extractFromFailureType(
-  failureType: ts.Type,
-  checker: ts.TypeChecker,
-  settings: ResolvedCancSettings,
-  context?: Context,
-): FailureMembers {
+function extractFromFailureType(failureType: ts.Type, checker: ts.TypeChecker): FailureMembers {
   if (failureType.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) {
     return { listed: [], open: false, defined: false };
   }
@@ -305,7 +299,7 @@ export function getFailureMembers(
     const loc = failureProp.valueDeclaration ?? failureProp.declarations?.[0];
     const failureType = loc ? checker.getTypeOfSymbolAtLocation(failureProp, loc) : undefined;
     if (failureType) {
-      const res = extractFromFailureType(failureType, checker, resolvedSettings, context);
+      const res = extractFromFailureType(failureType, checker);
       if (res.defined) {
         return res;
       }
@@ -345,7 +339,7 @@ export function getFailureMembers(
       symName === 'Failing')
   ) {
     if (
-      symbolDeclaredInCancSource(sym, resolvedSettings, checker, context) ||
+      symbolDeclaredInCancSource(sym, resolvedSettings, checker) ||
       isCancelableType(type, checker, resolvedSettings, context)
     ) {
       const typeRef = type as ts.TypeReference;
@@ -355,7 +349,7 @@ export function getFailureMembers(
         : symName === 'AsyncGenResult' ? 2
         : 1;
       if (args.length > failureArgIndex) {
-        return extractFromFailureType(args[failureArgIndex], checker, resolvedSettings, context);
+        return extractFromFailureType(args[failureArgIndex], checker);
       }
     }
   }
@@ -492,7 +486,7 @@ export function getProgramFailureSymbols(
       return false;
     }
     const target = resolveAliasedSymbol(sym, checker);
-    return names.includes(target.getName()) && symbolDeclaredInCancSource(target, settings, checker, context);
+    return names.includes(target.getName()) && symbolDeclaredInCancSource(target, settings, checker);
   }
 
   function calleeSymbol(expr: ts.Expression): ts.Symbol | undefined {

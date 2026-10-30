@@ -4,7 +4,6 @@ import { AST_NODE_TYPES, type TSESLint, type TSESTree } from '@typescript-eslint
 import { isIntrinsicType } from 'ts-api-utils';
 import type * as ts from 'typescript';
 
-import { getCancBindings } from './canc-imports.js';
 import { getCancSettings, type ResolvedCancSettings } from './settings.js';
 
 /**
@@ -53,7 +52,6 @@ export function symbolDeclaredInCancSource(
   symbol: ts.Symbol | undefined,
   settings: ResolvedCancSettings,
   checker?: ts.TypeChecker,
-  context?: TSESLint.RuleContext<string, readonly unknown[]>,
 ): boolean {
   if (!symbol) {
     return false;
@@ -73,19 +71,6 @@ export function symbolDeclaredInCancSource(
   ];
 
   if (declarations.length === 0) {
-    if (context) {
-      const bindings = getCancBindings(context, { includeTypeOnly: true });
-      const name = symbol.getName();
-      const binding = bindings.get(name);
-      if (
-        binding &&
-        settings.sources.some(
-          (s) => binding.source === s || binding.source.startsWith(s + '/') || s.startsWith(binding.source),
-        )
-      ) {
-        return true;
-      }
-    }
     return false;
   }
 
@@ -149,13 +134,13 @@ function matchesNominalName(
     const candidateSymbols = [partSymbol, aliasSymbol, targetSymbol];
     for (const sym of candidateSymbols) {
       if (!sym) continue;
-      if (typeNameMatches(sym, names) && symbolDeclaredInCancSource(sym, settings, checker, context)) {
+      if (typeNameMatches(sym, names) && symbolDeclaredInCancSource(sym, settings, checker)) {
         return true;
       }
       if (sym.flags & SYMBOL_FLAG_ALIAS) {
         try {
           const aliased = checker.getAliasedSymbol(sym);
-          if (typeNameMatches(aliased, names) && symbolDeclaredInCancSource(aliased, settings, checker, context)) {
+          if (typeNameMatches(aliased, names) && symbolDeclaredInCancSource(aliased, settings, checker)) {
             return true;
           }
         } catch {
@@ -531,7 +516,7 @@ export function isExecutorContextExpression(
     return true;
   }
   const handleCancelProp = type.getProperty('handleCancel');
-  if (handleCancelProp && symbolDeclaredInCancSource(handleCancelProp, settings, checker, context)) {
+  if (handleCancelProp && symbolDeclaredInCancSource(handleCancelProp, settings, checker)) {
     return true;
   }
   return false;
