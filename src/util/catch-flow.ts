@@ -361,6 +361,10 @@ function isRejectRethrow(node: TSESTree.Node | null | undefined, paramName: stri
   );
 }
 
+function returnsRejection(stmt: TSESTree.ReturnStatement, paramName: string, context: Context): boolean {
+  return stmt.argument !== null && isRejectingConditional(stmt.argument, paramName, context);
+}
+
 function statementRethrowsParam(stmt: TSESTree.Statement, paramName: string, context: Context): boolean {
   if (stmt.type === AST_NODE_TYPES.ThrowStatement) {
     return stmt.argument.type === AST_NODE_TYPES.Identifier && stmt.argument.name === paramName;
@@ -368,7 +372,7 @@ function statementRethrowsParam(stmt: TSESTree.Statement, paramName: string, con
   if (isThrowHelperRethrow(stmt, paramName, context)) {
     return true;
   }
-  if (stmt.type === AST_NODE_TYPES.ReturnStatement && isRejectRethrow(stmt.argument, paramName, context)) {
+  if (stmt.type === AST_NODE_TYPES.ReturnStatement && returnsRejection(stmt, paramName, context)) {
     return true;
   }
   if (stmt.type === AST_NODE_TYPES.BlockStatement) {
@@ -576,7 +580,7 @@ function hasRethrowInStatements(statements: TSESTree.Statement[], paramName: str
         return true;
       }
     }
-    if (stmt.type === AST_NODE_TYPES.ReturnStatement && isRejectRethrow(stmt.argument, paramName, context)) {
+    if (stmt.type === AST_NODE_TYPES.ReturnStatement && returnsRejection(stmt, paramName, context)) {
       return true;
     }
     if (stmt.type === AST_NODE_TYPES.IfStatement) {

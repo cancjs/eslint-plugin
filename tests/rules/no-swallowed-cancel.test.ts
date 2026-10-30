@@ -161,6 +161,43 @@ new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => (isCancelErr
 new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => (!isCancelError(e) ? 0 : Promise.reject(e)));`,
   },
   {
+    name: 'block callback returning a conditional that rejects with the param on the cancel arm',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  return isCancelError(e) ? Promise.reject(e) : 0;
+});`,
+  },
+  {
+    name: 'block callback returning a negated conditional that rejects with the param on the other arm',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  return !isCancelError(e) ? 0 : Promise.reject(e);
+});`,
+  },
+  {
+    name: 'async catch clause returning a conditional that rejects with the param on the cancel arm',
+    code: `${HEAD}
+async function run() {
+  try {
+    await job;
+  } catch (e) {
+    return isCancelError(e) ? Promise.reject(e) : 0;
+  }
+}`,
+  },
+  {
+    name: 'sync catch clause returning Promise.reject of the param on the cancel branch',
+    code: `${HEAD}
+function run() {
+  try {
+    new CancelablePromise<number>((resolve) => resolve(1));
+  } catch (e) {
+    if (isCancelError(e)) return Promise.reject(e);
+    toast(e);
+  }
+}`,
+  },
+  {
     name: 'guard that rethrows the cancel',
     code: `${HEAD}
 cancAsync(function* () {
@@ -360,7 +397,7 @@ new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
   if (isCancelError(e)) return Promise.reject(new Error('failed'));
   toast(e);
 });`,
-    errors: [{ messageId: 'swallowedCancel', line: 12 }],
+    errors: [{ messageId: 'swallowedCancel', line: 12, column: 62 }],
   },
   {
     name: 'Promise.reject of the param on the non cancel branch only still swallows',
@@ -369,13 +406,13 @@ new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
   if (!isCancelError(e)) return Promise.reject(e);
   toast(e);
 });`,
-    errors: [{ messageId: 'swallowedCancel', line: 12 }],
+    errors: [{ messageId: 'swallowedCancel', line: 12, column: 62 }],
   },
   {
     name: 'conditional rejecting on the non cancel arm only still swallows',
     code: `${HEAD}
 new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => (isCancelError(e) ? 0 : Promise.reject(e)));`,
-    errors: [{ messageId: 'swallowedCancel', line: 12 }],
+    errors: [{ messageId: 'swallowedCancel', line: 12, column: 62 }],
   },
   {
     name: 'fallback value from a concise arrow handler',
