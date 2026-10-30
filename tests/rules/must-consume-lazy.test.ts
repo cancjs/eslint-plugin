@@ -56,9 +56,6 @@ describe('must-consume-lazy (untyped)', () => {
       `class LazyPromise {}
        new LazyPromise();`,
       `import { LazyPromise } from '@cancjs/toolbox';
-       const { lazy } = LazyPromise.withResolvers();
-       lazy.execute();`,
-      `import { LazyPromise } from '@cancjs/toolbox';
        const { promise } = LazyPromise.withResolvers();
        promise.execute();`,
       `import { LazyPromise } from '@cancjs/toolbox';
@@ -70,10 +67,6 @@ describe('must-consume-lazy (untyped)', () => {
        function test(fallback: LazyPromise<number>) {
          const { promise = fallback, resolve } = LazyPromise.withResolvers<number>();
          resolve(1);
-       }`,
-      `import { LazyPromise } from '@cancjs/toolbox';
-       function test(fallback: LazyPromise<number>) {
-         const { lazy = fallback } = LazyPromise.withResolvers<number>();
        }`,
       `import { LazyPromise } from '@cancjs/toolbox';
        function test() {
@@ -132,25 +125,41 @@ describe('must-consume-lazy (untyped)', () => {
           },
         ],
       },
-      // withResolvers unused lazy
+      // withResolvers unused promise
       {
         code: `import { LazyPromise } from '@cancjs/toolbox';
                function test() {
-                 const { lazy, resolve } = LazyPromise.withResolvers<number>();
+                 const { promise, resolve } = LazyPromise.withResolvers<number>();
                }`,
         errors: [
           {
             messageId: 'unusedLazyVar' as const,
             line: 3,
-            data: { name: 'lazy' },
+            data: { name: 'promise' },
           },
         ],
       },
-      // withResolvers with literal 'lazy' key
+      // withResolvers has no lazy member: a lazy key is not the lazy promise
       {
         code: `import { LazyPromise } from '@cancjs/toolbox';
                function test() {
-                 const { 'lazy': customLazy } = LazyPromise.withResolvers<number>();
+                 const { lazy, resolve } = LazyPromise.withResolvers<number>();
+                 lazy.execute();
+               }`,
+        errors: [{ messageId: 'unusedLazy' as const, line: 3 }],
+      },
+      {
+        code: `import { LazyPromise } from '@cancjs/toolbox';
+               function test(fallback: LazyPromise<number>) {
+                 const { lazy = fallback } = LazyPromise.withResolvers<number>();
+               }`,
+        errors: [{ messageId: 'unusedLazy' as const, line: 3 }],
+      },
+      // withResolvers with literal 'promise' key
+      {
+        code: `import { LazyPromise } from '@cancjs/toolbox';
+               function test() {
+                 const { 'promise': customLazy } = LazyPromise.withResolvers<number>();
                }`,
         errors: [
           {

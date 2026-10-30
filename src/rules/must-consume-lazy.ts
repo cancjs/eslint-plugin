@@ -195,10 +195,8 @@ export default createRule<RuleOptions, MessageIds>({
                 }
                 if (
                   prop.type === AST_NODE_TYPES.Property &&
-                  ((prop.key.type === AST_NODE_TYPES.Identifier &&
-                    (prop.key.name === 'lazy' || prop.key.name === 'promise')) ||
-                    (prop.key.type === AST_NODE_TYPES.Literal &&
-                      (prop.key.value === 'lazy' || prop.key.value === 'promise'))) &&
+                  ((prop.key.type === AST_NODE_TYPES.Identifier && prop.key.name === 'promise') ||
+                    (prop.key.type === AST_NODE_TYPES.Literal && prop.key.value === 'promise')) &&
                   prop.value.type === AST_NODE_TYPES.AssignmentPattern
                 ) {
                   hasLazyProp = true;
@@ -206,10 +204,8 @@ export default createRule<RuleOptions, MessageIds>({
                 }
                 if (
                   prop.type === AST_NODE_TYPES.Property &&
-                  ((prop.key.type === AST_NODE_TYPES.Identifier &&
-                    (prop.key.name === 'lazy' || prop.key.name === 'promise')) ||
-                    (prop.key.type === AST_NODE_TYPES.Literal &&
-                      (prop.key.value === 'lazy' || prop.key.value === 'promise'))) &&
+                  ((prop.key.type === AST_NODE_TYPES.Identifier && prop.key.name === 'promise') ||
+                    (prop.key.type === AST_NODE_TYPES.Literal && prop.key.value === 'promise')) &&
                   prop.value.type === AST_NODE_TYPES.Identifier
                 ) {
                   hasLazyProp = true;
