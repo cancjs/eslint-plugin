@@ -6,7 +6,7 @@ An executor should act as an adapter for exactly one underlying operation. Start
 
 ## Rule details
 
-Each call whose result the executor consumes with `then` or `await`, or passes to `resolve`, counts as one operation. Calls inside a `handleCancel` callback are cleanup and do not count. A step that consumes the value produced by the previous step, such as `openStream().then((stream) => readAll(stream))`, continues the same operation and does not count separately. The rule reports the first operation past the allowed number.
+Each call whose result the executor consumes with `then` or `await`, or passes to `resolve`, counts as one operation. Calls inside a `handleCancel` callback are cleanup and do not count. A call inside a `then` callback that reads the callback's first parameter, such as `openStream().then((stream) => readAll(stream))` or `loadProfile(session.id)`, continues the same operation and does not count separately, however long the chain. A callback that never reads its parameter starts a new operation, and so does the `await` form of the same sequence. The rule reports the first operation past the allowed number.
 
 ### Incorrect
 
