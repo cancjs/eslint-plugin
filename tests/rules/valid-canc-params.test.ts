@@ -245,6 +245,20 @@ CancelablePromise.all([], {}, 'extra');`,
       ],
     },
 
+    // call under a void discard is still analyzed
+    {
+      code: `import CancelablePromise from '@cancjs/promise';
+void CancelablePromise.all();`,
+      errors: [
+        {
+          messageId: 'tooFewArguments',
+          data: { callee: 'CancelablePromise.all', min: 1 },
+          line: 2,
+          column: 6,
+        },
+      ],
+    },
+
     // race: 0 args (tooFew), 3 args (tooMany)
     {
       code: `import CancelablePromise from '@cancjs/promise';
