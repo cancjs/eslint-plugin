@@ -17,13 +17,18 @@ Classes: `TP` real issue in the example, `FP` rule defect linked to a fix id, `p
 - demo-signal-interop/src/main-canc.ts: out of scope: unresolved imports (@cancjs/unhandled-rejection/register)
 - demo-toolbox/src/main-canc.ts: out of scope: unresolved imports (@cancjs/unhandled-rejection/register)
 
+## Fixed
+
+A fixed row is removed from the table once the rule stops reporting it; the line here keeps the record.
+
+- FIX-1: demo-async-dispose/src/report-canc.ts:36 canc/executor-cancel-wiring: a shielded promise is no longer asked for a cancel handler
+
 ## Findings
 
 | Location | Rule | Message | Tier | Count | Class | Note |
 | --- | --- | --- | --- | --- | --- | --- |
 | demo-async-dispose/src/report-canc.ts:15 | canc/prefer-signal-accessor | preferSignalAccessor | recommended | x1 | TP | uses the deprecated getSignal accessor |
 | demo-async-dispose/src/report-canc.ts:16 | canc/prefer-signal-accessor | preferSignalAccessor | recommended | x1 | TP | uses the deprecated getSignal accessor |
-| demo-async-dispose/src/report-canc.ts:36 | canc/executor-cancel-wiring | noCancelWiring | strict | x1 | FP | FIX-1: the promise sets shield, so a direct cancel is a no-op and there is no work to wire; the rule asks for a handler anyway |
 | demo-async-iter/src/main-canc.ts:11 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
 | demo-async-iter/src/main-canc.ts:15 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
 | demo-async-iter/src/main-canc.ts:18 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |

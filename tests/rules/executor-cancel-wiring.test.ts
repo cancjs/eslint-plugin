@@ -23,6 +23,16 @@ const valid11Path = path.resolve(
 );
 const valid28Path = path.resolve(__dirname, '../fixtures/corpus/executor/valid/28-executor-cancel-wiring-getsignal.ts');
 
+const valid29Path = path.resolve(__dirname, '../fixtures/corpus/executor/valid/29-executor-cancel-wiring-shielded.ts');
+const invalid23Path = path.resolve(
+  __dirname,
+  '../fixtures/corpus/executor/invalid/23-executor-cancel-wiring-shield-off.ts',
+);
+
+const codeValid29 = fs.readFileSync(valid29Path, 'utf8');
+const codeInvalid23 = fs.readFileSync(invalid23Path, 'utf8');
+const markers23 = readMarkers(invalid23Path);
+
 const codeInvalid08 = fs.readFileSync(invalid08Path, 'utf8');
 
 const codeValid10 = fs.readFileSync(valid10Path, 'utf8');
@@ -79,6 +89,12 @@ new Promise((resolve, reject) => {
 });`,
     codeValid10,
     codeValid28,
+    codeValid29,
+    `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { shield: true });`,
   ],
   invalid: [
     {
@@ -149,6 +165,24 @@ new CancelablePromise((resolve, reject) => {
           column: 48,
         },
       ],
+    },
+    {
+      code: codeInvalid23,
+      errors: [
+        {
+          messageId: (markers23[0]?.messageId ?? 'noCancelWiring') as MessageIds,
+          line: markers23[0].line,
+        },
+      ],
+    },
+    {
+      code: `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+declare const keep: boolean;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { shield: keep });`,
+      errors: [{ messageId: 'noCancelWiring' as const, line: 4, column: 23 }],
     },
   ],
 };

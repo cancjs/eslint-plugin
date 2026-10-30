@@ -1,8 +1,27 @@
+import { AST_NODE_TYPES, type TSESTree } from '@typescript-eslint/utils';
+
 import createRule from '../util/create-rule.js';
 import { analyzeExecutor } from '../util/executor.js';
 
 export type MessageIds = 'noCancelWiring';
 export type RuleOptions = [];
+
+/** True when the constructor options literally set `shield: true`: a shielded promise ignores cancel. */
+function isShielded(node: TSESTree.NewExpression): boolean {
+  const options = node.arguments.at(1);
+  if (options?.type !== AST_NODE_TYPES.ObjectExpression) {
+    return false;
+  }
+  return options.properties.some(
+    (prop) =>
+      prop.type === AST_NODE_TYPES.Property &&
+      !prop.computed &&
+      ((prop.key.type === AST_NODE_TYPES.Identifier && prop.key.name === 'shield') ||
+        (prop.key.type === AST_NODE_TYPES.Literal && prop.key.value === 'shield')) &&
+      prop.value.type === AST_NODE_TYPES.Literal &&
+      prop.value.value === true,
+  );
+}
 
 export default createRule<RuleOptions, MessageIds>({
   name: 'executor-cancel-wiring',
@@ -27,6 +46,10 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         if (shape.operationStarts.length === 0 && !shape.asyncDriverInside) {
+          return;
+        }
+
+        if (isShielded(node)) {
           return;
         }
 

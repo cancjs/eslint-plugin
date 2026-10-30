@@ -171,7 +171,7 @@ describe('executor rules phase smoke over built artifacts', () => {
   });
 
   it('matches markers on invalid corpus fixtures under strict and asserts recommended behavior', async () => {
-    expect(invalidFiles.length).toBe(23);
+    expect(invalidFiles.length).toBe(24);
 
     const strictResults = await eslintStrict.lintFiles(invalidFiles);
     for (const r of strictResults) {
@@ -180,7 +180,9 @@ describe('executor rules phase smoke over built artifacts', () => {
         (m) =>
           m.ruleId &&
           REGISTERED_PREFIXED_RULES.has(m.ruleId) &&
-          (rel.includes('08-executor-cancel-wiring.ts') || m.ruleId !== 'canc/executor-cancel-wiring'),
+          (rel.includes('08-executor-cancel-wiring.ts') ||
+            rel.includes('23-executor-cancel-wiring-shield-off.ts') ||
+            m.ruleId !== 'canc/executor-cancel-wiring'),
       );
       const markers = readMarkers(r.filePath).filter((m) => REGISTERED_RULES.has(m.ruleId));
 
@@ -220,7 +222,7 @@ describe('executor rules phase smoke over built artifacts', () => {
       const rel = path.relative(corpusDir, r.filePath).replaceAll('\\', '/');
       const phaseMessages = r.messages.filter((m) => m.ruleId && REGISTERED_PREFIXED_RULES.has(m.ruleId));
 
-      if (rel.includes('08-executor-cancel-wiring.ts')) {
+      if (rel.includes('08-executor-cancel-wiring.ts') || rel.includes('23-executor-cancel-wiring-shield-off.ts')) {
         expect(phaseMessages.filter((m) => m.ruleId === 'canc/executor-cancel-wiring')).toHaveLength(0);
       } else if (rel.includes('12-executor-param-names') || rel.includes('13-executor-param-names')) {
         expect(phaseMessages.filter((m) => m.ruleId === 'canc/executor-param-names')).toHaveLength(0);
@@ -243,7 +245,7 @@ describe('executor rules phase smoke over built artifacts', () => {
     const validFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(validFiles.length).toBe(161);
+    expect(validFiles.length).toBe(162);
 
     const recResults = await eslintRecommended.lintFiles(validFiles);
     for (const r of recResults) {

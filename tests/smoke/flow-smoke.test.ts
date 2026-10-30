@@ -194,7 +194,7 @@ describe('flow rules phase smoke over built artifacts', () => {
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(161);
+    expect(allValidFiles.length).toBe(162);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {
