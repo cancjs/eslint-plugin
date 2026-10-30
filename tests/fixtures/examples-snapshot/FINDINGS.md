@@ -27,6 +27,7 @@ A fixed row is removed from the table once the rule stops reporting it; the line
 - FIX-3: demo-signal-interop/src/compose-vanilla.ts:30 canc/no-abort-listener-leak: removal in the finally block of the function enclosing the promise executor is recognised
 - FIX-3: demo-signal-interop/src/compose-vanilla.ts:31 (second listener of the pair above)
 - FIX-3: demo-signal-interop/src/compose-vanilla.ts:65 canc/no-abort-listener-leak: removal through a forEach over the cleanup list in the enclosing finally block is recognised
+- FIX-4: demo-signal-interop/src/in-vanilla.ts:54 canc/no-abort-listener-leak: signals of local controllers reached through an array map are treated as local
 
 ## Findings
 
@@ -112,7 +113,6 @@ A fixed row is removed from the table once the rule stops reporting it; the line
 | demo-signal-interop/src/in-canc.ts:39 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
 | demo-signal-interop/src/in-canc.ts:67 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
 | demo-signal-interop/src/in-canc.ts:92 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
-| demo-signal-interop/src/in-vanilla.ts:54 | canc/no-abort-listener-leak | inlineListenerNoOnce | strict | x1 | FP | FIX-4: signals are local controllers reached through an array map, so their lifetime ends with the function |
 | demo-signal-interop/src/out-canc.ts:42 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
 | demo-signal-interop/src/out-canc.ts:44 | canc/no-swallowed-cancel | swallowedCancel | recommended | x1 | TP | catch absorbs the cancel instead of rethrowing it or using a boundary helper |
 | demo-signal-interop/src/out-canc.ts:62 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |

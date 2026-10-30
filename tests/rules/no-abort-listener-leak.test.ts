@@ -14,6 +14,7 @@ const corpusDir = path.resolve(__dirname, '../fixtures/corpus/hygiene');
 const invalid05Path = path.join(corpusDir, 'invalid/05-no-abort-listener-leak.ts');
 const invalid09Path = path.join(corpusDir, 'invalid/09-no-abort-listener-leak-inline.ts');
 
+const invalid14Path = path.join(corpusDir, 'invalid/14-no-abort-listener-leak-inline-caller-signals-map.ts');
 const invalid13Path = path.join(corpusDir, 'invalid/13-no-abort-listener-leak-executor-catch-only.ts');
 const invalid12Path = path.join(corpusDir, 'invalid/12-no-abort-listener-leak-then-callback.ts');
 
@@ -21,6 +22,7 @@ const valid05Path = path.join(corpusDir, 'valid/05-no-abort-listener-leak.ts');
 const valid95Path = path.join(corpusDir, 'valid/95-adversarial-executor-listener-outer-finally.ts');
 const valid96Path = path.join(corpusDir, 'valid/96-adversarial-executor-listener-cleanup-list.ts');
 const valid97Path = path.join(corpusDir, 'valid/97-adversarial-executor-listener-finally-callback.ts');
+const valid98Path = path.join(corpusDir, 'valid/98-adversarial-local-signals-through-map.ts');
 const valid94Path = path.join(corpusDir, 'valid/94-adversarial-finally-callback-removal.ts');
 
 const codeInvalid05 = fs.readFileSync(invalid05Path, 'utf8');
@@ -31,11 +33,14 @@ const codeInvalid13 = fs.readFileSync(invalid13Path, 'utf8');
 const codeValid95 = fs.readFileSync(valid95Path, 'utf8');
 const codeValid96 = fs.readFileSync(valid96Path, 'utf8');
 const codeValid97 = fs.readFileSync(valid97Path, 'utf8');
+const codeInvalid14 = fs.readFileSync(invalid14Path, 'utf8');
+const codeValid98 = fs.readFileSync(valid98Path, 'utf8');
 const codeValid94 = fs.readFileSync(valid94Path, 'utf8');
 
 const markers05 = readMarkers(invalid05Path);
 const markers09 = readMarkers(invalid09Path);
 const markers13 = readMarkers(invalid13Path);
+const markers14 = readMarkers(invalid14Path);
 const markers12 = readMarkers(invalid12Path);
 
 const tester = ruleTester({ types: false });
@@ -47,6 +52,26 @@ describe('no-abort-listener-leak', () => {
       codeValid05,
       // Removal inside the returned chain's finally callback, no once option
       codeValid94,
+      // Signals of local controllers reached through an array map are local
+      codeValid98,
+      // The map callback runs in a nested function of the one that created array and controllers
+      `async function run() {
+  const first = new AbortController();
+  const signals = [first.signal];
+  return (async () => {
+    return Promise.race(signals.map((sig) => new Promise<void>((_r, rej) => {
+      sig.addEventListener('abort', () => rej(new Error('aborted')));
+    })));
+  })();
+}`,
+      `function run() {
+  const first = new AbortController();
+  const second = new AbortController();
+  const signals = [first.signal, second.signal] as const;
+  return signals.map((sig) => new Promise<void>((_r, rej) => {
+    sig.addEventListener('abort', () => rej(new Error('aborted')));
+  }));
+}`,
       // Executor listener removed in the finally block of the enclosing function
       codeValid95,
       codeValid96,
@@ -584,6 +609,49 @@ async function unrelated(signal: AbortSignal) {
   }
 }`,
         errors: [{ messageId: 'leakedAbortListener' as const, line: 7 }],
+      },
+      // Signals handed in by the caller are not confined to the function
+      {
+        code: codeInvalid14,
+        errors: [
+          {
+            messageId: (markers14[0].messageId ?? 'inlineListenerNoOnce') as 'inlineListenerNoOnce',
+            line: markers14[0].line,
+          },
+        ],
+      },
+      // One caller signal among local ones keeps the whole array external
+      {
+        code: `function run(extra: AbortSignal) {
+  const first = new AbortController();
+  const signals = [first.signal, extra];
+  return signals.map((sig) => new Promise<void>((_r, rej) => {
+    sig.addEventListener('abort', () => rej(new Error('aborted')));
+  }));
+}`,
+        errors: [{ messageId: 'inlineListenerNoOnce' as const, line: 5 }],
+      },
+      // A spread keeps the element origin unknown
+      {
+        code: `function run(more: AbortSignal[]) {
+  const first = new AbortController();
+  const signals = [first.signal, ...more];
+  return signals.map((sig) => new Promise<void>((_r, rej) => {
+    sig.addEventListener('abort', () => rej(new Error('aborted')));
+  }));
+}`,
+        errors: [{ messageId: 'inlineListenerNoOnce' as const, line: 5 }],
+      },
+      // The controller outlives the function that builds the array
+      {
+        code: `const shared = new AbortController();
+function run() {
+  const signals = [shared.signal];
+  return signals.map((sig) => new Promise<void>((_r, rej) => {
+    sig.addEventListener('abort', () => rej(new Error('aborted')));
+  }));
+}`,
+        errors: [{ messageId: 'inlineListenerNoOnce' as const, line: 5 }],
       },
     ],
   });

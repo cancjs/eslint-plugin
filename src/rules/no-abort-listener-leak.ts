@@ -99,6 +99,79 @@ function isAbortSignalCreator(node: TSESTree.Node, context: TSESLint.RuleContext
   return false;
 }
 
+function unwrapTsExpression(node: TSESTree.Expression): TSESTree.Expression {
+  let expr = node;
+  while (
+    expr.type === AST_NODE_TYPES.TSAsExpression ||
+    expr.type === AST_NODE_TYPES.TSTypeAssertion ||
+    expr.type === AST_NODE_TYPES.TSNonNullExpression
+  ) {
+    expr = expr.expression;
+  }
+  return expr;
+}
+
+function enclosingFunction(node: TSESTree.Node): TSESTree.Node | undefined {
+  let curr: TSESTree.Node | undefined = node.parent;
+  while (curr && !isFunctionNode(curr)) {
+    curr = curr.parent;
+  }
+  return curr;
+}
+
+// `signals.map((sig) => ...)` where `signals` is a const array literal of local signals
+function isLocalSignalMapParameter(
+  param: TSESTree.Identifier,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): boolean {
+  const callback = param.parent;
+  if (callback.type !== AST_NODE_TYPES.ArrowFunctionExpression && callback.type !== AST_NODE_TYPES.FunctionExpression) {
+    return false;
+  }
+  const call = callback.parent;
+  if (
+    call.type !== AST_NODE_TYPES.CallExpression ||
+    call.arguments[0] !== callback ||
+    callback.params[0] !== param ||
+    call.callee.type !== AST_NODE_TYPES.MemberExpression ||
+    call.callee.computed ||
+    call.callee.property.type !== AST_NODE_TYPES.Identifier ||
+    call.callee.property.name !== 'map'
+  ) {
+    return false;
+  }
+  const source = call.callee.object;
+  if (source.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+  const variable = findVariable(source.name, context.sourceCode.getScope(source));
+  const def = variable?.defs.length === 1 ? variable.defs[0] : undefined;
+  if (
+    def?.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+    def.node.id.type !== AST_NODE_TYPES.Identifier ||
+    def.node.parent.kind !== 'const' ||
+    !def.node.init
+  ) {
+    return false;
+  }
+  // the array and the controllers behind it must be created by the same function
+  const owner = enclosingFunction(def.node);
+  if (!owner) {
+    return false;
+  }
+  const list = unwrapTsExpression(def.node.init);
+  return (
+    list.type === AST_NODE_TYPES.ArrayExpression &&
+    list.elements.length > 0 &&
+    list.elements.every(
+      (element) =>
+        element !== null &&
+        element.type !== AST_NODE_TYPES.SpreadElement &&
+        isLocallyCreatedSignal(element, owner, context),
+    )
+  );
+}
+
 function isLocallyCreatedSignal(
   node: TSESTree.Node,
   fnNode: TSESTree.Node,
@@ -128,6 +201,9 @@ function isLocallyCreatedSignal(
 
   for (const def of variable.defs) {
     if (def.type === DefinitionType.Parameter) {
+      if (def.name.type === AST_NODE_TYPES.Identifier && isLocalSignalMapParameter(def.name, context)) {
+        return true;
+      }
       return false;
     }
     if (!isDescendant(def.node, fnNode)) {
