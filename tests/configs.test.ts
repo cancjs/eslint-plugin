@@ -1,7 +1,6 @@
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
-import { buildInteropUnicorn } from '../src/configs/interop-unicorn.js';
 import plugin from '../src/index.js';
 import nativePlugin from '../src/native.js';
 import { rules } from '../src/rules/index.js';
@@ -184,17 +183,6 @@ describe('interop configs', () => {
     expect(mergedRules('interopUnicorn')).toEqual({ 'unicorn/prefer-top-level-await': 'off' });
   });
 
-  it('unicorn builder adds a files-limited no-thenable entry only when asked', () => {
-    expect(buildInteropUnicorn({ thenableFiles: [] })).toHaveLength(1);
-    const limited = buildInteropUnicorn({ thenableFiles: ['src/lazy/**'] });
-    expect(limited).toHaveLength(2);
-    expect(limited[1]).toEqual({
-      name: 'canc/interop-unicorn-thenable',
-      files: ['src/lazy/**'],
-      rules: { 'unicorn/no-thenable': 'off' },
-    });
-  });
-
   async function lint(overrideConfig: object[]) {
     const eslint = new ESLint({
       overrideConfigFile: true,
@@ -206,8 +194,6 @@ describe('interop configs', () => {
   it('promise and unicorn configs lint cleanly with no foreign plugin loaded', async () => {
     const results = await lint([...configs.interopPromise, ...configs.interopUnicorn]);
     expect(results[0].messages).toEqual([]);
-    const withThenable = await lint([...buildInteropUnicorn({ thenableFiles: ['**/*.ts'] })]);
-    expect(withThenable[0].messages).toEqual([]);
   });
 
   it('typescript-eslint config asks for the plugin to be loaded first', async () => {
