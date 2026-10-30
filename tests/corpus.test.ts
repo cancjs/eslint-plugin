@@ -100,9 +100,9 @@ async function lintValidFixtures(typed: boolean): Promise<string> {
     .join('\n');
 }
 
-describe('corpus: recommended preset zero-false-positive aggregate (163 valid files, failure: 26)', () => {
-  it('corpus/valid contains 163 fixture files (at least 25)', () => {
-    expect(findValidFixtures()).toHaveLength(163);
+describe('corpus: recommended preset zero-false-positive aggregate (166 valid files, failure: 26)', () => {
+  it('corpus/valid contains 166 fixture files (at least 25)', () => {
+    expect(findValidFixtures()).toHaveLength(166);
     expect(findValidFixtures().length).toBeGreaterThanOrEqual(25);
   });
 

@@ -188,7 +188,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
   });
 
   it('matches markers on invalid phase fixtures under recommended + strict-only rules', async () => {
-    expect(invalidFiles.length).toBe(33);
+    expect(invalidFiles.length).toBe(34);
 
     const results = await eslintWithStrict.lintFiles(invalidFiles);
     for (const r of results) {
@@ -225,7 +225,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
       })
       .sort();
 
-    expect(phaseValidFiles.length).toBe(46); // 21 coroutine + 8 lazy + 17 hygiene
+    expect(phaseValidFiles.length).toBe(49); // 21 coroutine + 8 lazy + 20 hygiene
 
     const recResults = await eslintRecommended.lintFiles(phaseValidFiles);
     for (const r of recResults) {
@@ -239,7 +239,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(163);
+    expect(allValidFiles.length).toBe(166);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {
@@ -301,7 +301,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
       expect(reportedFiles).not.toContain(f);
     }
 
-    // 30 syntactic fixtures reported
-    expect(reportedFiles).toHaveLength(30);
+    // 31 syntactic fixtures reported
+    expect(reportedFiles).toHaveLength(31);
   }, 30000);
 });

@@ -385,14 +385,73 @@ function mayJump(node: TSESTree.Node, scope: JumpScope = OUTER_SCOPE): boolean {
   return false;
 }
 
+function isForEachCall(call: TSESTree.CallExpression): boolean {
+  return (
+    call.callee.type === AST_NODE_TYPES.MemberExpression &&
+    !call.callee.computed &&
+    call.callee.property.type === AST_NODE_TYPES.Identifier &&
+    call.callee.property.name === 'forEach'
+  );
+}
+
+// a Promise executor and a forEach/map callback run synchronously in the enclosing function
+function runsSynchronouslyInParent(fn: TSESTree.Node): boolean {
+  const parent = fn.parent;
+  if (parent?.type === AST_NODE_TYPES.NewExpression) {
+    return (
+      parent.callee.type === AST_NODE_TYPES.Identifier && parent.callee.name === 'Promise' && parent.arguments[0] === fn
+    );
+  }
+  if (parent?.type === AST_NODE_TYPES.CallExpression && parent.arguments[0] === fn) {
+    return (
+      parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+      !parent.callee.computed &&
+      parent.callee.property.type === AST_NODE_TYPES.Identifier &&
+      (parent.callee.property.name === 'forEach' || parent.callee.property.name === 'map')
+    );
+  }
+  return false;
+}
+
 function isRemovalStatement(
   stmt: TSESTree.Statement | undefined,
   fnName: string,
   signalKey: string,
   context: TSESLint.RuleContext<MessageIds, RuleOptions>,
 ): boolean {
+  if (stmt?.type === AST_NODE_TYPES.IfStatement) {
+    // `if (listener) signal.removeEventListener(...)` only skips a listener that was never set
+    const body = stmt.consequent.type === AST_NODE_TYPES.BlockStatement ? stmt.consequent.body[0] : stmt.consequent;
+    return (
+      !stmt.alternate &&
+      stmt.test.type === AST_NODE_TYPES.Identifier &&
+      stmt.test.name === fnName &&
+      isRemovalStatement(body, fnName, signalKey, context)
+    );
+  }
   return (
     stmt?.type === AST_NODE_TYPES.ExpressionStatement && matchesRemovalCall(stmt.expression, signalKey, fnName, context)
+  );
+}
+
+// `list.forEach((entry) => { signal.removeEventListener(...) })` runs its callback synchronously
+function isRemovalLoopStatement(
+  stmt: TSESTree.Statement,
+  fnName: string,
+  signalKey: string,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): boolean {
+  if (stmt.type !== AST_NODE_TYPES.ExpressionStatement || stmt.expression.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  const call = stmt.expression;
+  const callback = call.arguments.at(0);
+  if (!isForEachCall(call) || !callback) {
+    return false;
+  }
+  return (
+    (callback.type === AST_NODE_TYPES.ArrowFunctionExpression || callback.type === AST_NODE_TYPES.FunctionExpression) &&
+    callbackRemovesListener(callback, fnName, signalKey, context)
   );
 }
 
@@ -403,7 +462,10 @@ function finallyRemovesListener(
   context: TSESLint.RuleContext<MessageIds, RuleOptions>,
 ): boolean {
   for (const stmt of finalizer.body) {
-    if (isRemovalStatement(stmt, fnName, signalKey, context)) {
+    if (
+      isRemovalStatement(stmt, fnName, signalKey, context) ||
+      isRemovalLoopStatement(stmt, fnName, signalKey, context)
+    ) {
       return true;
     }
     // a nested try only guarantees a removal that nothing before it can throw past
@@ -489,7 +551,7 @@ function isProtectedByFinally(
   context: TSESLint.RuleContext<MessageIds, RuleOptions>,
 ): boolean {
   let curr: TSESTree.Node | undefined = regNode.parent;
-  while (curr && !isFunctionNode(curr)) {
+  while (curr && !(isFunctionNode(curr) && !runsSynchronouslyInParent(curr))) {
     if (
       curr.type === AST_NODE_TYPES.TryStatement &&
       curr.finalizer &&
