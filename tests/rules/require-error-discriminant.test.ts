@@ -66,6 +66,16 @@ describe('require-error-discriminant (typed lane)', () => {
          abstract accessor kind: 'k';
        }
        export declare const p: CancelablePromise<string, AbstractAccessorError>;`,
+      `import type { CancelablePromise } from '@cancjs/promise';
+       abstract class AbstractGetterError extends Error {
+         abstract get kind(): 'k';
+       }
+       export declare const p: CancelablePromise<string, AbstractGetterError>;`,
+      `import type { CancelablePromise } from '@cancjs/promise';
+       abstract class AbstractMethodError extends Error {
+         abstract describe(): string;
+       }
+       export declare const p: CancelablePromise<string, AbstractMethodError>;`,
       // Interface extending Error (silent)
       `import type { CancelablePromise } from '@cancjs/promise';
        interface MyInterfaceError extends Error {

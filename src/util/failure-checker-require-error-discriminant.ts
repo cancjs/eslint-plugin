@@ -226,7 +226,10 @@ export function classHasInstanceDiscriminant(classDecl: TSESTree.ClassDeclaratio
       if (!member.static) {
         return true;
       }
-    } else if (member.type === AST_NODE_TYPES.MethodDefinition) {
+    } else if (
+      member.type === AST_NODE_TYPES.MethodDefinition ||
+      member.type === AST_NODE_TYPES.TSAbstractMethodDefinition
+    ) {
       if (member.kind === 'constructor') {
         if (member.value.params.some((p) => p.type === AST_NODE_TYPES.TSParameterProperty)) {
           return true;
