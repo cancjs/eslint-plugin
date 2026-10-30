@@ -5,13 +5,19 @@ import type ts from 'typescript';
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
 import { getCancServices } from '../util/canc-types.js';
 import { type ClassMatcher, classMatcherSchema, compileMatchers } from '../util/class-matcher.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 import { analyzeCatchSteps, type CatchStep, isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
 import { collectHandledCatchTypes } from '../util/failure-types.js';
 
 export type MessageIds = 'unhandledFailure' | 'noRethrow' | 'missingUnlistedFallback';
 
-export interface ExhaustiveCatchOptions {
+export interface ExhaustiveCatchOptions extends FactoryOptions {
   allowRethrow?: boolean;
   requireUnlistedFallback?: boolean;
   exclude?: ClassMatcher[];
@@ -441,7 +447,9 @@ export default createRule<RuleOptions, MessageIds>({
             description: 'Whether a fallback rethrow is required for open failure sets.',
           },
           exclude: classMatcherSchema,
+          ...factoryOptionsSchema,
         },
+        allOf: factoryOptionsConstraints,
         additionalProperties: false,
       },
     ],
@@ -474,6 +482,7 @@ export default createRule<RuleOptions, MessageIds>({
       return {};
     }
 
+    const factories = resolveFactories(context.options[0]);
     const compiledExclude = compileMatchers(options?.exclude ?? []);
     const allowRethrow = options?.allowRethrow !== false;
     const requireUnlistedFallback = options?.requireUnlistedFallback !== false;
@@ -484,7 +493,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const coroutine = getCoroutineContext(node, context);
+        const coroutine = getCoroutineContext(node, context, factories);
         if (!coroutine) {
           return;
         }
