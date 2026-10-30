@@ -159,6 +159,30 @@ describe('no-yield-await-in-loop', () => {
          }
          return out;
        });`,
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: Map<string, number>;
+declare const cache: Map<string, number>;
+declare const queue: Set<string>;
+declare const api: { n: number; get(id: string): Promise<number> };
+declare function f(id: string, extra?: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    api.n++;
+    yield* cancAwait(f(id, api.n));
+  }
+});`,
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: Map<string, number>;
+declare const cache: Map<string, number>;
+declare const queue: Set<string>;
+declare const api: { n: number; get(id: string): Promise<number> };
+declare function f(id: string, extra?: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    cache.set(id, 1);
+    yield* cancAwait(f(id, cache.size));
+  }
+});`,
     ],
     invalid: [
       // 1. Corpus invalid 15: for-of loop referencing id
@@ -269,6 +293,77 @@ const run = cancAsync(function* (ids: string[]) {
   }
 });`,
         errors: [{ messageId: 'serializedSteps' as const, line: 6 }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: Map<string, number>;
+declare const cache: Map<string, number>;
+declare const queue: Set<string>;
+declare const api: { n: number; get(id: string): Promise<number> };
+declare function f(id: string, extra?: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(store.delete(id) as unknown as Promise<boolean>);
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const, line: 9 }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: Map<string, number>;
+declare const cache: Map<string, number>;
+declare const queue: Set<string>;
+declare const api: { n: number; get(id: string): Promise<number> };
+declare function f(id: string, extra?: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(f(id, cache.set(id, 1)));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const, line: 9 }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: Map<string, number>;
+declare const cache: Map<string, number>;
+declare const queue: Set<string>;
+declare const api: { n: number; get(id: string): Promise<number> };
+declare function f(id: string, extra?: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(f(id, queue.add(id)));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const, line: 9 }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: Map<string, number>;
+declare const cache: Map<string, number>;
+declare const queue: Set<string>;
+declare const api: { n: number; get(id: string): Promise<number> };
+declare function f(id: string, extra?: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    api.n++;
+    yield* cancAwait(api.get(id));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const, line: 10 }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: Map<string, number>;
+declare const cache: Map<string, number>;
+declare const queue: Set<string>;
+declare const api: { n: number; get(id: string): Promise<number> };
+declare function f(id: string, extra?: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(f(id, store.remove(id)));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const, line: 9 }],
       },
     ],
   });

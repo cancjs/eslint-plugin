@@ -52,14 +52,6 @@ const MUTATING_METHODS = new Set([
   'clear',
 ]);
 
-function getRootIdentifier(node: TSESTree.Node): TSESTree.Identifier | null {
-  let curr = node;
-  while (curr.type === AST_NODE_TYPES.MemberExpression) {
-    curr = curr.object;
-  }
-  return curr.type === AST_NODE_TYPES.Identifier ? curr : null;
-}
-
 function collectInnerLabels(body: TSESTree.Node): Set<string> {
   const labels = new Set<string>();
   function walk(node: TSESTree.Node) {
@@ -318,15 +310,40 @@ function getPureIndexVariables(body: TSESTree.Node): Set<string> {
   return indexVars;
 }
 
-function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {
-  const assigned = new Set<string>();
+type StatePaths = Map<string, string[][]>;
+
+function memberPath(node: TSESTree.Node): { root: TSESTree.Identifier; path: string[] } | null {
+  const path: string[] = [];
+  let curr = node;
+  let complete = true;
+  while (curr.type === AST_NODE_TYPES.MemberExpression) {
+    if (!curr.computed && curr.property.type === AST_NODE_TYPES.Identifier) {
+      path.unshift(curr.property.name);
+    } else {
+      path.length = 0;
+      complete = false;
+    }
+    curr = curr.object;
+  }
+  if (curr.type !== AST_NODE_TYPES.Identifier) return null;
+  return { root: curr, path: complete ? path : [] };
+}
+
+function getMutatedPaths(body: TSESTree.Node, skip: TSESTree.Node): StatePaths {
+  const mutated: StatePaths = new Map();
+
+  function add(name: string, path: string[]) {
+    const list = mutated.get(name);
+    if (list) list.push(path);
+    else mutated.set(name, [path]);
+  }
 
   function extractPattern(pattern: TSESTree.Node) {
     if (pattern.type === AST_NODE_TYPES.Identifier) {
-      assigned.add(pattern.name);
+      add(pattern.name, []);
     } else if (pattern.type === AST_NODE_TYPES.MemberExpression) {
-      const root = getRootIdentifier(pattern);
-      if (root) assigned.add(root.name);
+      const target = memberPath(pattern);
+      if (target) add(target.root.name, target.path);
     } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
       for (const prop of pattern.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
@@ -350,6 +367,7 @@ function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {
 
   function walk(node: TSESTree.Node) {
     if (
+      node === skip ||
       node.type === AST_NODE_TYPES.FunctionDeclaration ||
       node.type === AST_NODE_TYPES.FunctionExpression ||
       node.type === AST_NODE_TYPES.ArrowFunctionExpression
@@ -369,8 +387,10 @@ function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {
       MUTATING_METHODS.has(node.callee.property.name)
     ) {
       // collection mutated in the body carries state between iterations
-      const root = getRootIdentifier(node.callee.object);
-      if (root) assigned.add(root.name);
+      const receiver =
+        memberPath(node.callee.object) ??
+        (node.callee.object.type === AST_NODE_TYPES.Identifier ? { root: node.callee.object, path: [] } : null);
+      if (receiver) add(receiver.root.name, receiver.path);
     }
 
     for (const key of Object.keys(node)) {
@@ -389,7 +409,65 @@ function getAssignedIdentifiers(body: TSESTree.Node): Set<string> {
   }
 
   walk(body);
-  return assigned;
+  return mutated;
+}
+
+function pathsOverlap(a: string[], b: string[]): boolean {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function operandReadsMutatedState(operand: TSESTree.Node, mutated: StatePaths, loopVars: Set<string>): boolean {
+  let reads = false;
+
+  function walk(node: TSESTree.Node) {
+    if (reads) return;
+    if (node.type === AST_NODE_TYPES.Identifier) {
+      const parent = node.parent;
+      if (
+        parent &&
+        ((parent.type === AST_NODE_TYPES.MemberExpression && !parent.computed && parent.property === node) ||
+          (parent.type === AST_NODE_TYPES.Property && !parent.computed && parent.key === node) ||
+          (parent.type === AST_NODE_TYPES.MethodDefinition && !parent.computed && parent.key === node))
+      ) {
+        return;
+      }
+      const writes = mutated.get(node.name);
+      if (!writes || loopVars.has(node.name)) return;
+      const path: string[] = [];
+      let curr: TSESTree.Node = node;
+      while (curr.parent?.type === AST_NODE_TYPES.MemberExpression && curr.parent.object === curr) {
+        const member: TSESTree.MemberExpression = curr.parent;
+        if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) break;
+        path.push(member.property.name);
+        curr = member;
+      }
+      if (writes.some((w) => pathsOverlap(w, path))) {
+        reads = true;
+      }
+      return;
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) walk(item as TSESTree.Node);
+          }
+        } else if ('type' in child) {
+          walk(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+
+  walk(operand);
+  return reads;
 }
 
 function operandReferencesAny(operand: TSESTree.Node, targetVars: Set<string>, scope: Scope): boolean {
@@ -523,19 +601,10 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        // Silence if operand reads any variable reassigned in loop body (accumulator)
+        // Silence if operand reads state written elsewhere in the loop body (accumulator)
         const loopBody = (loopNode as TSESTree.ForOfStatement).body;
-        if (loopBody) {
-          const reassigned = getAssignedIdentifiers(loopBody);
-          const accumulators = new Set<string>();
-          for (const v of reassigned) {
-            if (!loopVars.has(v)) {
-              accumulators.add(v);
-            }
-          }
-          if (accumulators.size > 0 && operandReferencesAny(firstArg, accumulators, scope)) {
-            return;
-          }
+        if (loopBody && operandReadsMutatedState(firstArg, getMutatedPaths(loopBody, call), loopVars)) {
+          return;
         }
 
         context.report({
