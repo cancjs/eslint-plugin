@@ -127,22 +127,16 @@ export function isCancelErrorThrow(node: TSESTree.Node | null | undefined, conte
   return false;
 }
 
-const DEFAULT_MARKER_SETTINGS = {
-  sources: ['@cancjs/promise', '@cancjs/coroutine', '@cancjs/toolbox'],
-  cancelableTypeNames: ['CancelablePromise'],
-  lazyTypeNames: ['LazyPromise'],
-} as ResolvedCancSettings;
-
-/** The open-set marker is the canc `Unlisted` interface: its `_cancUnlisted` member is declared in a canc package. */
-export function isUnlistedMarker(
-  type: ts.Type,
-  checker: ts.TypeChecker,
-  settings: ResolvedCancSettings = DEFAULT_MARKER_SETTINGS,
-  context?: Context,
-): boolean {
+/** The open-set marker is any type with a `_cancUnlisted` member of literal type `true`, wherever it is declared. */
+export function isUnlistedMarker(type: ts.Type, checker: ts.TypeChecker): boolean {
   const marker = checker.getPropertiesOfType(type).find((p) => String(p.escapedName) === '_cancUnlisted');
-  return marker !== undefined && symbolDeclaredInCancSource(marker, settings, checker, context);
+  if (marker === undefined) {
+    return false;
+  }
+  const memberType = checker.getTypeOfSymbol(marker);
+  return Boolean(memberType.flags & ts.TypeFlags.BooleanLiteral) && checker.typeToString(memberType) === 'true';
 }
+
 
 function isCancCarrierType(
   type: ts.Type,
@@ -229,7 +223,7 @@ function extractFromFailureType(
   const listed: ts.Type[] = [];
 
   for (const part of parts) {
-    if (isUnlistedMarker(part, checker, settings, context)) {
+    if (isUnlistedMarker(part, checker)) {
       open = true;
     } else if (!isCancelErrorType(part, checker)) {
       listed.push(part);

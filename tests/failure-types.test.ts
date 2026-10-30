@@ -212,6 +212,9 @@ export type CarrierOrObject = CancelablePromise<string, FooError> | { z: 1 };
 export class Unlisted { readonly note = 1; }
 export type UserUnlisted = Unlisted;
 export type RealUnlisted = CancelablePromise<number, Unlisted>;
+export interface UnlistedCopy { readonly _cancUnlisted: true }
+export interface UnlistedWrongLiteral { readonly _cancUnlisted: false }
+export type CopyOpen = CancelablePromise<number, Unlisted | UnlistedCopy>;
 `,
     };
     let virtualProgram: ts.Program;
@@ -249,6 +252,14 @@ export type RealUnlisted = CancelablePromise<number, Unlisted>;
       expect(isUnlistedMarker(virtualType('b3-unlisted.ts', 'UserUnlisted'), virtualChecker)).toBe(false);
       const res = getFailureMembers(virtualType('b3-unlisted.ts', 'RealUnlisted'), virtualChecker);
       expect(res.open).toBe(false);
+      expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['Unlisted']);
+    });
+
+    it('a structural copy with a literal true _cancUnlisted member is the open-set marker', () => {
+      expect(isUnlistedMarker(virtualType('b3-unlisted.ts', 'UnlistedCopy'), virtualChecker)).toBe(true);
+      expect(isUnlistedMarker(virtualType('b3-unlisted.ts', 'UnlistedWrongLiteral'), virtualChecker)).toBe(false);
+      const res = getFailureMembers(virtualType('b3-unlisted.ts', 'CopyOpen'), virtualChecker);
+      expect(res.open).toBe(true);
       expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['Unlisted']);
     });
   });

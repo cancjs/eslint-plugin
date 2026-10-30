@@ -110,6 +110,12 @@ describe('no-failure-widening (typed lane)', () => {
        interface Mine<T, E> { readonly [FAILURE]?: E; value: T }
        declare const p: CancelablePromise<string, ErrorA> | Mine<string, ErrorB>;
        export const x = p as unknown as CancelablePromise<string, ErrorA>;`,
+      // A local structural copy of the open-set marker is the marker (silent)
+      `import type { CancelablePromise, Unlisted } from '@cancjs/promise';
+       interface UnlistedCopy { readonly _cancUnlisted: true; }
+       class ErrorA extends Error {}
+       declare const p: CancelablePromise<string, ErrorA | UnlistedCopy>;
+       export const open = p as CancelablePromise<string, ErrorA | Unlisted>;`,
       // Target union with a non-canc branch claims nothing about it: identical failures (silent)
       `import type { CancelablePromise } from '@cancjs/promise';
        class ErrorA extends Error {}
