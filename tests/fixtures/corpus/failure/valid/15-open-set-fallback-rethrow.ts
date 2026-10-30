@@ -1,11 +1,8 @@
 import { cancAsync, cancAwait } from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
+import type { Unlisted } from '@cancjs/promise';
 
 class ErrorA extends Error { readonly kind = 'ErrorA'; }
-interface Unlisted {
-  readonly _cancUnlisted: true;
-}
-
 declare function getOpen(): CancelablePromise<string, ErrorA | Unlisted>;
 
 export const run = cancAsync(function* () {
