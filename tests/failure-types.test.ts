@@ -208,6 +208,11 @@ export interface CarrierWithUserSymbol extends CancelError { readonly [FAILURE]?
 import { FooError } from './failure-test-cases.js';
 export type CarrierOrObject = CancelablePromise<string, FooError> | { z: 1 };
 `,
+      'b3-unlisted.ts': `import type { CancelablePromise } from '@cancjs/promise';
+export class Unlisted { readonly note = 1; }
+export type UserUnlisted = Unlisted;
+export type RealUnlisted = CancelablePromise<number, Unlisted>;
+`,
     };
     let virtualProgram: ts.Program;
     let virtualChecker: ts.TypeChecker;
@@ -238,6 +243,13 @@ export type CarrierOrObject = CancelablePromise<string, FooError> | { z: 1 };
       const res = getFailureMembers(virtualType('b3-union.ts', 'CarrierOrObject'), virtualChecker);
       expect(res.defined).toBe(false);
       expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['FooError']);
+    });
+
+    it('a user class named Unlisted is not the open-set marker', () => {
+      expect(isUnlistedMarker(virtualType('b3-unlisted.ts', 'UserUnlisted'), virtualChecker)).toBe(false);
+      const res = getFailureMembers(virtualType('b3-unlisted.ts', 'RealUnlisted'), virtualChecker);
+      expect(res.open).toBe(false);
+      expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['Unlisted']);
     });
   });
 

@@ -127,16 +127,21 @@ export function isCancelErrorThrow(node: TSESTree.Node | null | undefined, conte
   return false;
 }
 
-export function isUnlistedMarker(type: ts.Type, checker: ts.TypeChecker): boolean {
-  if (type.getProperty('_cancUnlisted')) {
-    return true;
-  }
-  const sym = type.aliasSymbol ?? type.getSymbol();
-  if (sym?.name === 'Unlisted') {
-    return true;
-  }
-  const props = checker.getPropertiesOfType(type);
-  return props.some((p) => p.name === '_cancUnlisted' || String(p.escapedName) === '_cancUnlisted');
+const DEFAULT_MARKER_SETTINGS = {
+  sources: ['@cancjs/promise', '@cancjs/coroutine', '@cancjs/toolbox'],
+  cancelableTypeNames: ['CancelablePromise'],
+  lazyTypeNames: ['LazyPromise'],
+} as ResolvedCancSettings;
+
+/** The open-set marker is the canc `Unlisted` interface: its `_cancUnlisted` member is declared in a canc package. */
+export function isUnlistedMarker(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  settings: ResolvedCancSettings = DEFAULT_MARKER_SETTINGS,
+  context?: Context,
+): boolean {
+  const marker = checker.getPropertiesOfType(type).find((p) => String(p.escapedName) === '_cancUnlisted');
+  return marker !== undefined && symbolDeclaredInCancSource(marker, settings, checker, context);
 }
 
 function isCancCarrierType(
@@ -203,7 +208,12 @@ function findFailureProperty(
   return undefined;
 }
 
-function extractFromFailureType(failureType: ts.Type, checker: ts.TypeChecker): FailureMembers {
+function extractFromFailureType(
+  failureType: ts.Type,
+  checker: ts.TypeChecker,
+  settings: ResolvedCancSettings,
+  context?: Context,
+): FailureMembers {
   if (failureType.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) {
     return { listed: [], open: false, defined: false };
   }
@@ -219,7 +229,7 @@ function extractFromFailureType(failureType: ts.Type, checker: ts.TypeChecker): 
   const listed: ts.Type[] = [];
 
   for (const part of parts) {
-    if (isUnlistedMarker(part, checker)) {
+    if (isUnlistedMarker(part, checker, settings, context)) {
       open = true;
     } else if (!isCancelErrorType(part, checker)) {
       listed.push(part);
@@ -290,7 +300,7 @@ export function getFailureMembers(
     const loc = failureProp.valueDeclaration ?? failureProp.declarations?.[0];
     const failureType = loc ? checker.getTypeOfSymbolAtLocation(failureProp, loc) : undefined;
     if (failureType) {
-      const res = extractFromFailureType(failureType, checker);
+      const res = extractFromFailureType(failureType, checker, resolvedSettings, context);
       if (res.defined) {
         return res;
       }
@@ -340,7 +350,7 @@ export function getFailureMembers(
         : symName === 'AsyncGenResult' ? 2
         : 1;
       if (args.length > failureArgIndex) {
-        return extractFromFailureType(args[failureArgIndex], checker);
+        return extractFromFailureType(args[failureArgIndex], checker, resolvedSettings, context);
       }
     }
   }
