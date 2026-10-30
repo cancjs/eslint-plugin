@@ -31,7 +31,7 @@ import {
 
 declare function writeAuditLog(reportId: string): Promise<void>;
 
-// A shielded promise ignores cancel, so there is no underlying work to wire to a cancel handler.
+// Shielded promise: cancel is ignored, so there is no underlying work to wire.
 const audit = new CancelablePromise<void>(
   (resolve, reject) => {
     writeAuditLog('report-1').then(() => resolve(), reject);
