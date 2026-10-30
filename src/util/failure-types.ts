@@ -553,49 +553,6 @@ function tsNodeFor<N extends TSESTree.Node>(map: NodeMap, node: N): TSESTreeToTS
   return map.get(node);
 }
 
-export function isClassUsedAsFailureInProgram(classDecl: TSESTree.ClassDeclaration, context: Context): boolean {
-  const services = getCancServices(context);
-  if (!services?.program) {
-    return false;
-  }
-  const program = services.program;
-  const checker = program.getTypeChecker();
-  const settings = getCancSettings(context);
-  const failureSymbols = getProgramFailureSymbols(program, checker, settings, context);
-
-  const nodeMap = services.esTreeNodeToTSNodeMap;
-  const tsNode = tsNodeFor(nodeMap, classDecl);
-  if (!tsNode) {
-    return false;
-  }
-  const classSym = checker.getSymbolAtLocation(classDecl.id ? (tsNodeFor(nodeMap, classDecl.id) ?? tsNode) : tsNode);
-  if (!classSym) {
-    return false;
-  }
-
-  if (failureSymbols.has(classSym)) {
-    return true;
-  }
-  if (classSym.flags & ts.SymbolFlags.Alias) {
-    try {
-      const aliased = checker.getAliasedSymbol(classSym);
-      if (failureSymbols.has(aliased)) {
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  const instType = services.getTypeAtLocation(classDecl);
-  const instSym = instType.getSymbol() ?? instType.aliasSymbol;
-  if (instSym && failureSymbols.has(instSym)) {
-    return true;
-  }
-
-  return false;
-}
-
 export function extendsErrorTransitively(classDecl: TSESTree.ClassDeclaration, context: Context): boolean {
   const services = getCancServices(context);
   if (!services?.program) {
@@ -652,26 +609,6 @@ export function formatTypeNames(types: ts.Type[], checker: ts.TypeChecker): stri
       return checker.typeToString(t);
     })
     .join(', ');
-}
-
-export function isExcludedClass(
-  node: TSESTree.ClassDeclaration,
-  context: Context,
-  compiledExclude: CompiledMatchers,
-): boolean {
-  if (compiledExclude.length === 0) {
-    return false;
-  }
-  const name = node.id?.name;
-  if (name && matchesName(compiledExclude, name)) {
-    return true;
-  }
-  const services = getCancServices(context);
-  if (!services?.program) {
-    return false;
-  }
-  const type = services.getTypeAtLocation(node);
-  return matchesType(compiledExclude, type, services.program.getTypeChecker(), services.program);
 }
 
 export function collectHandledCatchTypes(
