@@ -32,6 +32,8 @@
     "build": "tsdown",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run tests/integration",
+    "test:integration:setup": "npm ci --prefix tests/integration/lane9 && npm ci --prefix tests/integration/lane10",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:src": "eslint ./src",
