@@ -1,4 +1,4 @@
-// Source: coroutine.md > canc/no-cancellation-gap (strict tier) > Correct (block 1, gap closed via cancelify)
+// Source: coroutine.md > canc/no-cancellation-gap > Correct (block 1, closed via cancelify)
 import CancelablePromise, {
   CancelError,
   isCancelError,
@@ -34,8 +34,8 @@ interface Order {
 declare function pullOrdersCancelable(): CancelablePromise<Order[]>;
 declare function pushOrders(orders: Order[], signal: AbortSignal): Promise<void>;
 
-const pushOrdersCancelable = cancelify(({ getSignal }, orders: Order[]) =>
-  pushOrders(orders, getSignal()),
+const pushOrdersCancelable = cancelify(({ signal }, orders: Order[]) =>
+  pushOrders(orders, signal),
 );
 
 const syncOrders = cancAsync(function* () {

@@ -34,7 +34,7 @@ interface User {
 declare function fetchUserCancelable(): CancelablePromise<User>;
 
 const load = cancAsync(function* () {
-  cancAwait(fetchUserCancelable()); // lint: no-unstarred-cancawait cancAwait result unused, step never runs
+  cancAwait(fetchUserCancelable()); // lint: no-unstarred-cancawait:unusedCancAwait cancAwait result unused, step never runs
   return null;
 });
 

@@ -34,5 +34,5 @@ interface User {
 declare function fetchUserCancelable(): CancelablePromise<User>;
 declare function legacyAudit(userId: string): Promise<void>;
 
-const chain = fetchUserCancelable().then((user) => legacyAudit(user.id)); // lint: no-cancellation-gap gap in the chain
+const chain = fetchUserCancelable().then((user) => legacyAudit(user.id)); // lint: no-cancellation-gap:gapChainStep gap in the chain
 

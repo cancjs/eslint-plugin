@@ -32,9 +32,10 @@ declare function pollUntil(cb: () => boolean): unknown;
 
 function pollWithSignal(signal: AbortSignal) {
   let stopped = false;
-  signal.addEventListener('abort', () => {
-  stopped = true; // lint: no-abort-listener-leak added per call on a reused signal, never removed
-  });
+  const onAbort = () => {
+    stopped = true;
+  };
+  signal.addEventListener('abort', onAbort); // lint: no-abort-listener-leak:leakedAbortListener added per call on a reused signal, never removed
   return pollUntil(() => stopped);
 }
 

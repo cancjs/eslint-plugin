@@ -31,9 +31,8 @@ import {
 declare function prefetchAssets(): Promise<void>;
 
 function warmCache() {
-  const warmup = new LazyPromise<void>((resolve, reject) => {
-  prefetchAssets().then(resolve, reject);
+  const warmup = new LazyPromise<void>((resolve, reject) => { // lint: must-consume-lazy:unusedLazyVar local lazy promise never consumed; function returns without starting it
+    prefetchAssets().then(resolve, reject);
   });
-  // lint: must-consume-lazy local lazy promise never consumed; function returns without starting it
 }
 

@@ -1,8 +1,11 @@
+import { isTypeAnyType, isTypeNeverType, isTypeUnknownType } from '@typescript-eslint/type-utils';
 import type { ParserServicesWithTypeInformation } from '@typescript-eslint/typescript-estree';
 import { AST_NODE_TYPES, type TSESLint, type TSESTree } from '@typescript-eslint/utils';
+import { isIntrinsicType } from 'ts-api-utils';
 import type * as ts from 'typescript';
 
-import type { ResolvedCancSettings } from './settings.js';
+import { getCancBindings } from './canc-imports.js';
+import { getCancSettings, type ResolvedCancSettings } from './settings.js';
 
 /**
  * Return typed parser services when the linted file has full type information available, otherwise
@@ -38,14 +41,51 @@ function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/');
 }
 
+// Mirrors ts.SymbolFlags.Alias; typescript is a type-only import, so the enum is absent at runtime.
+const SYMBOL_FLAG_ALIAS = 2097152;
+
 /**
  * A symbol is a canc entity when at least one of its declarations lives in a declaration file under
  * one of the configured canc packages. Path-based nominal check: no runtime dependency on the real
  * packages, works against the hand-derived fixture stubs and against real installs alike.
  */
-function symbolDeclaredInCancSource(symbol: ts.Symbol | undefined, settings: ResolvedCancSettings): boolean {
-  const declarations = symbol?.getDeclarations();
-  if (!declarations || declarations.length === 0) {
+function symbolDeclaredInCancSource(
+  symbol: ts.Symbol | undefined,
+  settings: ResolvedCancSettings,
+  checker?: ts.TypeChecker,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  if (!symbol) {
+    return false;
+  }
+  let target = symbol;
+  if (checker && symbol.flags & SYMBOL_FLAG_ALIAS) {
+    try {
+      target = checker.getAliasedSymbol(target);
+    } catch {
+      // ignore
+    }
+  }
+
+  const declarations = [
+    ...(target.getDeclarations() ?? []),
+    ...(target !== symbol ? (symbol.getDeclarations() ?? []) : []),
+  ];
+
+  if (declarations.length === 0) {
+    if (context) {
+      const bindings = getCancBindings(context);
+      const name = symbol.getName();
+      const binding = bindings.get(name);
+      if (
+        binding &&
+        settings.sources.some(
+          (s) => binding.source === s || binding.source.startsWith(s + '/') || s.startsWith(binding.source),
+        )
+      ) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -89,6 +129,7 @@ function matchesNominalName(
   settings: ResolvedCancSettings,
   names: string[],
   seen: Set<ts.Type>,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
 ): boolean {
   if (seen.has(type)) {
     return false;
@@ -96,22 +137,35 @@ function matchesNominalName(
   seen.add(type);
 
   for (const part of typeParts(type)) {
-    if (part !== type && matchesNominalName(part, checker, settings, names, seen)) {
+    if (part !== type && matchesNominalName(part, checker, settings, names, seen, context)) {
       return true;
     }
 
     const target = 'target' in part ? (part as { target?: { symbol?: ts.Symbol } }).target : undefined;
     const targetSymbol = target?.symbol;
-    const symbol = part.getSymbol() ?? part.aliasSymbol ?? targetSymbol;
-    const nameMatch = typeNameMatches(symbol, names) || typeNameMatches(targetSymbol, names);
-    const sourceMatch =
-      symbolDeclaredInCancSource(symbol, settings) || symbolDeclaredInCancSource(targetSymbol, settings);
-    if (nameMatch && sourceMatch) {
-      return true;
+    const partSymbol = part.getSymbol();
+    const aliasSymbol = part.aliasSymbol;
+
+    const candidateSymbols = [partSymbol, aliasSymbol, targetSymbol];
+    for (const sym of candidateSymbols) {
+      if (!sym) continue;
+      if (typeNameMatches(sym, names) && symbolDeclaredInCancSource(sym, settings, checker, context)) {
+        return true;
+      }
+      if (sym.flags & SYMBOL_FLAG_ALIAS) {
+        try {
+          const aliased = checker.getAliasedSymbol(sym);
+          if (typeNameMatches(aliased, names) && symbolDeclaredInCancSource(aliased, settings, checker, context)) {
+            return true;
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
 
     for (const base of baseTypesOf(part, checker)) {
-      if (matchesNominalName(base, checker, settings, names, seen)) {
+      if (matchesNominalName(base, checker, settings, names, seen, context)) {
         return true;
       }
     }
@@ -125,8 +179,13 @@ function matchesNominalName(
  * a configured canc package? Walks unions and the base-type chain so subclasses match. Extra nominal
  * names are contributed by `settings.cancelableTypeNames`.
  */
-export function isCancelableType(type: ts.Type, checker: ts.TypeChecker, settings: ResolvedCancSettings): boolean {
-  return matchesNominalName(type, checker, settings, settings.cancelableTypeNames, new Set());
+export function isCancelableType(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  settings: ResolvedCancSettings,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  return matchesNominalName(type, checker, settings, settings.cancelableTypeNames, new Set(), context);
 }
 
 /**
@@ -134,8 +193,13 @@ export function isCancelableType(type: ts.Type, checker: ts.TypeChecker, setting
  * `isCancelableType`: a lazy promise is cancelable-ish but has different execution semantics, so
  * rules treat it as its own category.
  */
-export function isLazyType(type: ts.Type, checker: ts.TypeChecker, settings: ResolvedCancSettings): boolean {
-  return matchesNominalName(type, checker, settings, settings.lazyTypeNames, new Set());
+export function isLazyType(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  settings: ResolvedCancSettings,
+  context?: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  return matchesNominalName(type, checker, settings, settings.lazyTypeNames, new Set(), context);
 }
 
 /**
@@ -148,12 +212,30 @@ export function isCancelableExpression(
   settings: ResolvedCancSettings,
 ): boolean {
   const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+
+  const checker = services.program.getTypeChecker();
+  const type = services.getTypeAtLocation(node);
+  return isCancelableType(type, checker, settings, context);
+}
+
+/**
+ * Resolve the static type of an expression node and report whether it is a LazyPromise.
+ */
+export function isLazyExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings,
+): boolean {
+  const services = getCancServices(context);
   if (!services) {
     return false;
   }
 
   const type = services.getTypeAtLocation(node);
-  return isCancelableType(type, services.program.getTypeChecker(), settings);
+  return isLazyType(type, services.program.getTypeChecker(), settings, context);
 }
 
 /**
@@ -257,4 +339,301 @@ export function hasCancelableElements(
 
   const argType = services.getTypeAtLocation(argNode);
   return typeHasCancelableElement(argType, checker, settings);
+}
+
+/**
+ * True when expression `node` is typed as a plain (non-cancelable) promise sink.
+ * Degrades safely to false when no parser services or program exist.
+ */
+export function isPlainPromiseSinkExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(node);
+  return typeIsPlainPromiseSink(type, checker, settings);
+}
+
+/**
+ * True when expression `node` is typed as a CancelablePromise or LazyPromise.
+ */
+export function isCancelableOrLazyExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(node);
+  if (isCancelableType(type, checker, settings, context) || isLazyType(type, checker, settings, context)) {
+    return true;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    node.callee.type === AST_NODE_TYPES.MemberExpression &&
+    !node.callee.computed &&
+    node.callee.property.type === AST_NODE_TYPES.Identifier &&
+    ['then', 'catch', 'finally'].includes(node.callee.property.name)
+  ) {
+    return isCancelableOrLazyExpression(node.callee.object, context);
+  }
+
+  return false;
+}
+
+/**
+ * Check combinator argument (array of promises or iterable) and return any elements
+ * that are plain promise sinks.
+ */
+export function checkCombinatorGapElements(
+  argNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): TSESTree.Node[] {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return [];
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+
+  if (argNode.type === AST_NODE_TYPES.ArrayExpression) {
+    const gaps: TSESTree.Node[] = [];
+    for (const elem of argNode.elements) {
+      if (!elem) continue;
+      const target = elem.type === AST_NODE_TYPES.SpreadElement ? elem.argument : elem;
+      const elemType = services.getTypeAtLocation(target);
+      if (typeIsPlainPromiseSink(elemType, checker, settings)) {
+        gaps.push(target);
+      }
+    }
+    return gaps;
+  }
+
+  const argType = services.getTypeAtLocation(argNode);
+  const indexType = checker.getIndexTypeOfType(argType, 1 /* IndexKind.Number */);
+  if (indexType && typeIsPlainPromiseSink(indexType, checker, settings)) {
+    return [argNode];
+  }
+  return [];
+}
+
+/**
+ * Check if an inline callback (ArrowFunctionExpression or FunctionExpression) returns
+ * a plain-promise-typed value.
+ */
+export function inlineCallbackReturnsPlainPromise(
+  cbNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  if (cbNode.type !== AST_NODE_TYPES.ArrowFunctionExpression && cbNode.type !== AST_NODE_TYPES.FunctionExpression) {
+    return false;
+  }
+
+  if (cbNode.async) {
+    return true;
+  }
+
+  if (cbNode.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return isPlainPromiseSinkExpression(cbNode.body, context);
+  }
+
+  const returns: TSESTree.ReturnStatement[] = [];
+  function findReturns(node: TSESTree.Node): void {
+    if (
+      node !== cbNode &&
+      (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        node.type === AST_NODE_TYPES.FunctionExpression ||
+        node.type === AST_NODE_TYPES.FunctionDeclaration)
+    ) {
+      return;
+    }
+    if (node.type === AST_NODE_TYPES.ReturnStatement) {
+      returns.push(node);
+      return;
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) {
+              findReturns(item as TSESTree.Node);
+            }
+          }
+        } else if ('type' in child) {
+          findReturns(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+
+  findReturns(cbNode.body);
+
+  for (const ret of returns) {
+    if (ret.argument && isPlainPromiseSinkExpression(ret.argument, context)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Report whether typescript type services are available on the rule context.
+ */
+export function hasTypeServices(context: TSESLint.RuleContext<string, readonly unknown[]>): boolean {
+  return getCancServices(context) !== null;
+}
+
+/**
+ * Nominal check for pattern destructuring against cancelable types.
+ */
+export function isCancelablePattern(
+  pattern: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(pattern);
+  return isCancelableType(type, checker, settings, context);
+}
+
+/**
+ * Nominal check for executor context objects (e.g. IExecutorContext or IExecutorCtx)
+ * from configured canc sources.
+ */
+export function isExecutorContextExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const type = services.getTypeAtLocation(node);
+  if (matchesNominalName(type, checker, settings, ['IExecutorContext', 'IExecutorCtx'], new Set(), context)) {
+    return true;
+  }
+  const handleCancelProp = type.getProperty('handleCancel');
+  if (handleCancelProp && symbolDeclaredInCancSource(handleCancelProp, settings, checker, context)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True when the static type of `node` is thenable (Promise-like).
+ */
+export function isThenableExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const type = services.getTypeAtLocation(node);
+  return isThenableType(type, checker);
+}
+
+const NON_PRIMITIVE_INTRINSICS = new Set(['any', 'unknown', 'never', 'object', 'error']);
+
+function isPrimitiveType(type: ts.Type): boolean {
+  if (type.isUnion()) {
+    return type.types.every(isPrimitiveType);
+  }
+  if (type.isLiteral()) {
+    return true;
+  }
+  return isIntrinsicType(type) && !NON_PRIMITIVE_INTRINSICS.has(type.intrinsicName);
+}
+
+/**
+ * True when the static type of `node` is a primitive (boolean, string, number, bigint, symbol, void, null, undefined
+ * or a literal of one), so the value cannot carry an object such as a signal. False without type information.
+ */
+export function isPrimitiveExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  return isPrimitiveType(services.getTypeAtLocation(node));
+}
+
+/**
+ * True when `fnNode` is a function or callback whose return type is cancelable.
+ */
+export function isCancelableReturnFunction(
+  fnNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+
+  if (fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression && fnNode.body.type !== AST_NODE_TYPES.BlockStatement) {
+    if (isCancelableExpression(fnNode.body, context, settings)) {
+      return true;
+    }
+  }
+
+  const type = services.getTypeAtLocation(fnNode);
+  const signatures = type.getCallSignatures();
+  for (const sig of signatures) {
+    const returnType = sig.getReturnType();
+    if (isCancelableType(returnType, checker, settings, context)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isProvablyNonIteratorType(type: ts.Type): boolean {
+  if (type.isUnion()) {
+    return type.types.every(isProvablyNonIteratorType);
+  }
+  if (isTypeAnyType(type) || isTypeUnknownType(type) || isTypeNeverType(type)) {
+    return false;
+  }
+  return type.getProperty('next') === undefined && !type.isTypeParameter();
+}
+
+/**
+ * True when every call signature of `fnNode` returns a type that provably has no `next` method.
+ * Returns false without type information, or when a return type is `any`, `unknown`, `never` or generic.
+ */
+export function isNonIteratorReturnFunction(
+  fnNode: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const signatures = services.getTypeAtLocation(fnNode).getCallSignatures();
+  return signatures.length > 0 && signatures.every((sig) => isProvablyNonIteratorType(sig.getReturnType()));
 }

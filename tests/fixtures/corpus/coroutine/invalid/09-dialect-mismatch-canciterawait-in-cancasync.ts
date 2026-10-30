@@ -1,4 +1,4 @@
-// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Incorrect (block 2, cancGenAwait inside cancAsync)
+// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Incorrect (cancGenAwait in cancAsync)
 import CancelablePromise, {
   CancelError,
   isCancelError,
@@ -34,7 +34,7 @@ interface User {
 declare function fetchUserCancelable(): CancelablePromise<User>;
 
 const load = cancAsync(function* () {
-  const user = yield* cancGenAwait(fetchUserCancelable()); // lint: no-coroutine-dialect-mismatch cancGenAwait inside cancAsync
+  const user = yield* cancGenAwait(fetchUserCancelable()); // lint: no-coroutine-dialect-mismatch:iterAwaitInCancAsync cancGenAwait inside cancAsync
   return user;
 });
 

@@ -36,7 +36,7 @@ declare function fetchUserCancelable(id: string): CancelablePromise<User>;
 const loadAll = cancAsync(function* (ids: string[]) {
   const users: User[] = [];
   for (const id of ids) {
-  users.push(yield* cancAwait(fetchUserCancelable(id))); // lint: no-yield-await-in-loop independent steps serialized
+    users.push(yield* cancAwait(fetchUserCancelable(id))); // lint: no-yield-await-in-loop:serializedSteps independent steps serialized
   }
   return users;
 });

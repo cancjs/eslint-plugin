@@ -33,7 +33,7 @@ interface User {
 }
 declare function fetchUserCancelable(): CancelablePromise<User>;
 
-const load = cancAsync(async function () { // lint: valid-cancasync async function passed to cancAsync
+const load = cancAsync(async function () { // lint: valid-cancasync:asyncFunction async function passed to cancAsync
   return await fetchUserCancelable();
 });
 

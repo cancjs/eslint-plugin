@@ -33,7 +33,7 @@ interface User {
 }
 declare function fetchUserCancelable(): CancelablePromise<User>;
 
-const load = cancAsync(function* (): any { // lint: valid-cancasync any return annotation collapses every step type
+const load = cancAsync(function* (): any { // lint: valid-cancasync:anyReturnAnnotation any return annotation collapses every step type
   const user = yield* cancAwait(fetchUserCancelable());
   return user;
 });

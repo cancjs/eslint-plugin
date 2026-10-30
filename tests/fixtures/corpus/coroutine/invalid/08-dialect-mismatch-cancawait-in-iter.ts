@@ -1,4 +1,4 @@
-// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Incorrect (block 1, cancAwait inside cancGenAsync)
+// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Incorrect (cancAwait in iter)
 import CancelablePromise, {
   CancelError,
   isCancelError,
@@ -34,7 +34,7 @@ interface Page {
 declare function fetchPageCancelable(): CancelablePromise<Page>;
 
 const streamOrders = cancGenAsync(function* () {
-  const page = yield* cancAwait(fetchPageCancelable()); // lint: no-coroutine-dialect-mismatch cancAwait inside cancGenAsync
+  const page = yield* cancAwait(fetchPageCancelable()); // lint: no-coroutine-dialect-mismatch:cancAwaitInIter cancAwait inside cancGenAsync
   yield page.items;
 });
 

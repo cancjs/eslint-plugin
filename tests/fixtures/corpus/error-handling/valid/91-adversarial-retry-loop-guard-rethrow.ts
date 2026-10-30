@@ -28,7 +28,7 @@ import {
 } from '@cancjs/toolbox';
 
 declare function attemptFetch(): CancelablePromise<string>;
-declare function delay(ms: number): Promise<void>;
+declare function delay(ms: number): CancelablePromise<void>;
 
 export const fetchWithRetry = cancAsync(function* () {
   let attempts = 0;

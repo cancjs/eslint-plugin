@@ -30,7 +30,7 @@ import {
 
 declare function connectAnalytics(): Promise<void>;
 
-new LazyPromise((resolve, reject) => {
-  connectAnalytics().then(resolve, reject); // lint: must-consume-lazy never subscribed, never runs
+new LazyPromise((resolve, reject) => { // lint: must-consume-lazy:unusedLazy never subscribed, never runs
+  connectAnalytics().then(resolve, reject);
 });
 

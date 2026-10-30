@@ -41,7 +41,7 @@ declare function legacyAnalytics(): Promise<void>;
 declare function render(results: SearchResult[], details: Details, legacy: void): void;
 
 async function refreshView(): Promise<void> {
-  const results = await searchCancelable(query); // lint: no-await-cancelable-in-async cancelable awaited in plain async fn
+  const results = await searchCancelable(query); // lint: no-await-cancelable-in-async cancelable consumed via await in plain async fn
   const details = await fetchDetailsCancelable(results[0].id); // lint: no-await-cancelable-in-async
   const legacy = await legacyAnalytics(); // plain promise mixed into the same flow
   render(results, details, legacy);

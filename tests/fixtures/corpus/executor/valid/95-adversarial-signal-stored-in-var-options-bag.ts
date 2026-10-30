@@ -30,7 +30,7 @@ import {
 
 declare function fetchOp(options: { signal: AbortSignal }): Promise<string>;
 
-export const bag = new CancelablePromise<string>((resolve, reject, { getSignal }) => {
-  const sig = getSignal();
+export const bag = new CancelablePromise<string>((resolve, reject, { signal }) => {
+  const sig = signal;
   fetchOp({ signal: sig }).then(resolve, reject);
 });

@@ -33,6 +33,7 @@ interface Profile {
 }
 declare function fetchProfile(url: string, init?: { signal?: AbortSignal }): Promise<Profile>;
 
+// eslint-disable-next-line canc/prefer-signal-accessor
 const profile = new CancelablePromise<Profile>((resolve, reject, { getSignal }) => {
   fetchProfile('/api/user', { signal: getSignal() }).then(resolve, reject);
 });

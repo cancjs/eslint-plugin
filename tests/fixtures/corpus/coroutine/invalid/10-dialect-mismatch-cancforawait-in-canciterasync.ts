@@ -1,4 +1,4 @@
-// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Incorrect (block 3, cancForAwait inside cancGenAsync)
+// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Incorrect (cancForAwait in iter)
 import CancelablePromise, {
   CancelError,
   isCancelError,
@@ -33,7 +33,7 @@ interface Order {
 }
 
 const collect = cancGenAsync(function* (source: AsyncIterable<Order>) {
-  const all = yield* cancForAwait(source); // lint: no-coroutine-dialect-mismatch cancForAwait inside cancGenAsync
+  const all = yield* cancForAwait(source); // lint: no-coroutine-dialect-mismatch:forAwaitInIter cancForAwait inside cancGenAsync
   yield all;
 });
 

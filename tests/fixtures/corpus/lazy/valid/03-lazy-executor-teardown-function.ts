@@ -38,7 +38,7 @@ interface FeedSocket {
 }
 declare function openFeedSocket(): FeedSocket;
 
-const feed = new LazyPromise<Feed>((resolve, reject) => {
+export const feed = new LazyPromise<Feed>((resolve, reject) => {
   const socket = openFeedSocket();
   socket.onData(resolve);
   socket.onError(reject);

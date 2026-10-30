@@ -28,6 +28,7 @@ import {
   suppressTimeout,
 } from '@cancjs/toolbox';
 
+// eslint-disable-next-line canc/prefer-signal-accessor
 const cancPromise = new CancelablePromise<void>((resolve, reject, { handleCancel, getSignal }) => {
   resolve();
 });

@@ -33,7 +33,7 @@ interface Result {
 }
 declare function rawFetch(orderId: string, signal: AbortSignal): Promise<Result>;
 
-const fetchOrder = cancelify(({ getSignal }, orderId: string) => rawFetch(orderId, getSignal()));
+const fetchOrder = cancelify(({ signal }, orderId: string) => rawFetch(orderId, signal));
 
 const run = cancAsync(function* (orderId: string) {
   return yield* cancAwait(fetchOrder(orderId)); // cancel the coroutine, the wrapped op aborts

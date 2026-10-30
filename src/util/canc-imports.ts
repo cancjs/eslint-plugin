@@ -18,7 +18,7 @@ export interface CancBinding {
   namespace: boolean;
 }
 
-type Context = TSESLint.RuleContext<string, unknown[]>;
+type Context = TSESLint.RuleContext<string, readonly unknown[]>;
 
 const bindingCache = new WeakMap<object, Map<string, CancBinding>>();
 
@@ -465,4 +465,306 @@ export function isCancForAwaitNext(node: TSESTree.Node | null | undefined, conte
     return false;
   }
   return isHelperIdent(node.object, context, 'cancForAwait') || isHelperIdent(node.object, context, 'cancGenForAwait');
+}
+
+export interface CoroutineContext {
+  kind: 'cancAsync' | 'cancGenAsync';
+  genFn: TSESTree.FunctionExpression | TSESTree.FunctionDeclaration;
+  call: TSESTree.CallExpression | null; // null for a delegated helper generator
+  options: TSESTree.ObjectExpression | null; // cancAsync 3rd arg, cancGenAsync 2nd arg, object literal only
+  delegated: boolean;
+}
+
+const coroutineContextCache = new WeakMap<object, Map<TSESTree.Node, CoroutineContext>>();
+
+function unwrapParens(node: TSESTree.Node): TSESTree.Node {
+  let curr = node;
+  while (
+    curr.type === AST_NODE_TYPES.TSAsExpression ||
+    curr.type === AST_NODE_TYPES.TSTypeAssertion ||
+    curr.type === AST_NODE_TYPES.TSNonNullExpression
+  ) {
+    curr = curr.expression;
+  }
+  return curr;
+}
+
+function resolveGeneratorFnFromIdentifier(
+  node: TSESTree.Identifier,
+  context: Context,
+): TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | null {
+  const variable = findVariable(node, context);
+  if (!variable || variable.defs.length === 0) {
+    return null;
+  }
+  for (const def of variable.defs) {
+    if (def.node.type === AST_NODE_TYPES.FunctionDeclaration && def.node.generator && !def.node.async) {
+      return def.node;
+    }
+    if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
+      const init = unwrapParens(def.node.init);
+      if (
+        (init.type === AST_NODE_TYPES.FunctionExpression || init.type === AST_NODE_TYPES.FunctionDeclaration) &&
+        init.generator &&
+        !init.async
+      ) {
+        return init;
+      }
+    }
+  }
+  return null;
+}
+
+function getCoroutineFileMap(context: Context): Map<TSESTree.Node, CoroutineContext> {
+  const program = context.sourceCode.ast;
+  const cached = coroutineContextCache.get(program);
+  if (cached) {
+    return cached;
+  }
+
+  const map = new Map<TSESTree.Node, CoroutineContext>();
+  coroutineContextCache.set(program, map);
+
+  interface Candidate {
+    kind: 'cancAsync' | 'cancGenAsync';
+    call: TSESTree.CallExpression;
+    options: TSESTree.ObjectExpression | null;
+  }
+  const rootCandidates = new Map<TSESTree.FunctionDeclaration | TSESTree.FunctionExpression, Candidate[]>();
+
+  function registerRoot(
+    fn: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression,
+    kind: 'cancAsync' | 'cancGenAsync',
+    call: TSESTree.CallExpression,
+    options: TSESTree.ObjectExpression | null,
+  ): void {
+    const list = rootCandidates.get(fn) ?? [];
+    list.push({ kind, call, options });
+    rootCandidates.set(fn, list);
+  }
+
+  function walkAST(node: TSESTree.Node): void {
+    if (node.type === AST_NODE_TYPES.CallExpression) {
+      let kind: 'cancAsync' | 'cancGenAsync' | null = null;
+      if (isCoroutineFnIdent(node.callee, context, 'cancAsync')) {
+        kind = 'cancAsync';
+      } else if (isCoroutineFnIdent(node.callee, context, 'cancGenAsync')) {
+        kind = 'cancGenAsync';
+      }
+
+      if (kind) {
+        let options: TSESTree.ObjectExpression | null = null;
+        if (kind === 'cancAsync') {
+          if (node.arguments[2]?.type === AST_NODE_TYPES.ObjectExpression) {
+            options = node.arguments[2];
+          }
+        } else {
+          if (node.arguments[1]?.type === AST_NODE_TYPES.ObjectExpression) {
+            options = node.arguments[1];
+          }
+        }
+
+        const arg0 = node.arguments[0];
+        if (arg0) {
+          const unwrapped = unwrapParens(arg0);
+          if (
+            (unwrapped.type === AST_NODE_TYPES.FunctionExpression ||
+              unwrapped.type === AST_NODE_TYPES.FunctionDeclaration) &&
+            unwrapped.generator &&
+            !unwrapped.async
+          ) {
+            registerRoot(unwrapped, kind, node, options);
+          } else if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+            const genFn = resolveGeneratorFnFromIdentifier(unwrapped, context);
+            if (genFn) {
+              registerRoot(genFn, kind, node, options);
+            }
+          }
+        }
+      }
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) {
+              walkAST(item as TSESTree.Node);
+            }
+          }
+        } else if ('type' in child) {
+          walkAST(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+
+  walkAST(program);
+
+  for (const [fn, candidates] of rootCandidates) {
+    const kinds = new Set(candidates.map((c) => c.kind));
+    if (kinds.size === 1) {
+      const first = candidates[0];
+      map.set(fn, {
+        kind: first.kind,
+        genFn: fn,
+        call: first.call,
+        options: first.options,
+        delegated: false,
+      });
+    }
+  }
+
+  function collectYieldDelegates(
+    fn: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression,
+  ): (TSESTree.FunctionDeclaration | TSESTree.FunctionExpression)[] {
+    const delegates: (TSESTree.FunctionDeclaration | TSESTree.FunctionExpression)[] = [];
+    function scan(node: TSESTree.Node): void {
+      if (
+        node !== fn &&
+        (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+          node.type === AST_NODE_TYPES.FunctionExpression ||
+          node.type === AST_NODE_TYPES.ArrowFunctionExpression)
+      ) {
+        return;
+      }
+      if (node.type === AST_NODE_TYPES.YieldExpression && node.delegate && node.argument) {
+        const unwrapped = unwrapParens(node.argument);
+        if (unwrapped.type === AST_NODE_TYPES.CallExpression) {
+          const callee = unwrapParens(unwrapped.callee);
+          if (callee.type === AST_NODE_TYPES.Identifier) {
+            const target = resolveGeneratorFnFromIdentifier(callee, context);
+            if (target && target !== fn) {
+              delegates.push(target);
+            }
+          } else if (
+            (callee.type === AST_NODE_TYPES.FunctionExpression || callee.type === AST_NODE_TYPES.FunctionDeclaration) &&
+            callee.generator &&
+            callee !== fn
+          ) {
+            delegates.push(callee);
+          }
+        } else if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+          const target = resolveGeneratorFnFromIdentifier(unwrapped, context);
+          if (target && target !== fn) {
+            delegates.push(target);
+          }
+        }
+      }
+      for (const key of Object.keys(node)) {
+        if (key === 'parent') continue;
+        const child = (node as unknown as Record<string, unknown>)[key];
+        if (child && typeof child === 'object') {
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              if (item && typeof item === 'object' && 'type' in item) {
+                scan(item as TSESTree.Node);
+              }
+            }
+          } else if ('type' in child) {
+            scan(child as TSESTree.Node);
+          }
+        }
+      }
+    }
+    if (fn.body) {
+      scan(fn.body);
+    }
+    return delegates;
+  }
+
+  const reachableDialects = new Map<
+    TSESTree.FunctionDeclaration | TSESTree.FunctionExpression,
+    Set<'cancAsync' | 'cancGenAsync'>
+  >();
+
+  for (const [rootFn, rootCtx] of Array.from(map.entries())) {
+    const visited = new Set<TSESTree.Node>([rootFn]);
+    const queue: (TSESTree.FunctionDeclaration | TSESTree.FunctionExpression)[] = [
+      rootFn as TSESTree.FunctionDeclaration | TSESTree.FunctionExpression,
+    ];
+
+    while (queue.length > 0) {
+      const currentFn = queue.shift()!;
+      const targets = collectYieldDelegates(currentFn);
+      for (const target of targets) {
+        if (rootCandidates.has(target)) {
+          continue;
+        }
+        let dialects = reachableDialects.get(target);
+        if (!dialects) {
+          dialects = new Set();
+          reachableDialects.set(target, dialects);
+        }
+        dialects.add(rootCtx.kind);
+
+        if (!visited.has(target)) {
+          visited.add(target);
+          queue.push(target);
+        }
+      }
+    }
+  }
+
+  for (const [target, dialects] of reachableDialects) {
+    if (dialects.size === 1) {
+      const kind = Array.from(dialects)[0];
+      map.set(target, {
+        kind,
+        genFn: target,
+        call: null,
+        options: null,
+        delegated: true,
+      });
+    }
+  }
+
+  return map;
+}
+
+export function getCoroutineContext(node: TSESTree.Node, context: Context): CoroutineContext | null {
+  const fileMap = getCoroutineFileMap(context);
+
+  if (node.type === AST_NODE_TYPES.CallExpression) {
+    const arg0 = node.arguments[0];
+    if (arg0) {
+      const unwrapped = unwrapParens(arg0);
+      if (
+        unwrapped.type === AST_NODE_TYPES.FunctionDeclaration ||
+        unwrapped.type === AST_NODE_TYPES.FunctionExpression
+      ) {
+        const ctx = fileMap.get(unwrapped);
+        if (ctx) return ctx;
+      } else if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+        const genFn = resolveGeneratorFnFromIdentifier(unwrapped, context);
+        if (genFn) {
+          const ctx = fileMap.get(genFn);
+          if (ctx) return ctx;
+        }
+      }
+    }
+  }
+
+  let curr: TSESTree.Node | undefined = node;
+  let enclosingFn: TSESTree.FunctionLike | null = null;
+
+  while (curr) {
+    if (
+      curr.type === AST_NODE_TYPES.FunctionDeclaration ||
+      curr.type === AST_NODE_TYPES.FunctionExpression ||
+      curr.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      enclosingFn = curr;
+      break;
+    }
+    curr = curr.parent;
+  }
+
+  if (!enclosingFn?.generator || enclosingFn.async) {
+    return null;
+  }
+
+  return fileMap.get(enclosingFn) ?? null;
 }

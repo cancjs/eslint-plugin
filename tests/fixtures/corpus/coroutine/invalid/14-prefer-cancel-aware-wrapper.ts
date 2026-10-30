@@ -14,6 +14,7 @@ import {
   cancelify,
   promisify,
   promisifyAll,
+  createAbortSignal,
   LazyPromise,
   createLazyPromise,
   AbortError,
@@ -34,16 +35,16 @@ interface Result {
 declare function rawFetch(orderId: string, signal: AbortSignal): Promise<Result>;
 
 const run = cancAsync(function* (orderId: string) {
-  const { signal, abort } = createAbortSignal(); // lint: prefer-cancel-aware-wrapper hand-rolled cancel propagation
+  const { signal, abort } = createAbortSignal();
   let completed = false;
   try {
-  const res = yield* cancAwait(makeCancelable(rawFetch(orderId, signal)));
-  completed = true;
-  return res;
+    const res = yield* cancAwait(makeCancelable(rawFetch(orderId, signal)));
+    completed = true;
+    return res;
   } finally {
-  if (!completed) {
-  abort();
-  }
+    if (!completed) {
+      abort(); // lint: prefer-cancel-aware-wrapper:manualCancelWiring hand-rolled cancel propagation
+    }
   }
 });
 
