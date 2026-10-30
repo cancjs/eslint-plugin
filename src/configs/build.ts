@@ -9,6 +9,15 @@ export interface PluginConfigs {
   stylistic: Linter.Config[];
 }
 
+// Strict is recommended with every warning promoted to error, plus strict-only rows.
+// An explicit strict value always wins.
+function strictSeverity(entry: TierEntry): RuleSeverity | undefined {
+  if (entry.strict) {
+    return entry.strict;
+  }
+  return entry.recommended === 'warn' ? 'error' : entry.recommended;
+}
+
 export function buildConfigs(plugin: unknown, tiers: Record<string, TierEntry>): PluginConfigs {
   const recommendedRules: Record<string, RuleSeverity> = {};
   const strictRules: Record<string, RuleSeverity> = {};
@@ -21,9 +30,9 @@ export function buildConfigs(plugin: unknown, tiers: Record<string, TierEntry>):
       recommendedRules[ruleKey] = entry.recommended;
     }
 
-    const strictSeverity = entry.strict ?? entry.recommended;
-    if (strictSeverity) {
-      strictRules[ruleKey] = strictSeverity;
+    const strict = strictSeverity(entry);
+    if (strict) {
+      strictRules[ruleKey] = strict;
     }
 
     if (entry.stylistic) {
