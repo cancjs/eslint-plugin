@@ -31,6 +31,6 @@ import {
 declare const value: unknown;
 
 if (isCancPromise(value)) {
-  value.cancel();
+  void value.cancel();
 }
 

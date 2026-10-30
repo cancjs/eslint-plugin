@@ -30,4 +30,4 @@ import {
 
 declare function compute(a: number, b: number): number;
 
-CancelablePromise.try(compute, 1, 2);
+void CancelablePromise.try(compute, 1, 2);

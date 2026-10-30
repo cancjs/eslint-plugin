@@ -28,4 +28,4 @@ import {
   suppressTimeout,
 } from '@cancjs/toolbox';
 
-CancelablePromise.reject(new Error('fail'), {});
+void CancelablePromise.reject(new Error('fail'), {});

@@ -30,4 +30,4 @@ import {
 
 declare const controller: AbortController;
 
-CancelablePromise.all([Promise.resolve(1)], { signal: controller.signal });
+void CancelablePromise.all([Promise.resolve(1)], { signal: controller.signal });
