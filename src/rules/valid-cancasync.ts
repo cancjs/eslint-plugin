@@ -5,7 +5,7 @@ import { isCoroutineFnIdent } from '../util/canc-imports.js';
 import { isNonIteratorReturnFunction } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
 
-export type MessageIds = 'asyncFunction' | 'asyncGenerator' | 'anyReturnAnnotation';
+export type MessageIds = 'asyncFunction' | 'syncFunction' | 'asyncGenerator' | 'anyReturnAnnotation';
 export type RuleOptions = [];
 
 function unwrapParens(node: TSESTree.Node): TSESTree.Node {
@@ -88,6 +88,8 @@ export default createRule<RuleOptions, MessageIds>({
     messages: {
       asyncFunction:
         "'{{driver}}' needs a generator function. An async function has no steps for the driver to run or cancel. Use 'function*' and write 'yield* {{await}}(...)' for each await.",
+      syncFunction:
+        "'{{driver}}' needs a generator function. This function returns a value that is not an iterator, so the driver has no steps to run or cancel. Use 'function*' and write 'yield* {{await}}(...)' for each await.",
       asyncGenerator:
         "'{{driver}}' cannot drive an async generator. Use a plain generator function and write 'yield* {{await}}(...)' for each await.",
       anyReturnAnnotation:
@@ -132,7 +134,7 @@ export default createRule<RuleOptions, MessageIds>({
         if (!fn.generator && (fn.async || isNonIteratorReturnFunction(fn, context))) {
           context.report({
             node: reportNode,
-            messageId: 'asyncFunction',
+            messageId: fn.async ? 'asyncFunction' : 'syncFunction',
             data: { driver, await: awaitName },
           });
           return;

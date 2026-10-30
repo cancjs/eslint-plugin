@@ -203,7 +203,7 @@ describe('valid-cancasync', () => {
                const load = cancAsync(() => 42);`,
         errors: [
           {
-            messageId: 'asyncFunction' as const,
+            messageId: 'syncFunction' as const,
             line: 2,
             data: { driver: 'cancAsync', await: 'cancAwait' },
           },
@@ -215,7 +215,7 @@ describe('valid-cancasync', () => {
                cancAsync(load);`,
         errors: [
           {
-            messageId: 'asyncFunction' as const,
+            messageId: 'syncFunction' as const,
             line: 3,
             data: { driver: 'cancAsync', await: 'cancAwait' },
           },
