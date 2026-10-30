@@ -536,8 +536,13 @@ function hasRethrowInStatements(statements: TSESTree.Statement[], paramName: str
         return true;
       }
     }
-    if (stmt.type === AST_NODE_TYPES.IfStatement && stmt.alternate) {
-      if (statementRethrowsParam(stmt.alternate, paramName, context)) {
+    if (stmt.type === AST_NODE_TYPES.IfStatement) {
+      // the fallback of an else-if chain sits on the last alternate
+      let alternate = stmt.alternate;
+      while (alternate?.type === AST_NODE_TYPES.IfStatement) {
+        alternate = alternate.alternate;
+      }
+      if (alternate && statementRethrowsParam(alternate, paramName, context)) {
         return true;
       }
     }

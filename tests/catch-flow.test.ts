@@ -282,6 +282,35 @@ try {} catch (err) {
     expect(analysis.via).toBe('rethrow');
   });
 
+  it('passes rethrow in the final else of an else-if chain', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (err) {
+  if (err instanceof TypeError) {
+    toast(err);
+  } else if (err instanceof RangeError) {
+    toast(err);
+  } else {
+    throw err;
+  }
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('rethrow');
+  });
+
+  it('rejects an else-if chain without a final rethrow', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (err) {
+  if (err instanceof TypeError) {
+    toast(err);
+  } else if (err instanceof RangeError) {
+    toast(err);
+  }
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
   it('passes a coroutine rethrow through the throw helper', () => {
     const code = `${IMPORT_PREAMBLE}
 import { cancThrow as fail } from '@cancjs/coroutine';
