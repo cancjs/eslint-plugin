@@ -1,4 +1,10 @@
-import { isTypeAnyType, isTypeNeverType, isTypeUnknownType } from '@typescript-eslint/type-utils';
+import {
+  isTypeAnyType,
+  isTypeNeverType,
+  isTypeUnknownType,
+  typeMatchesSomeSpecifier,
+  type TypeOrValueSpecifier,
+} from '@typescript-eslint/type-utils';
 import type { ParserServicesWithTypeInformation } from '@typescript-eslint/typescript-estree';
 import { AST_NODE_TYPES, type TSESLint, type TSESTree } from '@typescript-eslint/utils';
 import { isIntrinsicType } from 'ts-api-utils';
@@ -621,4 +627,117 @@ export function isNonIteratorReturnFunction(
   }
   const signatures = services.getTypeAtLocation(fnNode).getCallSignatures();
   return signatures.length > 0 && signatures.every((sig) => isProvablyNonIteratorType(sig.getReturnType()));
+}
+
+function contextualSinkType(
+  node: TSESTree.Expression,
+  services: ParserServicesWithTypeInformation,
+  checker: ts.TypeChecker,
+): ts.Type | undefined {
+  const tsNode = services.esTreeNodeToTSNodeMap.get(node) as ts.Expression;
+  return checker.getContextualType(tsNode);
+}
+
+/**
+ * True when the type the surrounding code expects for `node` (call parameter, annotated variable or
+ * assignment target, contextual property or array element type) is a plain promise sink. False
+ * without type information.
+ */
+export function isPlainPromiseContextualSink(
+  node: TSESTree.Expression,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const sinkType = contextualSinkType(node, services, checker);
+  return sinkType !== undefined && typeIsPlainPromiseSink(sinkType, checker, getCancSettings(context));
+}
+
+/**
+ * True when the return type a function promises its callers is a plain promise sink: the declared
+ * return type when annotated, otherwise the return type of the function's contextual signature
+ * (e.g. the annotation of the variable it initializes). False without type information.
+ */
+export function isPlainPromiseReturnSink(
+  fnNode: TSESTree.FunctionLike,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const tsFn = services.esTreeNodeToTSNodeMap.get(fnNode) as ts.SignatureDeclaration;
+
+  let returnType: ts.Type | undefined;
+  if (fnNode.returnType) {
+    returnType = checker.getSignatureFromDeclaration(tsFn)?.getReturnType();
+  } else if (
+    fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    fnNode.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    const contextual = checker.getContextualType(tsFn as ts.Expression);
+    returnType = contextual?.getCallSignatures()[0]?.getReturnType();
+  }
+  return returnType !== undefined && typeIsPlainPromiseSink(returnType, checker, settings);
+}
+
+/**
+ * True when the signature a call or `new` expression resolves to is declared in a configured canc
+ * package (for example `CancelablePromise.resolve` or an executor `resolve`). Such callees adopt
+ * cancelable values on purpose. False without type information.
+ */
+export function isCancDeclaredCallee(
+  call: TSESTree.CallExpression | TSESTree.NewExpression,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const settings = getCancSettings(context);
+  const signature = checker.getResolvedSignature(services.esTreeNodeToTSNodeMap.get(call));
+  const declaration = signature?.getDeclaration() as ts.Declaration | undefined;
+  if (!declaration) {
+    return false;
+  }
+  const filePath = normalizePath(declaration.getSourceFile().fileName);
+  return settings.sources.map(sourceToPackageSegment).some((segment) => filePath.includes(segment));
+}
+
+/**
+ * True when the sink `node` flows into matches one of `specifiers`: either the expected (sink) type
+ * itself or, for a call argument, the callee's type. Backs allow-lists of callees known to consume
+ * cancelable values safely. False without type information.
+ */
+export function sinkMatchesSomeSpecifier(
+  node: TSESTree.Expression,
+  specifiers: TypeOrValueSpecifier[],
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  if (specifiers.length === 0) {
+    return false;
+  }
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const sinkType = contextualSinkType(node, services, checker);
+  if (sinkType && typeMatchesSomeSpecifier(sinkType, specifiers, services.program)) {
+    return true;
+  }
+  const call = node.parent;
+  if (
+    (call?.type === AST_NODE_TYPES.CallExpression || call?.type === AST_NODE_TYPES.NewExpression) &&
+    call.arguments.includes(node)
+  ) {
+    return typeMatchesSomeSpecifier(services.getTypeAtLocation(call.callee), specifiers, services.program);
+  }
+  return false;
 }

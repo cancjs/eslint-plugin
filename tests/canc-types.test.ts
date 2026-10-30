@@ -1,11 +1,16 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { describe } from 'vitest';
 
 import {
   getCancServices,
+  isCancDeclaredCallee,
   isCancelableExpression,
   isCancelableType,
   isLazyType,
+  isPlainPromiseContextualSink,
+  isPlainPromiseReturnSink,
+  sinkMatchesSomeSpecifier,
   typeIsPlainPromiseSink,
 } from '../src/util/canc-types.js';
 import { getCancSettings } from '../src/util/settings.js';
@@ -154,5 +159,107 @@ describe('canc-types: untyped degrade', () => {
         errors: [{ messageId: 'noServices' }],
       },
     ],
+  });
+});
+
+type SinkMessageIds = 'contextualSink' | 'returnSink' | 'cancCallee' | 'safeSink';
+
+// reports sink helper verdicts for initializers, call arguments, returns and calls
+const sinkProbeRule: TSESLint.RuleModule<SinkMessageIds, []> = {
+  defaultOptions: [],
+  meta: {
+    type: 'problem',
+    docs: { description: 'probe sink type helpers' },
+    messages: {
+      contextualSink: 'contextualSink',
+      returnSink: 'returnSink',
+      cancCallee: 'cancCallee',
+      safeSink: 'safeSink',
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      'VariableDeclarator > .init'(node: TSESTree.Expression) {
+        if (isPlainPromiseContextualSink(node, context)) {
+          context.report({ node, messageId: 'contextualSink' });
+        }
+      },
+      'CallExpression > .arguments'(node: TSESTree.Expression) {
+        if (isPlainPromiseContextualSink(node, context)) {
+          context.report({ node, messageId: 'contextualSink' });
+        }
+        if (sinkMatchesSomeSpecifier(node, [{ from: 'file', name: 'safe' }], context)) {
+          context.report({ node, messageId: 'safeSink' });
+        }
+      },
+      ReturnStatement(node: TSESTree.ReturnStatement) {
+        let fn: TSESTree.Node | undefined = node.parent;
+        while (fn && fn.type !== AST_NODE_TYPES.FunctionDeclaration) {
+          fn = fn.parent;
+        }
+        if (fn?.type === AST_NODE_TYPES.FunctionDeclaration && isPlainPromiseReturnSink(fn, context)) {
+          context.report({ node, messageId: 'returnSink' });
+        }
+      },
+      CallExpression(node: TSESTree.CallExpression) {
+        if (isCancDeclaredCallee(node, context)) {
+          context.report({ node, messageId: 'cancCallee' });
+        }
+      },
+    };
+  },
+};
+
+describe('canc-types: sink helpers', () => {
+  ruleTester().run('sink-probe', sinkProbeRule, {
+    valid: [
+      `const p: CancelablePromiseLikeAlias = 1;
+type CancelablePromiseLikeAlias = number;`,
+      `declare function keep(p: number): void;
+keep(1);`,
+      `function run(): number {
+  return 1;
+}`,
+      `${importPromise}declare function sink(p: Promise<number> | CancelablePromise<number>): void;
+sink(Promise.resolve(1));`,
+    ],
+    invalid: [
+      {
+        code: `const p: Promise<number> = Promise.resolve(1);`,
+        errors: [{ messageId: 'contextualSink' }],
+      },
+      {
+        code: `declare function put(key: string, p: Promise<number>): void;
+declare function put(p: PromiseLike<number>): void;
+put('a', Promise.resolve(1));`,
+        errors: [{ messageId: 'contextualSink', line: 3, column: 10 }],
+      },
+      {
+        code: `async function run(): Promise<number> {
+  return 1;
+}`,
+        errors: [{ messageId: 'returnSink' }],
+      },
+      {
+        code: `${importPromise}CancelablePromise.resolve(1);`,
+        errors: [{ messageId: 'cancCallee' }],
+      },
+      {
+        code: `declare function safe(p: Promise<number>): void;
+safe(Promise.resolve(1));`,
+        errors: [{ messageId: 'contextualSink' }, { messageId: 'safeSink' }],
+      },
+    ],
+  });
+
+  ruleTester({ types: false }).run('sink-probe-untyped', sinkProbeRule, {
+    valid: [
+      `const p: Promise<number> = Promise.resolve(1);`,
+      `async function run(): Promise<number> {
+  return 1;
+}`,
+    ],
+    invalid: [],
   });
 });
