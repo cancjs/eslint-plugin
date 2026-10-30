@@ -43,7 +43,7 @@ const codeLazyValid04 = fs.readFileSync(lazyValid04Path, 'utf8');
 const markers09 = readMarkers(invalid09Path);
 const markers10 = readMarkers(invalid10Path);
 const markers11 = readMarkers(invalid11Path);
-const markersLazy04 = readMarkers(lazyInvalid04Path);
+const markersLazy04 = readMarkers(lazyInvalid04Path).filter((m) => m.ruleId === 'no-executor-return');
 
 const testCases: {
   valid: (ValidTestCase<RuleOptions> | string)[];

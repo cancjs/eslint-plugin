@@ -188,7 +188,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
   });
 
   it('matches markers on invalid phase fixtures under recommended + strict-only rules', async () => {
-    expect(invalidFiles.length).toBe(30);
+    expect(invalidFiles.length).toBe(32);
 
     const results = await eslintWithStrict.lintFiles(invalidFiles);
     for (const r of results) {
@@ -301,7 +301,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
       expect(reportedFiles).not.toContain(f);
     }
 
-    // 27 syntactic fixtures reported
-    expect(reportedFiles).toHaveLength(27);
+    // 29 syntactic fixtures reported
+    expect(reportedFiles).toHaveLength(29);
   }, 30000);
 });

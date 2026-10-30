@@ -30,7 +30,7 @@ const codeValid11 = fs.readFileSync(valid11Path, 'utf8');
 const codeValid12 = fs.readFileSync(valid12Path, 'utf8');
 
 const markers12 = readMarkers(invalid12Path);
-const markers13 = readMarkers(invalid13Path);
+const markers13 = readMarkers(invalid13Path).filter((m) => m.ruleId === 'no-throw-in-chain-callback');
 const markers14 = readMarkers(invalid14Path);
 const markers15 = readMarkers(invalid15Path);
 

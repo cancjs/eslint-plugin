@@ -35,7 +35,7 @@ const cancPromise = new CancelablePromise<string[]>(async (resolve, reject, { ha
   handleCancel(() => controller.abort());
   try {
   const data = await fetchTitlesRaw(controller.signal);
-  resolve(data.map((item) => item.title));
+  resolve(data.map((item) => item.title)); // lint: no-multistep-executor
   } catch (err) {
   reject(err);
   }

@@ -9,7 +9,7 @@ declare const p: CancelablePromise<string>;
 export const run = cancAsync(function* () {
   try {
     yield* cancAwait(timeout(p, 10));
-  } catch (e) { // lint: exhaustive-catch:unhandledFailure
+  } catch (e) { // lint: exhaustive-catch:unhandledFailure,no-swallowed-cancel
     console.error(e);
   }
 });

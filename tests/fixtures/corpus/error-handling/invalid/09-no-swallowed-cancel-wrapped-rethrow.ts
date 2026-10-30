@@ -42,6 +42,6 @@ const runSearch = cancAsync(function* () {
     const results = yield* cancAwait(catalogSearch);
     render(results);
   } catch (err) {
-    throw new WrapError(err); // lint: no-swallowed-cancel:wrappedRethrow
+    throw new WrapError(err); // lint: no-swallowed-cancel:wrappedRethrow,prefer-canc-throw
   }
 });
