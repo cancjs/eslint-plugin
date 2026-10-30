@@ -1,6 +1,7 @@
 import { isTypeAnyType, isTypeNeverType, isTypeUnknownType } from '@typescript-eslint/type-utils';
 import type { ParserServicesWithTypeInformation } from '@typescript-eslint/typescript-estree';
 import { AST_NODE_TYPES, type TSESLint, type TSESTree } from '@typescript-eslint/utils';
+import { isIntrinsicType } from 'ts-api-utils';
 import type * as ts from 'typescript';
 
 import { getCancBindings } from './canc-imports.js';
@@ -550,6 +551,33 @@ export function isThenableExpression(
   const checker = services.program.getTypeChecker();
   const type = services.getTypeAtLocation(node);
   return isThenableType(type, checker);
+}
+
+const NON_PRIMITIVE_INTRINSICS = new Set(['any', 'unknown', 'never', 'object', 'error']);
+
+function isPrimitiveType(type: ts.Type): boolean {
+  if (type.isUnion()) {
+    return type.types.every(isPrimitiveType);
+  }
+  if (type.isLiteral()) {
+    return true;
+  }
+  return isIntrinsicType(type) && !NON_PRIMITIVE_INTRINSICS.has(type.intrinsicName);
+}
+
+/**
+ * True when the static type of `node` is a primitive (boolean, string, number, bigint, symbol, void, null, undefined
+ * or a literal of one), so the value cannot carry an object such as a signal. False without type information.
+ */
+export function isPrimitiveExpression(
+  node: TSESTree.Node,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program) {
+    return false;
+  }
+  return isPrimitiveType(services.getTypeAtLocation(node));
 }
 
 /**
