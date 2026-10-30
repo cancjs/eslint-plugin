@@ -265,7 +265,13 @@ export default createRule<RuleOptions, MessageIds>({
           return fixes;
         }
 
-        if (hasCollision || hasDefault || hasNonCallRef) {
+        if (hasNonCallRef) {
+          // No rewrite keeps a bare 'getSignal' reference meaningful
+          context.report({
+            node: node.key,
+            messageId: 'preferSignalAccessor',
+          });
+        } else if (hasCollision || hasDefault) {
           // Suggestion only
           context.report({
             node: node.key,

@@ -200,7 +200,7 @@ new CancelablePromise((resolve, reject, ctx = {} as any) => {
         ],
       },
 
-      // binding aliased to a plain variable: suggestion only
+      // binding aliased to a plain variable: report only
       {
         code: `import CancelablePromise from '@cancjs/promise';
 new CancelablePromise((resolve, reject, { getSignal }) => {
@@ -212,21 +212,12 @@ new CancelablePromise((resolve, reject, { getSignal }) => {
           {
             messageId: 'preferSignalAccessor' as const,
             line: 2,
-            suggestions: [
-              {
-                messageId: 'preferSignalAccessor' as const,
-                output: `import CancelablePromise from '@cancjs/promise';
-new CancelablePromise((resolve, reject, { signal }) => {
-  const read = getSignal;
-  void read;
-});`,
-              },
-            ],
+            suggestions: [],
           },
         ],
       },
 
-      // binding passed as a value: suggestion only
+      // binding passed as a value: report only
       {
         code: `import CancelablePromise from '@cancjs/promise';
 declare function useLater(fn: () => AbortSignal): void;
@@ -238,16 +229,7 @@ new CancelablePromise((resolve, reject, { getSignal: gs }) => {
           {
             messageId: 'preferSignalAccessor' as const,
             line: 3,
-            suggestions: [
-              {
-                messageId: 'preferSignalAccessor' as const,
-                output: `import CancelablePromise from '@cancjs/promise';
-declare function useLater(fn: () => AbortSignal): void;
-new CancelablePromise((resolve, reject, { signal: gs }) => {
-  useLater(gs);
-});`,
-              },
-            ],
+            suggestions: [],
           },
         ],
       },
