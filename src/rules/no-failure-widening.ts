@@ -83,7 +83,8 @@ function getWithFailureName(context: Context, node: TSESTree.Node): string | und
 }
 
 function getCancelablePromiseName(context: Context, node: TSESTree.Node): string {
-  const bindings = getCancBindings(context);
+  // the alias only matches a type annotation, so a type-only import counts
+  const bindings = getCancBindings(context, { includeTypeOnly: true });
   for (const [localName, binding] of bindings) {
     if (
       (binding.exported === 'CancelablePromise' || binding.exported === 'default') &&

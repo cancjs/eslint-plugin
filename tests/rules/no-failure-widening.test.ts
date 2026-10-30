@@ -291,6 +291,35 @@ export function f(): CancelablePromise<string> | false {
         output: null,
         errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'return type' } }],
       },
+
+      // 12. Suggestion survives a type-only alias of CancelablePromise
+      {
+        code: `import type { CancelablePromise as CP } from '@cancjs/promise';
+import { withFailure } from '@cancjs/promise';
+class ErrorA extends Error {}
+class UserNotFoundError extends Error {}
+declare function getUser(): CP<string, ErrorA>;
+export const u = getUser() as CP<string, UserNotFoundError>;`,
+        output: null,
+        errors: [
+          {
+            messageId: 'failureWidening',
+            data: { position: 'cast' },
+            suggestions: [
+              {
+                messageId: 'failureWidening',
+                data: { position: 'cast' },
+                output: `import type { CancelablePromise as CP } from '@cancjs/promise';
+import { withFailure } from '@cancjs/promise';
+class ErrorA extends Error {}
+class UserNotFoundError extends Error {}
+declare function getUser(): CP<string, ErrorA>;
+export const u = withFailure<UserNotFoundError>()(getUser());`,
+              },
+            ],
+          },
+        ],
+      },
     ],
   });
 });
