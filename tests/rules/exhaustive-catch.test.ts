@@ -66,9 +66,71 @@ const q3OrCond = unionCatch(`if (e instanceof ErrorA || flag) {
 const q3NotOr = unionCatch(`if (!(e instanceof ErrorA || flag)) throw e;
     console.log('handled');`);
 
+function nsCatch(catchBody: string): string {
+  return `import * as canc from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+class WrappedError extends Error { constructor(readonly cause: unknown) { super('wrapped'); } }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+declare const flag: boolean;
+export const run = canc.cancAsync(function* () {
+  try {
+    yield* canc.cancAwait(getUnion());
+  } catch (e) {
+    ${catchBody}
+  }
+});`;
+}
+
+function openCatch(catchBody: string): string {
+  return `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { Unlisted } from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getOpen(): CancelablePromise<string, ErrorA | ErrorB | Unlisted>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getOpen());
+  } catch (e) {
+    ${catchBody}
+  }
+});`;
+}
+
+function nestedCatch(innerBody: string, outerBody: string): string {
+  return `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    try {
+      yield* cancAwait(getUnion());
+    } catch (inner) {
+      ${innerBody}
+    }
+  } catch (e) {
+    ${outerBody}
+  }
+});`;
+}
+
 function withThrow(code: string): string {
   return code.replace(/\n {2}}\n}\);$/, '\n    throw e;\n  }\n});');
 }
+
+const s3LogOnly = nestedCatch(
+  `if (inner instanceof ErrorA) {
+        console.log('A');
+      }
+      throw inner;`,
+  `if (e instanceof ErrorB) {
+      console.log('B');
+    }`,
+);
 
 const typedTester = ruleTester({ types: true });
 const untypedTester = ruleTester({ types: false });
@@ -159,6 +221,86 @@ export const run = cancAsync(function* () {
     }
   }
 });`,
+      // Returning a wrapped canc.throw leaves by throwing, so the fallback still covers the rest
+      nsCatch(`if (flag) return yield* canc.throw(new WrappedError(e));
+    throw e;`),
+      // Documented wrap form inside a guarded branch
+      nsCatch(`if (e instanceof ErrorA) {
+      return yield* canc.throw(new WrappedError(e));
+    }
+    throw e;`),
+      // Wrapped cancThrow return before the fallback
+      `import { cancAsync, cancAwait, cancThrow } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class WrappedError extends Error {}
+declare function getA(): CancelablePromise<string, ErrorA>;
+declare const flag: boolean;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getA());
+  } catch (e) {
+    if (flag) return yield* cancThrow(new WrappedError());
+    throw e;
+  }
+});`,
+      // Wrapped cancGen.throw return before the fallback
+      `import { cancGenAsync, cancGen } from '@cancjs/coroutine/gen';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class WrappedError extends Error {}
+declare function getA(): CancelablePromise<string, ErrorA>;
+declare const flag: boolean;
+export const run = cancGenAsync(function* () {
+  try {
+    yield* getA();
+  } catch (e) {
+    if (flag) return yield* cancGen.throw(new WrappedError());
+    throw e;
+  }
+});`,
+      // Switch on a cast binding discriminant
+      unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+        console.log('A');
+        break;
+      case 'ErrorB':
+        console.log('B');
+        break;
+      default:
+        throw e;
+    }`),
+      // Negated compare on an angle-bracket cast binding rethrows the rest
+      unionCatch(`if ((<ErrorA>e).kind !== 'ErrorA') throw e;
+    console.log('A');`),
+      // Positive compare on a non-null binding with an else rethrow
+      unionCatch(`if (e!.name === 'ErrorA') {
+      console.log('A');
+    } else {
+      throw e;
+    }`),
+      // De Morgan early rethrow is a fallback for the open set
+      openCatch(`if (!(e instanceof ErrorA) && !(e instanceof ErrorB)) throw e;
+    console.log('handled');`),
+      // Inner catch handles ErrorA and rethrows the rest, outer handles ErrorB
+      nestedCatch(
+        `if (!(inner instanceof ErrorA)) throw inner;
+      console.log('A');`,
+        `if (e instanceof ErrorB) {
+      console.log('B');
+    }`,
+      ),
+      // Inner catch handles ErrorA with an early exit before its rethrow
+      nestedCatch(
+        `if (inner instanceof ErrorA) {
+        console.log('A');
+        return;
+      }
+      throw inner;`,
+        `if (e instanceof ErrorB) {
+      console.log('B');
+    }`,
+      ),
       // Valid corpus twins
       codeValid14,
       codeValid15,
@@ -575,6 +717,27 @@ export const run = cancAsync(function* () {
     throw e;`),
         output: null,
         errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
+      },
+      // A negated compare does not guard the exit under it
+      {
+        code: unionCatch(`if (e.kind !== 'ErrorA') return;
+    throw e;`),
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
+      },
+      // Inner catch that only logs ErrorA still rethrows it to the outer catch
+      {
+        code: s3LogOnly,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              { messageId: 'noRethrow', data: { names: 'ErrorA', handled: 'ErrorB' }, output: withThrow(s3LogOnly) },
+            ],
+          },
+        ],
       },
       // 8. Inner try/catch yield throws to outer catch
       {

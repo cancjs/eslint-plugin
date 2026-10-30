@@ -1,12 +1,13 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import type ts from 'typescript';
 
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
 import { getCancServices } from '../util/canc-types.js';
 import { type ClassMatcher, classMatcherSchema, compileMatchers } from '../util/class-matcher.js';
 import createRule from '../util/create-rule.js';
-import { isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
-import { analyzeCatchFailures, collectHandledCatchTypes } from '../util/failure-types.js';
+import { analyzeCatchSteps, type CatchStep, isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
+import { collectHandledCatchTypes } from '../util/failure-types.js';
 
 export type MessageIds = 'unhandledFailure' | 'noRethrow' | 'missingUnlistedFallback';
 
@@ -84,12 +85,51 @@ function handlerRethrows(handler: TSESTree.CatchClause, context: Context): boole
   return found;
 }
 
+/**
+ * Failure types an inner handler narrows and keeps, so they never reach the outer catch. An unconditional top-level
+ * rethrow passes on everything except what an earlier guarded branch already left with.
+ */
+function innerHandledTypes(handler: TSESTree.CatchClause, context: Context): ts.Type[] {
+  if (handler.param?.type !== AST_NODE_TYPES.Identifier) {
+    return [];
+  }
+  const bindingName = handler.param.name;
+  const body = handler.body.body;
+  const rethrowAt = body.findIndex((s) => isRethrowStatement(s, bindingName, context));
+  if (rethrowAt === -1) {
+    return collectHandledCatchTypes(handler.body, bindingName, context);
+  }
+  const handled: ts.Type[] = [];
+  for (const stmt of body.slice(0, rethrowAt)) {
+    if (
+      stmt.type === AST_NODE_TYPES.IfStatement &&
+      !stmt.alternate &&
+      isRecognizedGuard(stmt.test, bindingName, context) &&
+      endsWithExit(stmt.consequent)
+    ) {
+      // the collector walks any node; only the guard test names the kept types
+      handled.push(...collectHandledCatchTypes(stmt.test as unknown as TSESTree.BlockStatement, bindingName, context));
+    }
+  }
+  return handled;
+}
+
+function endsWithExit(stmt: TSESTree.Statement): boolean {
+  const last = stmt.type === AST_NODE_TYPES.BlockStatement ? stmt.body.at(-1) : stmt;
+  return (
+    last?.type === AST_NODE_TYPES.ReturnStatement ||
+    last?.type === AST_NODE_TYPES.BreakStatement ||
+    last?.type === AST_NODE_TYPES.ContinueStatement
+  );
+}
+
 function collectYieldStepsInTry(
   tryBlock: TSESTree.BlockStatement,
   parentTry: TSESTree.TryStatement,
   context: Context,
-): TSESTree.YieldExpression[] {
-  const steps: TSESTree.YieldExpression[] = [];
+): CatchStep[] {
+  const steps: CatchStep[] = [];
+  let innerHandled: ts.Type[] = [];
 
   function visit(node: TSESTree.Node): void {
     if (
@@ -106,8 +146,13 @@ function collectYieldStepsInTry(
       if (node.handler) {
         visit(node.handler.body);
       }
-      if (!node.handler || handlerRethrows(node.handler, context)) {
+      if (!node.handler) {
         visit(node.block);
+      } else if (handlerRethrows(node.handler, context)) {
+        const outerHandled = innerHandled;
+        innerHandled = [...outerHandled, ...innerHandledTypes(node.handler, context)];
+        visit(node.block);
+        innerHandled = outerHandled;
       }
       if (node.finalizer) {
         visit(node.finalizer);
@@ -116,7 +161,7 @@ function collectYieldStepsInTry(
     }
 
     if (node.type === AST_NODE_TYPES.YieldExpression && node.delegate && node.argument) {
-      steps.push(node);
+      steps.push({ step: node, innerHandled });
       return;
     }
 
@@ -139,29 +184,30 @@ function isRethrowStatement(stmt: TSESTree.Statement, bindingName: string, conte
     : stmt.type === AST_NODE_TYPES.ReturnStatement ? stmt.argument
     : null;
 
-  if (expr) {
-    if (expr.type === AST_NODE_TYPES.YieldExpression && expr.delegate && expr.argument) {
-      if (expr.argument.type === AST_NODE_TYPES.CallExpression) {
-        const callee = expr.argument.callee;
-        const arg0 = expr.argument.arguments[0];
-        if (arg0 && arg0.type === AST_NODE_TYPES.Identifier && arg0.name === bindingName) {
-          if (
-            refersTo(callee, context, 'cancThrow') ||
-            refersTo(callee, context, 'cancGenThrow') ||
-            (callee.type === AST_NODE_TYPES.MemberExpression &&
-              !callee.computed &&
-              callee.property.type === AST_NODE_TYPES.Identifier &&
-              callee.property.name === 'throw' &&
-              (refersTo(callee.object, context, 'canc') || refersTo(callee.object, context, 'cancGen')))
-          ) {
-            return true;
-          }
-        }
-      }
-    }
-  }
+  const call = expr ? cancThrowCall(expr, context) : null;
+  const arg0 = call?.arguments[0];
+  return arg0?.type === AST_NODE_TYPES.Identifier && arg0.name === bindingName;
+}
 
-  return false;
+/** The call in `yield* canc.throw(...)` (or `cancThrow`, `cancGen.throw`, `cancGenThrow`), whatever it throws. */
+function cancThrowCall(expr: TSESTree.Expression, context: Context): TSESTree.CallExpression | null {
+  if (
+    expr.type !== AST_NODE_TYPES.YieldExpression ||
+    !expr.delegate ||
+    expr.argument.type !== AST_NODE_TYPES.CallExpression
+  ) {
+    return null;
+  }
+  const callee = expr.argument.callee;
+  const isThrower =
+    refersTo(callee, context, 'cancThrow') ||
+    refersTo(callee, context, 'cancGenThrow') ||
+    (callee.type === AST_NODE_TYPES.MemberExpression &&
+      !callee.computed &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
+      callee.property.name === 'throw' &&
+      (refersTo(callee.object, context, 'canc') || refersTo(callee.object, context, 'cancGen')));
+  return isThrower ? expr.argument : null;
 }
 
 const CANC_GUARD_NAMES = ['isErrorOf', 'isCancelError', 'isAbortError', 'isTimeoutError'];
@@ -171,21 +217,8 @@ function isRecognizedGuard(expr: TSESTree.Expression, bindingName: string, conte
     if (expr.operator === 'instanceof') {
       return expr.left.type === AST_NODE_TYPES.Identifier && expr.left.name === bindingName;
     }
-    if (expr.operator === '===' || expr.operator === '==' || expr.operator === '!==' || expr.operator === '!=') {
-      if (
-        expr.left.type === AST_NODE_TYPES.MemberExpression &&
-        expr.left.object.type === AST_NODE_TYPES.Identifier &&
-        expr.left.object.name === bindingName
-      ) {
-        return true;
-      }
-      if (
-        expr.right.type === AST_NODE_TYPES.MemberExpression &&
-        expr.right.object.type === AST_NODE_TYPES.Identifier &&
-        expr.right.object.name === bindingName
-      ) {
-        return true;
-      }
+    if (expr.operator === '===' || expr.operator === '==') {
+      return isMemberCompare(expr, bindingName);
     }
   }
 
@@ -220,10 +253,16 @@ function isNegatedGuard(test: TSESTree.Expression, bindingName: string, context:
   if (test.type === AST_NODE_TYPES.UnaryExpression && test.operator === '!') {
     return isRecognizedGuard(test.argument, bindingName, context);
   }
+  if (test.type === AST_NODE_TYPES.LogicalExpression) {
+    const left = isNegatedGuard(test.left, bindingName, context);
+    const right = isNegatedGuard(test.right, bindingName, context);
+    // De Morgan: `!A && !B` is `!(A || B)`, `!A || !x` is `!(A && x)`
+    return test.operator === '&&' ? left && right : left || right;
+  }
   return (
     test.type === AST_NODE_TYPES.BinaryExpression &&
     (test.operator === '!==' || test.operator === '!=') &&
-    isRecognizedGuard(test, bindingName, context)
+    isMemberCompare(test, bindingName)
   );
 }
 
@@ -235,12 +274,30 @@ function isNegatedGuardRethrow(stmt: TSESTree.IfStatement, bindingName: string, 
   return isNegatedGuard(stmt.test, bindingName, context) && containsRethrow(stmt.consequent, bindingName, context);
 }
 
-function isBindingMember(expr: TSESTree.Expression, bindingName: string): boolean {
-  return (
-    expr.type === AST_NODE_TYPES.MemberExpression &&
-    expr.object.type === AST_NODE_TYPES.Identifier &&
-    expr.object.name === bindingName
-  );
+/** Strips `as T`, `<T>`, `!` and `satisfies T` so a cast binding still reads as the binding. */
+function unwrapTypeOnly(expr: TSESTree.Expression): TSESTree.Expression {
+  let curr = expr;
+  while (
+    curr.type === AST_NODE_TYPES.TSAsExpression ||
+    curr.type === AST_NODE_TYPES.TSTypeAssertion ||
+    curr.type === AST_NODE_TYPES.TSNonNullExpression ||
+    curr.type === AST_NODE_TYPES.TSSatisfiesExpression
+  ) {
+    curr = curr.expression;
+  }
+  return curr;
+}
+
+function isBindingMember(expr: TSESTree.Node, bindingName: string): boolean {
+  if (expr.type !== AST_NODE_TYPES.MemberExpression) {
+    return false;
+  }
+  const object = unwrapTypeOnly(expr.object);
+  return object.type === AST_NODE_TYPES.Identifier && object.name === bindingName;
+}
+
+function isMemberCompare(expr: TSESTree.BinaryExpression, bindingName: string): boolean {
+  return isBindingMember(expr.left, bindingName) || isBindingMember(expr.right, bindingName);
 }
 
 /** Cases must narrow the binding: `switch (e.kind)`, or `switch (true)` whose cases are all recognized guards. */
@@ -275,7 +332,8 @@ function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Co
     return false;
   }
   if (node.type === AST_NODE_TYPES.ReturnStatement) {
-    return !isRethrowStatement(node, bindingName, context);
+    // `return yield* canc.throw(new Wrapped(e))` leaves by throwing, not by swallowing
+    return !node.argument || cancThrowCall(node.argument, context) === null;
   }
   if (node.type === AST_NODE_TYPES.BreakStatement || node.type === AST_NODE_TYPES.ContinueStatement) {
     return node.label !== null || !nested;
@@ -448,7 +506,7 @@ export default createRule<RuleOptions, MessageIds>({
 
         const handledTypes = bindingName ? collectHandledCatchTypes(node.handler.body, bindingName, context) : [];
 
-        const analysis = analyzeCatchFailures(yieldSteps, handledTypes, compiledExclude, context);
+        const analysis = analyzeCatchSteps(yieldSteps, handledTypes, compiledExclude, context);
         if (!analysis) {
           return;
         }
