@@ -2,10 +2,16 @@ import type { TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'missingStar' | 'unusedCancAwait';
-export type RuleOptions = [];
+export type RuleOptions = [FactoryOptions?];
 
 const COMBINATOR_MEMBERS = new Set(['all', 'race', 'any', 'allSettled']);
 
@@ -59,7 +65,15 @@ export default createRule<RuleOptions, MessageIds>({
       description: 'Require yield* on cancAwait calls and disallow unused statement-position cancAwait calls.',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: factoryOptionsSchema,
+        allOf: factoryOptionsConstraints,
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{}],
     messages: {
       missingStar:
         "'yield {{await}}(...)' passes the generator object to the driver, so the inner promise is never awaited and cancellation is never wired. Write 'yield* {{await}}(...)'.",
@@ -67,15 +81,17 @@ export default createRule<RuleOptions, MessageIds>({
         "'{{await}}(...)' only creates a generator. Without 'yield*' the step never runs. Write 'yield* {{await}}(...)'.",
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const factories = resolveFactories(context.options[0]);
+
     return {
       YieldExpression(node) {
         if (node.delegate || !node.argument) {
           return;
         }
 
-        const coroutineCtx = getCoroutineContext(node, context);
+        const coroutineCtx = getCoroutineContext(node, context, factories);
         if (!coroutineCtx) {
           return;
         }
@@ -98,7 +114,7 @@ export default createRule<RuleOptions, MessageIds>({
       },
 
       ExpressionStatement(node) {
-        const coroutineCtx = getCoroutineContext(node, context);
+        const coroutineCtx = getCoroutineContext(node, context, factories);
         if (!coroutineCtx) {
           return;
         }
