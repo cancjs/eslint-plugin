@@ -47,10 +47,7 @@ function cancExportName(
     return undefined;
   }
   const target = resolveAlias(sym, checker);
-  if (names.includes(target.name)) {
-    return target.name;
-  }
-  return names.includes(sym.name) ? sym.name : undefined;
+  return names.includes(target.name) ? target.name : undefined;
 }
 
 function calleeNameNode(expr: ts.Expression): ts.Node {
