@@ -1,5 +1,6 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import type { JSONSchema4 } from '@typescript-eslint/utils/json-schema';
 
 import { isCoroutineFnIdent } from './canc-imports.js';
 
@@ -34,7 +35,7 @@ export interface ResolvedFactories {
 
 export type CoroutineDialect = 'cancAsync' | 'cancGenAsync';
 
-const factoryListSchema = {
+const factoryListSchema: JSONSchema4 = {
   type: 'array',
   uniqueItems: true,
   items: {
@@ -51,21 +52,21 @@ const factoryListSchema = {
       },
     ],
   },
-} as const;
+};
 
 /** JSON schema `properties` fragment for a rule options object. */
-export const factoryOptionsSchema = {
+export const factoryOptionsSchema: Record<string, JSONSchema4> = {
   additionalCoroutineFactories: factoryListSchema,
   additionalGenCoroutineFactories: factoryListSchema,
   coroutineFactories: factoryListSchema,
   genCoroutineFactories: factoryListSchema,
-} as const;
+};
 
 /** JSON schema `allOf` entries: the add and replace options of one dialect exclude each other. */
-export const factoryOptionsConstraints = [
-  { not: { required: ['additionalCoroutineFactories', 'coroutineFactories'] } },
-  { not: { required: ['additionalGenCoroutineFactories', 'genCoroutineFactories'] } },
-] as const;
+export const factoryOptionsConstraints: JSONSchema4[] = [
+  { type: 'object', not: { type: 'object', required: ['additionalCoroutineFactories', 'coroutineFactories'] } },
+  { type: 'object', not: { type: 'object', required: ['additionalGenCoroutineFactories', 'genCoroutineFactories'] } },
+];
 
 const DEFAULT_FACTORIES: ResolvedFactories = {
   cancAsync: [],
