@@ -17,13 +17,13 @@ Load the other plugins before these configs. ESLint accepts an `off` entry for a
 
 ## typescript-eslint
 
-`@typescript-eslint/no-floating-promises` is the backbone. It is set to `error` with `checkThenables: true`, so a lazy cancelable promise that is created and dropped is reported too. A bare `p.cancel()` statement is a floating promise. Write `void p.cancel()` when you do not need to wait for the cancellation to finish, and `await p.cancel()` when you do. Both forms are accepted.
+`@typescript-eslint/no-floating-promises` is the backbone. It is set to `error` with `checkThenables: true`, so a lazy cancelable promise that is created and dropped is reported too. Calls to `handleCancel` from `@cancjs/promise` are listed in `allowForKnownSafeCalls`: registering a cleanup returns the same promise for chaining, and that result needs no handling. A bare `p.cancel()` statement is a floating promise. Write `void p.cancel()` when you do not need to wait for the cancellation to finish, and `await p.cancel()` when you do. Both forms are accepted.
 
 `@typescript-eslint/no-misused-promises` stays on at `error`. It catches a cancelable promise passed where a void callback is expected.
 
 `@typescript-eslint/promise-function-async` is turned off. It reports every non-async function that returns a cancelable promise, and its autofix adds `async`. That wraps the returned value in a native promise, and the result can no longer be canceled.
 
-`@typescript-eslint/return-await` is set to `in-try-catch`. A returned promise is awaited inside `try` and `catch`, so a cancellation is caught where you handle it, and plain returns stay cheap elsewhere.
+`@typescript-eslint/return-await` is set to `error-handling-correctness-only`. A returned promise must be awaited inside `try` and `catch`, so a cancellation is caught where you handle it. Outside `try`, both `return p` and `return await p` are accepted.
 
 `@typescript-eslint/use-unknown-in-catch-callback-variable` stays on at `error`. It pairs with `isCancelError(error)`, which takes an `unknown` value.
 
