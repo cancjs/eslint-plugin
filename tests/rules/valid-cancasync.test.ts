@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/valid-cancasync.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -222,5 +223,124 @@ describe('valid-cancasync', () => {
         ],
       },
     ],
+  });
+});
+
+describe('valid-cancasync factory options', () => {
+  tester.run('valid-cancasync', rule, {
+    valid: [
+      // overload: a configured factory may take an async callback
+      {
+        code: `const stop = useCancelableEffect(async () => {}, []);`,
+        options: [{ additionalCoroutineFactories: ['useCancelableEffect'] }],
+      },
+      // same code, no option
+      `function* body(): any {}
+       useCancelableEffect(body, []);`,
+      // plain generator without annotation
+      {
+        code: `useCancelableEffect(function* () { yield 1; }, []);`,
+        options: [{ additionalCoroutineFactories: ['useCancelableEffect'] }],
+      },
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               cancAsync(async () => {});`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+      // other dialect replace keeps the built-in cancAsync
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               cancAsync(function* () {});`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+      },
+      // a different source is not the configured factory
+      {
+        code: `import { cancelableSetup } from 'other-lib';
+               cancelableSetup(function* (): any {});`,
+        options: [
+          {
+            additionalGenCoroutineFactories: [{ name: 'cancelableSetup', source: '@cancjs/vue' }],
+          },
+        ],
+      },
+    ],
+    invalid: [
+      {
+        code: `useCancelableEffect(function* (): any {}, []);`,
+        options: [{ additionalCoroutineFactories: ['useCancelableEffect'] }],
+        errors: [{ messageId: 'anyReturnAnnotation' as const, line: 1 }],
+      },
+      {
+        code: `ui.useCancelableEffect(function* (): Generator<any, any, any> {}, []);`,
+        options: [{ additionalCoroutineFactories: ['useCancelableEffect'] }],
+        errors: [{ messageId: 'anyReturnAnnotation' as const, line: 1 }],
+      },
+      {
+        code: `import { cancelableSetup as setup } from '@cancjs/vue';
+               setup(function* (): any {});`,
+        options: [
+          {
+            additionalGenCoroutineFactories: [{ name: 'cancelableSetup', source: '@cancjs/vue' }],
+          },
+        ],
+        errors: [{ messageId: 'anyReturnAnnotation' as const, line: 2 }],
+      },
+      // built-in keeps every check when extended
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               cancAsync(async () => {});`,
+        options: [{ additionalCoroutineFactories: ['useCancelableEffect'] }],
+        errors: [
+          {
+            messageId: 'asyncFunction' as const,
+            line: 2,
+            data: { driver: 'cancAsync', await: 'cancAwait' },
+          },
+        ],
+      },
+      // gen-list factory: the built-in cancAsync still reports its own kind
+      {
+        code: `import { cancGenAsync } from '@cancjs/coroutine/gen';
+               cancGenAsync(async () => {});`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+        errors: [
+          {
+            messageId: 'asyncFunction' as const,
+            line: 2,
+            data: { driver: 'cancGenAsync', await: 'cancGenAwait' },
+          },
+        ],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        {
+          plugins: { canc: { rules: { r: rule as never } } },
+          rules: { 'canc/r': ['error', options] },
+        },
+      ]);
+    expect(() =>
+      verify({
+        additionalCoroutineFactories: ['a'],
+        coroutineFactories: ['b'],
+      }),
+    ).toThrow(/should NOT be valid/);
+    expect(() =>
+      verify({
+        additionalGenCoroutineFactories: ['a'],
+        genCoroutineFactories: ['b'],
+      }),
+    ).toThrow(/should NOT be valid/);
+    expect(() =>
+      verify({
+        additionalCoroutineFactories: ['a'],
+        genCoroutineFactories: ['b'],
+      }),
+    ).not.toThrow();
   });
 });
