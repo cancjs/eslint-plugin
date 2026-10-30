@@ -300,12 +300,27 @@ export type OrNull = CancelablePromise<string, FooError> | null;
     });
 
     it('does not reuse a result computed for different settings on the same program', () => {
-      const restricted = { ...defaultSettings, sources: ['@cancjs/toolbox'] };
+      const restricted = {
+        ...defaultSettings,
+        sources: ['@cancjs/toolbox'],
+        structuralDetection: false,
+      };
       const fewer = getProgramFailureSymbols(program, checker, restricted);
       const full = getProgramFailureSymbols(program, checker, defaultSettings);
       const typeArgError = getClassSymbol(realFile, checker, 'RealTypeArgError');
       expect(fewer.has(typeArgError)).toBe(false);
       expect(full.has(typeArgError)).toBe(true);
+    });
+
+    it('keys the cache on structuralDetection alone', () => {
+      const structural = getProgramFailureSymbols(program, checker, defaultSettings);
+      const nominal = getProgramFailureSymbols(program, checker, { ...defaultSettings, structuralDetection: false });
+      const nominalAgain = getProgramFailureSymbols(program, checker, {
+        ...defaultSettings,
+        structuralDetection: false,
+      });
+      expect(nominal).not.toBe(structural);
+      expect(nominalAgain).toBe(nominal);
     });
   });
 
