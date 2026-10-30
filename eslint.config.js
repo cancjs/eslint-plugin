@@ -47,7 +47,16 @@ const prettierJsonOptions = {
 
 export default defineConfig(
   // Fixtures hold deliberately-bad code and are linted only through the integration harness.
-  globalIgnores(['dist/**', 'coverage/**', 'tests/fixtures/**', '**/package-lock.json', '**/~~*', '**/*~~']),
+  // Lane projects carry their own eslint.config and installs, which ESLint would pick up here.
+  globalIgnores([
+    'dist/**',
+    'coverage/**',
+    'tests/fixtures/**',
+    'tests/integration/lane*/**',
+    '**/package-lock.json',
+    '**/~~*',
+    '**/*~~',
+  ]),
 
   // Presets must stay scoped to JS/TS. Unscoped they also apply to the JSON and markdown blocks
   // below, and core rules crash on those languages' ASTs.
