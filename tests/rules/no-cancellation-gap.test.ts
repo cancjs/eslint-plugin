@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/no-cancellation-gap.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -167,5 +168,115 @@ describe('no-cancellation-gap (typed lane)', () => {
         ],
       },
     ],
+  });
+});
+
+describe('no-cancellation-gap factory options', () => {
+  typedTester.run('no-cancellation-gap factory', rule, {
+    valid: [
+      // same code without the option: not a coroutine
+      `declare function legacyPlain(): Promise<void>;
+       import { cancAwait } from '@cancjs/coroutine';
+       useX(function* () {
+         yield* cancAwait(legacyPlain());
+       });`,
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+               import { cancAwait } from '@cancjs/coroutine';
+               declare function task(): CancelablePromise<void>;
+               useX(function* () {
+                 yield* cancAwait(task());
+               });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+      },
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+               declare function legacyPlain(): Promise<void>;
+               cancAsync(function* () {
+                 yield* cancAwait(legacyPlain());
+               });`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+      // same name from another source
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               import { useX } from 'other-lib';
+               declare function legacyPlain(): Promise<void>;
+               useX(function* () {
+                 yield* cancAwait(legacyPlain());
+               });`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+      },
+    ],
+    invalid: [
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               declare function legacyPlain(): Promise<void>;
+               useX(function* () {
+                 yield* cancAwait(legacyPlain());
+               });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        errors: [{ messageId: 'gapStep' as const, line: 4 }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               import { useX as u } from '@cancjs/react';
+               declare function legacyPlain(): Promise<void>;
+               u(function* () {
+                 yield* cancAwait(legacyPlain());
+               });`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+        errors: [{ messageId: 'gapStep' as const, line: 5 }],
+      },
+      {
+        code: `import { cancGenAwait } from '@cancjs/coroutine/gen';
+               declare function legacyPlain(): Promise<void>;
+               ui.setup(function* () {
+                 yield* cancGenAwait(legacyPlain());
+               });`,
+        options: [{ additionalGenCoroutineFactories: ['setup'] }],
+        errors: [{ messageId: 'gapStep' as const, line: 4 }],
+      },
+      // the built-in stays on when the other dialect is replaced
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+               declare function legacyPlain(): Promise<void>;
+               cancAsync(function* () {
+                 yield* cancAwait(legacyPlain());
+               });`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+        errors: [{ messageId: 'gapStep' as const, line: 4 }],
+      },
+    ],
+  });
+
+  untypedTester.run('no-cancellation-gap factory (untyped)', rule, {
+    valid: [
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+               declare function legacyPlain(): Promise<void>;
+               useX(function* () {
+                 yield* cancAwait(legacyPlain());
+               });`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+      },
+    ],
+    invalid: [],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });
