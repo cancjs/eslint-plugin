@@ -34,12 +34,29 @@ function chainHead(call: TSESTree.CallExpression): TSESTree.CallExpression {
   return curr;
 }
 
-function rootIdentifier(node: TSESTree.Node): TSESTree.Identifier | undefined {
-  let curr = node;
-  while (curr.type === AST_NODE_TYPES.MemberExpression || curr.type === AST_NODE_TYPES.CallExpression) {
-    curr = curr.type === AST_NODE_TYPES.MemberExpression ? curr.object : curr.callee;
+function readsName(node: TSESTree.Node, name: string): boolean {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name === name;
   }
-  return curr.type === AST_NODE_TYPES.Identifier ? curr : undefined;
+  return Object.entries(node).some(([key, value]) => {
+    if (key === 'parent' || key === 'loc' || key === 'range') {
+      return false;
+    }
+    if (node.type === AST_NODE_TYPES.MemberExpression && key === 'property' && !node.computed) {
+      return false;
+    }
+    if (node.type === AST_NODE_TYPES.Property && key === 'key' && !node.computed) {
+      return false;
+    }
+    const children: unknown[] = Array.isArray(value) ? value : [value];
+    return children.some(
+      (child) =>
+        typeof child === 'object' &&
+        child !== null &&
+        typeof (child as TSESTree.Node).type === 'string' &&
+        readsName(child as TSESTree.Node, name),
+    );
+  });
 }
 
 /**
@@ -75,10 +92,7 @@ function continuesPreviousStep(call: TSESTree.CallExpression): boolean {
     return false;
   }
   const name = first.name;
-  return (
-    rootIdentifier(call.callee)?.name === name ||
-    call.arguments.some((arg) => arg.type !== AST_NODE_TYPES.SpreadElement && rootIdentifier(arg)?.name === name)
-  );
+  return readsName(call.callee, name) || call.arguments.some((arg) => readsName(arg, name));
 }
 
 export default createRule<RuleOptions, MessageIds>({
