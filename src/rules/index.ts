@@ -19,6 +19,7 @@ import noFailureWidening from './no-failure-widening.js';
 import noInternalImports from './no-internal-imports.js';
 import noKeywordAliasImport from './no-keyword-alias-import.js';
 import noMultistepExecutor from './no-multistep-executor.js';
+import noSwallowedCancel from './no-swallowed-cancel.js';
 import noThrowInChainCallback from './no-throw-in-chain-callback.js';
 import noTransformInExecutor from './no-transform-in-executor.js';
 import noUnstarredCancawait from './no-unstarred-cancawait.js';
@@ -56,6 +57,7 @@ export const rules: Record<string, Rule.RuleModule | TSESLint.RuleModule<string,
   'no-internal-imports': noInternalImports,
   'no-keyword-alias-import': noKeywordAliasImport,
   'no-multistep-executor': noMultistepExecutor,
+  'no-swallowed-cancel': noSwallowedCancel,
   'no-throw-in-chain-callback': noThrowInChainCallback,
   'no-transform-in-executor': noTransformInExecutor,
   'no-unstarred-cancawait': noUnstarredCancawait,

@@ -74,6 +74,7 @@ describe('rule registry and tier table', () => {
         'no-internal-imports',
         'no-keyword-alias-import',
         'no-multistep-executor',
+        'no-swallowed-cancel',
         'no-throw-in-chain-callback',
         'no-transform-in-executor',
         'no-unstarred-cancawait',

@@ -26,6 +26,7 @@ export const TIERS: Record<string, TierEntry> = {
   'no-internal-imports': { recommended: 'error', native: true },
   'no-keyword-alias-import': { recommended: 'warn' },
   'no-multistep-executor': { recommended: 'warn' },
+  'no-swallowed-cancel': { recommended: 'warn' },
   'no-throw-in-chain-callback': { recommended: 'warn' },
   'no-transform-in-executor': { stylistic: 'warn' },
   'no-unstarred-cancawait': { recommended: 'error' },

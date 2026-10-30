@@ -35,6 +35,7 @@ const EXPECTED: Record<string, Expected> = {
   'no-internal-imports': { recommended: 'error', strict: 'error', native: true },
   'no-keyword-alias-import': { recommended: 'warn', strict: 'error' },
   'no-multistep-executor': { recommended: 'warn', strict: 'error' },
+  'no-swallowed-cancel': { recommended: 'warn', strict: 'error' },
   'no-throw-in-chain-callback': { recommended: 'warn', strict: 'error' },
   'no-transform-in-executor': { stylistic: 'warn' },
   'no-unstarred-cancawait': { recommended: 'error', strict: 'error' },
