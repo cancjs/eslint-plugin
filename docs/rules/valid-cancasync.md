@@ -4,6 +4,8 @@ Enforce valid generator function arguments and return types for coroutine driver
 
 The `cancAsync` and `cancGenAsync` coroutine drivers require a synchronous generator function (`function*`). Passing an `async` function or an `async` generator (`async function*`) breaks the cancellation driver because cancel propagation relies on synchronous generator stepping and generator unwinding via `.return()`.
 
+With type information, the rule also reports a plain (non-generator) function whose return type is provably not an iterator. A function that returns `any`, `unknown`, `never` or a generic type is not reported, because it may still return a generator object.
+
 In addition, an explicit `: any` return type annotation or a `Generator<..., any, ...>` annotation with `any` in the TNext slot collapses the return type of every `yield*` step to `any`. This single annotation silently untypes the entire coroutine and destroys per-step type inference.
 
 ## Rule details
@@ -26,6 +28,13 @@ import { cancAsync } from '@cancjs/coroutine';
 const stream = cancAsync(async function* () {
   yield await fetchUserCancelable();
 });
+```
+
+```ts
+import { cancAsync } from '@cancjs/coroutine';
+
+// With type information: a plain function returning a number has no steps
+const load = cancAsync(() => 42);
 ```
 
 ```ts
