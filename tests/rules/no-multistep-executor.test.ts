@@ -114,6 +114,27 @@ new CancelablePromise((resolve, reject) => {
 });`,
     },
     {
+      name: 'an object pattern binding read by the next step is one operation',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  op().then(({ length }) => op2(String(length))).then(resolve, reject);
+});`,
+    },
+    {
+      name: 'an array pattern binding read by the next step is one operation',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  op().then(([first]) => op2(first)).then(resolve, reject);
+});`,
+    },
+    {
+      name: 'a defaulted pattern binding read by the next step is one operation',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  op().then(({ id = 0 }) => op2(id)).then(resolve, reject);
+});`,
+    },
+    {
       name: 'untracked constructor is ignored',
       code: `new Promise((resolve, reject) => {
   stepOne().then(() => stepTwo()).then(resolve, reject);
@@ -204,6 +225,14 @@ new CancelablePromise((resolve, reject) => {
 });`,
       options: [{ maxOperations: 2 }],
       errors: [{ messageId: 'multipleOperations', line: 3, column: 46, data: { count: 3 } }],
+    },
+    {
+      name: 'a pattern binding the next step never reads is a new operation',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  op().then(({ length }) => op2(5)).then(resolve, reject);
+});`,
+      errors: [{ messageId: 'multipleOperations', line: 3, column: 29, data: { count: 2 } }],
     },
   ],
 };

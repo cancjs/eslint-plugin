@@ -396,18 +396,54 @@ function chainHeadCall(node: TSESTree.CallExpression): TSESTree.CallExpression |
   return object.type === AST_NODE_TYPES.CallExpression ? object : undefined;
 }
 
-/** A resolve argument counts as a transform when it is anything but a bare identifier/literal. */
+/** Casts and non-null assertions do not change the value at runtime. */
+export function unwrapTypeOnly(node: TSESTree.Node): TSESTree.Node {
+  let curr = node;
+  while (
+    curr.type === AST_NODE_TYPES.TSAsExpression ||
+    curr.type === AST_NODE_TYPES.TSNonNullExpression ||
+    curr.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    curr.type === AST_NODE_TYPES.TSTypeAssertion
+  ) {
+    curr = curr.expression;
+  }
+  return curr;
+}
+
+/** A literal, a unary on a literal, or an object/array built only from those: a raw value, not a computation. */
+export function isLiteralOnly(node: TSESTree.Node): boolean {
+  const inner = unwrapTypeOnly(node);
+  switch (inner.type) {
+    case AST_NODE_TYPES.Literal:
+      return true;
+    case AST_NODE_TYPES.TemplateLiteral:
+      return inner.expressions.length === 0;
+    case AST_NODE_TYPES.UnaryExpression:
+      return inner.operator !== 'delete' && isLiteralOnly(inner.argument);
+    case AST_NODE_TYPES.ArrayExpression:
+      return inner.elements.every(
+        (element) => element !== null && element.type !== AST_NODE_TYPES.SpreadElement && isLiteralOnly(element),
+      );
+    case AST_NODE_TYPES.ObjectExpression:
+      return inner.properties.every(
+        (prop) =>
+          prop.type === AST_NODE_TYPES.Property && !prop.computed && prop.kind === 'init' && isLiteralOnly(prop.value),
+      );
+    default:
+      return false;
+  }
+}
+
+/** A resolve argument counts as a transform when it is anything but a bare identifier or a raw literal value. */
 function argIsTransform(arg: TSESTree.CallExpressionArgument | undefined): boolean {
   if (!arg) {
     return false;
   }
-  switch (arg.type) {
-    case AST_NODE_TYPES.Identifier:
-    case AST_NODE_TYPES.Literal:
-      return false;
-    default:
-      return true;
+  const inner = unwrapTypeOnly(arg);
+  if (inner.type === AST_NODE_TYPES.Identifier) {
+    return false;
   }
+  return !isLiteralOnly(inner);
 }
 
 /** Set of local names bound to `handleCancel(() => X.abort())` controllers (the `X`). */

@@ -59,6 +59,26 @@ function readsName(node: TSESTree.Node, name: string): boolean {
   });
 }
 
+/** Every name a parameter binds, through object, array, rest and default patterns. */
+function patternNames(node: TSESTree.Node | null | undefined): string[] {
+  switch (node?.type) {
+    case AST_NODE_TYPES.Identifier:
+      return [node.name];
+    case AST_NODE_TYPES.AssignmentPattern:
+      return patternNames(node.left);
+    case AST_NODE_TYPES.RestElement:
+      return patternNames(node.argument);
+    case AST_NODE_TYPES.ArrayPattern:
+      return node.elements.flatMap(patternNames);
+    case AST_NODE_TYPES.ObjectPattern:
+      return node.properties.flatMap((prop) =>
+        prop.type === AST_NODE_TYPES.RestElement ? patternNames(prop.argument) : patternNames(prop.value),
+      );
+    default:
+      return [];
+  }
+}
+
 /**
  * A step that consumes the value the previous step produced (`open().then((stream) => readAll(stream))`)
  * continues the same operation on its resource rather than starting an independent one.
@@ -87,12 +107,8 @@ function continuesPreviousStep(call: TSESTree.CallExpression): boolean {
   if (!isThenCallback || fn.params.length === 0) {
     return false;
   }
-  const first = fn.params[0];
-  if (first.type !== AST_NODE_TYPES.Identifier) {
-    return false;
-  }
-  const name = first.name;
-  return readsName(call.callee, name) || call.arguments.some((arg) => readsName(arg, name));
+  const names = patternNames(fn.params[0]);
+  return names.some((name) => readsName(call.callee, name) || call.arguments.some((arg) => readsName(arg, name)));
 }
 
 export default createRule<RuleOptions, MessageIds>({

@@ -2,7 +2,7 @@ import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import createRule from '../util/create-rule.js';
-import { analyzeExecutor } from '../util/executor.js';
+import { analyzeExecutor, isLiteralOnly, unwrapTypeOnly } from '../util/executor.js';
 
 export type MessageIds = 'transformBeforeResolve' | 'moveTransformToThen';
 export type RuleOptions = [{ allowPropertyAccess?: boolean }];
@@ -24,14 +24,15 @@ function isPropertyPick(node: TSESTree.Node): boolean {
 }
 
 /** Raw values and started operations pass through; anything computed from a value is a transform. */
-function isTransform(arg: TSESTree.CallExpressionArgument, allowPropertyAccess: boolean): boolean {
+function isTransform(argument: TSESTree.CallExpressionArgument, allowPropertyAccess: boolean): boolean {
+  const arg = unwrapTypeOnly(argument);
+  if (isLiteralOnly(arg)) {
+    return false;
+  }
   switch (arg.type) {
     case AST_NODE_TYPES.Identifier:
-    case AST_NODE_TYPES.Literal:
     case AST_NODE_TYPES.ThisExpression:
       return false;
-    case AST_NODE_TYPES.TemplateLiteral:
-      return arg.expressions.length > 0;
     case AST_NODE_TYPES.CallExpression:
       // resolve(op()) hands over an operation, it does not reshape a result
       return arg.callee.type !== AST_NODE_TYPES.Identifier;

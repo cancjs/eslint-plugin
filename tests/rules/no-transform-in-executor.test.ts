@@ -69,6 +69,62 @@ new CancelablePromise((resolve, reject) => {
 }).then((data) => data.map(format));`,
     },
     {
+      name: 'a type assertion on a raw value is silent',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve(data as string), reject);
+});`,
+    },
+    {
+      name: 'a non null assertion on a raw value is silent',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve(data!), reject);
+});`,
+    },
+    {
+      name: 'a satisfies on a raw value is silent',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve(data satisfies Item), reject);
+});`,
+    },
+    {
+      name: 'an angle cast on a raw value is silent',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve(<string>data), reject);
+});`,
+    },
+    {
+      name: 'a negative literal is a raw value',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve(-1), reject);
+});`,
+    },
+    {
+      name: 'void zero is a raw value',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve(void 0), reject);
+});`,
+    },
+    {
+      name: 'a literal only object is a raw value',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve({ ok: true }), reject);
+});`,
+    },
+    {
+      name: 'a literal only array is a raw value',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((data) => resolve([1, 2]), reject);
+});`,
+    },
+    {
       name: 'untracked constructor is ignored',
       code: `new Promise((resolve, reject) => {
   fetchItems().then((data) => resolve(data.map(format)), reject);
@@ -163,7 +219,7 @@ new CancelablePromise((resolve, reject) => {
       name: 'no suggestion when the executor calls resolve twice',
       code: `${IMPORT}
 new CancelablePromise((resolve, reject) => {
-  fetchItems().then((d) => resolve(d.map(format)), () => resolve([]));
+  fetchItems().then((d) => resolve(d.map(format)), () => resolve(fallback.slice()));
 });`,
       errors: [
         { messageId: 'transformBeforeResolve', line: 3, column: 36, suggestions: [] },
