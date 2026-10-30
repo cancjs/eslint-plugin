@@ -55,6 +55,17 @@ describe('require-error-discriminant (typed lane)', () => {
        }
        class InheritedDiscriminantError extends BaseUserError {}
        export declare const p: CancelablePromise<string, InheritedDiscriminantError>;`,
+      // Abstract members count as an instance discriminant (silent)
+      `import type { CancelablePromise } from '@cancjs/promise';
+       abstract class AbstractKindError extends Error {
+         abstract readonly kind: 'k';
+       }
+       export declare const p: CancelablePromise<string, AbstractKindError>;`,
+      `import type { CancelablePromise } from '@cancjs/promise';
+       abstract class AbstractAccessorError extends Error {
+         abstract accessor kind: 'k';
+       }
+       export declare const p: CancelablePromise<string, AbstractAccessorError>;`,
       // Interface extending Error (silent)
       `import type { CancelablePromise } from '@cancjs/promise';
        interface MyInterfaceError extends Error {

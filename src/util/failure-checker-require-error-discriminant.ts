@@ -209,7 +209,10 @@ export function classHasInstanceDiscriminant(classDecl: TSESTree.ClassDeclaratio
   const checker = services.program.getTypeChecker();
 
   for (const member of classDecl.body.body) {
-    if (member.type === AST_NODE_TYPES.PropertyDefinition) {
+    if (
+      member.type === AST_NODE_TYPES.PropertyDefinition ||
+      member.type === AST_NODE_TYPES.TSAbstractPropertyDefinition
+    ) {
       if (member.static) {
         continue;
       }
@@ -222,7 +225,7 @@ export function classHasInstanceDiscriminant(classDecl: TSESTree.ClassDeclaratio
       }
       return true;
     }
-    if (member.type === AST_NODE_TYPES.AccessorProperty) {
+    if (member.type === AST_NODE_TYPES.AccessorProperty || member.type === AST_NODE_TYPES.TSAbstractAccessorProperty) {
       if (!member.static) {
         return true;
       }
