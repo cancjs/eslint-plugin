@@ -420,6 +420,68 @@ function finallyRemovesListener(
   return false;
 }
 
+// A statement-level descendant walk that never enters a nested function.
+function findCallsOutsideNestedFunctions(root: TSESTree.Node, found: TSESTree.CallExpression[]): void {
+  if (root.type === AST_NODE_TYPES.CallExpression) {
+    found.push(root);
+  }
+  for (const [key, value] of Object.entries(root)) {
+    if (key === 'parent') {
+      continue;
+    }
+    const children: unknown[] = Array.isArray(value) ? value : [value];
+    for (const child of children) {
+      if (child && typeof child === 'object' && 'type' in child && !isFunctionNode(child as TSESTree.Node)) {
+        findCallsOutsideNestedFunctions(child as TSESTree.Node, found);
+      }
+    }
+  }
+}
+
+function callbackRemovesListener(
+  callback: TSESTree.Node | undefined,
+  fnName: string,
+  signalKey: string,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): boolean {
+  if (
+    callback?.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+    callback?.type !== AST_NODE_TYPES.FunctionExpression
+  ) {
+    return false;
+  }
+  if (callback.body.type === AST_NODE_TYPES.BlockStatement) {
+    return finallyRemovesListener(callback.body, fnName, signalKey, context);
+  }
+  return matchesRemovalCall(callback.body, signalKey, fnName, context);
+}
+
+// `promise.finally(() => signal.removeEventListener(...))` runs on every settle path of the promise
+function hasFinallyCallbackRemoval(
+  boundary: TSESTree.Node,
+  fnName: string,
+  signalKey: string,
+  context: TSESLint.RuleContext<MessageIds, RuleOptions>,
+): boolean {
+  if (!isFunctionNode(boundary)) {
+    return false;
+  }
+  const body = (boundary as TSESTree.FunctionLike).body;
+  if (!body) {
+    return false;
+  }
+  const calls: TSESTree.CallExpression[] = [];
+  findCallsOutsideNestedFunctions(body, calls);
+  return calls.some(
+    (call) =>
+      call.callee.type === AST_NODE_TYPES.MemberExpression &&
+      !call.callee.computed &&
+      call.callee.property.type === AST_NODE_TYPES.Identifier &&
+      call.callee.property.name === 'finally' &&
+      callbackRemovesListener(call.arguments[0], fnName, signalKey, context),
+  );
+}
+
 function isProtectedByFinally(
   regNode: TSESTree.Node,
   fnName: string,
@@ -438,7 +500,7 @@ function isProtectedByFinally(
     }
     curr = curr.parent;
   }
-  return false;
+  return curr !== undefined && hasFinallyCallbackRemoval(curr, fnName, signalKey, context);
 }
 
 export default createRule<RuleOptions, MessageIds>({

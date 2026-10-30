@@ -22,6 +22,7 @@ Classes: `TP` real issue in the example, `FP` rule defect linked to a fix id, `p
 A fixed row is removed from the table once the rule stops reporting it; the line here keeps the record.
 
 - FIX-1: demo-async-dispose/src/report-canc.ts:36 canc/executor-cancel-wiring: a shielded promise is no longer asked for a cancel handler
+- FIX-2: demo-toolbox/src/gateway-signal-canc.ts:18 canc/no-abort-listener-leak: removal in the returned chain finally callback is recognised
 
 ## Findings
 
@@ -117,7 +118,6 @@ A fixed row is removed from the table once the rule stops reporting it; the line
 | demo-signal-interop/src/out-canc.ts:64 | canc/no-swallowed-cancel | swallowedCancel | recommended | x1 | TP | catch absorbs the cancel instead of rethrowing it or using a boundary helper |
 | demo-signal-interop/src/with-signal-canc.ts:28 | canc/no-await-cancelable-in-async | awaitErasesCancelability | recommended | x1 | TP | plain async function awaits a cancelable promise |
 | demo-signal-interop/src/with-signal-vanilla.ts:15 | canc/no-abort-listener-leak | leakedAbortListener | strict | x1 | FP | FIX-2: the listener is removed in the returned chain .finally callback; only try/finally is recognised |
-| demo-toolbox/src/gateway-signal-canc.ts:18 | canc/no-abort-listener-leak | leakedAbortListener | strict | x1 | FP | FIX-2: the listener is removed in the returned chain .finally callback, which runs on every settle path; only try/finally is recognised |
 | demo-toolbox/src/inventory-timeout-canc.ts:17 | canc/no-failure-widening | failureWidening | recommended | x1 | FP | FIX-5: the annotation names the same TimeoutError as the source; the brand of the annotation type reads as any so the match fails |
 | demo-toolbox/src/poll-deploy-canc.ts:13 | canc/no-failure-widening | failureWidening | recommended | x1 | TP | default failure parameter widens the TimeoutError of waitFor to unknown |
 | demo-toolbox/src/suppress-vanilla.ts:16 | canc/prefer-is-cancel-error | preferIsAbortError | recommended | x1 | policy | vanilla contrast file shows the platform name check on purpose; the rule documents flagging it |

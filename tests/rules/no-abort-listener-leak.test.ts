@@ -14,14 +14,20 @@ const corpusDir = path.resolve(__dirname, '../fixtures/corpus/hygiene');
 const invalid05Path = path.join(corpusDir, 'invalid/05-no-abort-listener-leak.ts');
 const invalid09Path = path.join(corpusDir, 'invalid/09-no-abort-listener-leak-inline.ts');
 
+const invalid12Path = path.join(corpusDir, 'invalid/12-no-abort-listener-leak-then-callback.ts');
+
 const valid05Path = path.join(corpusDir, 'valid/05-no-abort-listener-leak.ts');
+const valid94Path = path.join(corpusDir, 'valid/94-adversarial-finally-callback-removal.ts');
 
 const codeInvalid05 = fs.readFileSync(invalid05Path, 'utf8');
 const codeInvalid09 = fs.readFileSync(invalid09Path, 'utf8');
 const codeValid05 = fs.readFileSync(valid05Path, 'utf8');
+const codeInvalid12 = fs.readFileSync(invalid12Path, 'utf8');
+const codeValid94 = fs.readFileSync(valid94Path, 'utf8');
 
 const markers05 = readMarkers(invalid05Path);
 const markers09 = readMarkers(invalid09Path);
+const markers12 = readMarkers(invalid12Path);
 
 const tester = ruleTester({ types: false });
 
@@ -30,6 +36,14 @@ describe('no-abort-listener-leak', () => {
     valid: [
       // 1. Corpus valid (once: true + finally remove)
       codeValid05,
+      // Removal inside the returned chain's finally callback, no once option
+      codeValid94,
+      `declare function callRemote(signal: AbortSignal): Promise<string>;
+function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  signal.addEventListener('abort', onAbort);
+  return callRemote(signal).finally(() => signal.removeEventListener('abort', onAbort));
+}`,
       // 2. Straight-line registration and remove
       `function run(signal: AbortSignal) {
          const onAbort = () => {};
@@ -444,6 +458,41 @@ describe('no-abort-listener-leak', () => {
             column: 5,
           },
         ],
+      },
+      // Removal only in a then callback: a failed call leaves the listener behind
+      {
+        code: codeInvalid12,
+        errors: [
+          {
+            messageId: (markers12[0].messageId ?? 'leakedAbortListener') as 'leakedAbortListener',
+            line: markers12[0].line,
+          },
+        ],
+      },
+      // The finally callback removes a different listener
+      {
+        code: `declare function callRemote(signal: AbortSignal): Promise<string>;
+function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  const other = () => {};
+  signal.addEventListener('abort', onAbort);
+  return callRemote(signal).finally(() => signal.removeEventListener('abort', other));
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 5 }],
+      },
+      // The finally callback returns before the removal
+      {
+        code: `declare function callRemote(signal: AbortSignal): Promise<string>;
+declare const skip: boolean;
+function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  signal.addEventListener('abort', onAbort);
+  return callRemote(signal).finally(() => {
+    if (skip) return;
+    signal.removeEventListener('abort', onAbort);
+  });
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 5 }],
       },
     ],
   });
