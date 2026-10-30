@@ -4,7 +4,7 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { getCancBindings, getCoroutineContext, isCancCtorIdent, refersTo } from '../util/canc-imports.js';
 import { hasTypeServices, isCancelableOrLazyExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
-import { isUnresolvedDefaultImportType, isUnresolvedType } from '../util/failure-checker-no-throw-in-chain-callback.js';
+import { isUnresolvedType } from '../util/failure-checker-no-throw-in-chain-callback.js';
 import { isCancelErrorThrow } from '../util/failure-types.js';
 import { getCancSettings } from '../util/settings.js';
 
@@ -150,11 +150,7 @@ function getCallbackInfo(fn: TSESTree.FunctionLike, context: Context): CallbackI
     if (isCancelableOrLazyExpression(receiver, context)) {
       return { method: propName, receiver };
     }
-    // default-import alias leaves the receiver type unresolved
-    if (
-      isUnresolvedType(receiver, context) &&
-      (isUnresolvedDefaultImportType(receiver, context) || isSynCancelableChainRoot(receiver, context))
-    ) {
+    if (isUnresolvedType(receiver, context) && isSynCancelableChainRoot(receiver, context)) {
       return { method: propName, receiver };
     }
     return null;
