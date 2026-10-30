@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "@cancjs/*": [
+        "./tmp/projects/default/node_modules/@cancjs/*",
+        "./tmp/projects/default/node_modules/@cancjs/*/index.d.ts",
+        "./tmp/projects/default/node_modules/@cancjs/*.d.ts"
+      ],
+      "@cancjs/promise/dist/*": ["./tmp/projects/default/node_modules/@cancjs/promise/*.d.ts"]
+    }
+  },
+  "include": ["tmp/corpus/**/*.ts"]
+}
