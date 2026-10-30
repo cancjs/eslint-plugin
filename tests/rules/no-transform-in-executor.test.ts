@@ -62,6 +62,15 @@ new CancelablePromise((resolve, reject) => {
       options: [{ allowPropertyAccess: true }],
     },
     {
+      name: 'non-null and cast property picks are property picks with allowPropertyAccess',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchPage().then((d) => resolve(d!.items), reject);
+  fetchPage().then((d) => resolve((d as Page).items), reject);
+});`,
+      options: [{ allowPropertyAccess: true }],
+    },
+    {
       name: 'transform in the chain after the promise',
       code: `${IMPORT}
 new CancelablePromise((resolve, reject) => {
@@ -224,6 +233,83 @@ new CancelablePromise((resolve, reject) => {
       errors: [
         { messageId: 'transformBeforeResolve', line: 3, column: 36, suggestions: [] },
         { messageId: 'transformBeforeResolve', line: 3, column: 66, suggestions: [] },
+      ],
+    },
+    {
+      name: 'a raw empty array in the second resolve call is not reported',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((d) => resolve(d.map(format)), () => resolve([]));
+});`,
+      errors: [{ messageId: 'transformBeforeResolve', line: 3, column: 36, suggestions: [] }],
+    },
+    {
+      name: 'unary minus on the value is a transform',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchNumber().then((d) => resolve(-d), reject);
+});`,
+      errors: [
+        {
+          messageId: 'transformBeforeResolve',
+          line: 3,
+          column: 37,
+          suggestions: [
+            {
+              messageId: 'moveTransformToThen',
+              output: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchNumber().then((d) => resolve(d), reject);
+}).then((d) => -d);`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'object literal built from the value is a transform',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((d) => resolve({ ok: d.x }), reject);
+});`,
+      errors: [
+        {
+          messageId: 'transformBeforeResolve',
+          line: 3,
+          column: 36,
+          suggestions: [
+            {
+              messageId: 'moveTransformToThen',
+              output: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((d) => resolve(d), reject);
+}).then((d) => ({ ok: d.x }));`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'array literal holding the value is a transform',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((d) => resolve([d]), reject);
+});`,
+      errors: [
+        {
+          messageId: 'transformBeforeResolve',
+          line: 3,
+          column: 36,
+          suggestions: [
+            {
+              messageId: 'moveTransformToThen',
+              output: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  fetchItems().then((d) => resolve(d), reject);
+}).then((d) => [d]);`,
+            },
+          ],
+        },
       ],
     },
     {

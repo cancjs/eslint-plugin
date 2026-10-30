@@ -18,7 +18,7 @@ function isFunction(node: TSESTree.Node): node is TSESTree.ArrowFunctionExpressi
 function isPropertyPick(node: TSESTree.Node): boolean {
   let curr: TSESTree.Node = node;
   while (curr.type === AST_NODE_TYPES.MemberExpression && !curr.computed) {
-    curr = curr.object;
+    curr = unwrapTypeOnly(curr.object);
   }
   return curr !== node && (curr.type === AST_NODE_TYPES.Identifier || curr.type === AST_NODE_TYPES.ThisExpression);
 }
@@ -188,7 +188,9 @@ export default createRule<RuleOptions, MessageIds>({
             const paramVar = callbackScope.set.get(thenCallback.param.name);
             if (paramVar && dependsOnlyOn(arg, paramVar, shape.executor, callbackScope)) {
               const name = thenCallback.param.name;
-              const argText = sourceCode.getText(arg);
+              const text = sourceCode.getText(arg);
+              // a leading brace would parse as a block body
+              const argText = text.startsWith('{') ? `(${text})` : text;
               suggest = [
                 {
                   messageId: 'moveTransformToThen',
