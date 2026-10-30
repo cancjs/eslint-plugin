@@ -26,6 +26,7 @@ const EXPECTED: Record<string, Expected> = {
   'no-abort-listener-leak': { strict: 'error', native: true },
   'no-async-executor': { recommended: 'error', strict: 'error' },
   'no-async-loop-callback': { recommended: 'warn', strict: 'error' },
+  'no-await-cancelable-in-async': { recommended: 'error', strict: 'error' },
   'no-cancelability-erasure': { recommended: 'error', strict: 'error' },
   'no-cancellation-gap': { strict: 'error' },
   'no-coroutine-dialect-mismatch': { recommended: 'error', strict: 'error' },

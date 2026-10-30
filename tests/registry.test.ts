@@ -65,6 +65,7 @@ describe('rule registry and tier table', () => {
         'no-abort-listener-leak',
         'no-async-executor',
         'no-async-loop-callback',
+        'no-await-cancelable-in-async',
         'no-cancelability-erasure',
         'no-cancellation-gap',
         'no-coroutine-dialect-mismatch',
