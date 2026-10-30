@@ -3,10 +3,16 @@ import type { TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'serializedSteps';
-export type RuleOptions = [];
+export type RuleOptions = [FactoryOptions?];
 
 function isLoopNode(node: TSESTree.Node): boolean {
   return (
@@ -525,14 +531,24 @@ export default createRule<RuleOptions, MessageIds>({
     docs: {
       description: 'Disallow serialized yield* cancAwait in loops where steps appear independent.',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: factoryOptionsSchema,
+        allOf: factoryOptionsConstraints,
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{}],
     messages: {
       serializedSteps:
         "Each iteration waits for the previous one although the steps look independent. Run them together with 'yield* cancAwait.all(...)', or disable this rule if the order matters.",
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const factories = resolveFactories(context.options[0]);
+
     return {
       YieldExpression(node) {
         if (!node.delegate || !node.argument) {
@@ -552,7 +568,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const coroutineCtx = getCoroutineContext(node, context);
+        const coroutineCtx = getCoroutineContext(node, context, factories);
         if (!coroutineCtx) {
           return;
         }
