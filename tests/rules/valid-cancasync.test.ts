@@ -192,6 +192,10 @@ describe('valid-cancasync', () => {
        const load = cancAsync(() => anything());`,
       `import { cancAsync } from '@cancjs/coroutine';
        function wrap(genFn: () => Generator<unknown, number, unknown>) { return cancAsync(genFn); }`,
+      // a never-returning function proves nothing about the iterator
+      `import { cancAsync } from '@cancjs/coroutine';
+       function fail(): never { throw new Error('x'); }
+       cancAsync(fail);`,
     ],
     invalid: [
       {

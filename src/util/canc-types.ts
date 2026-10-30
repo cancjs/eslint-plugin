@@ -1,4 +1,4 @@
-import { isTypeAnyType, isTypeUnknownType } from '@typescript-eslint/type-utils';
+import { isTypeAnyType, isTypeNeverType, isTypeUnknownType } from '@typescript-eslint/type-utils';
 import type { ParserServicesWithTypeInformation } from '@typescript-eslint/typescript-estree';
 import { AST_NODE_TYPES, type TSESLint, type TSESTree } from '@typescript-eslint/utils';
 import type * as ts from 'typescript';
@@ -588,7 +588,7 @@ function isProvablyNonIteratorType(type: ts.Type): boolean {
   if (type.isUnion()) {
     return type.types.every(isProvablyNonIteratorType);
   }
-  if (isTypeAnyType(type) || isTypeUnknownType(type)) {
+  if (isTypeAnyType(type) || isTypeUnknownType(type) || isTypeNeverType(type)) {
     return false;
   }
   return type.getProperty('next') === undefined && !type.isTypeParameter();
@@ -596,7 +596,7 @@ function isProvablyNonIteratorType(type: ts.Type): boolean {
 
 /**
  * True when every call signature of `fnNode` returns a type that provably has no `next` method.
- * Returns false without type information, or when a return type is `any`, `unknown` or generic.
+ * Returns false without type information, or when a return type is `any`, `unknown`, `never` or generic.
  */
 export function isNonIteratorReturnFunction(
   fnNode: TSESTree.Node,
