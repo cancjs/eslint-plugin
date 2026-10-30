@@ -93,6 +93,27 @@ new CancelablePromise((resolve, reject) => {
 });`,
     },
     {
+      name: 'a three step chain where each step consumes the previous result is one operation',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  openStream().then((stream) => readAll(stream)).then((text) => parse(text)).then(resolve, reject);
+});`,
+    },
+    {
+      name: 'a nested property read of the previous result counts as consuming it',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  createSession().then((session) => loadProfile(session.id)).then(resolve, reject);
+});`,
+    },
+    {
+      name: 'a conditional reading the previous result counts as consuming it',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  pick().then((first) => load(ok ? first : fallback)).then(resolve, reject);
+});`,
+    },
+    {
       name: 'untracked constructor is ignored',
       code: `new Promise((resolve, reject) => {
   stepOne().then(() => stepTwo()).then(resolve, reject);
@@ -146,6 +167,34 @@ new CancelablePromise((resolve, reject) => {
   more();
 });`,
       errors: [{ messageId: 'multipleOperations', line: 6, column: 3, data: { count: 2 } }],
+    },
+    {
+      name: 'a mixed chain is reported at the first step that ignores the previous result',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  openStream().then((stream) => readAll(stream)).then(() => chargeCard()).then(resolve, reject);
+});`,
+      errors: [{ messageId: 'multipleOperations', line: 3, column: 61, data: { count: 2 } }],
+    },
+    {
+      name: 'the awaited form of a data dependent sequence is reported',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  (async () => {
+    const stream = await openStream();
+    const text = await readAll(stream);
+    resolve(text);
+  })().catch(reject);
+});`,
+      errors: [{ messageId: 'multipleOperations', line: 5, column: 24, data: { count: 2 } }],
+    },
+    {
+      name: 'a callback that does not read its parameter is a new operation',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  pick().then((first) => charge(ok ? 1 : 2)).then(resolve, reject);
+});`,
+      errors: [{ messageId: 'multipleOperations', line: 3, column: 26, data: { count: 2 } }],
     },
     {
       name: 'maxOperations 2 reports the third start',
