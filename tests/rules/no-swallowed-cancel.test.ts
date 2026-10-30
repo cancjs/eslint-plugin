@@ -123,6 +123,44 @@ ${firstStatement}`,
 
 const inlineValid: ValidTestCase<Options>[] = [
   {
+    name: 'rejection callback returning Promise.reject of the param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (isCancelError(e)) return Promise.reject(e);
+  toast(e);
+});`,
+  },
+  {
+    name: 'rejection callback returning CancelablePromise.reject of the param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (isCancelError(e)) return CancelablePromise.reject(e);
+  toast(e);
+});`,
+  },
+  {
+    name: 'async catch clause returning Promise.reject of the param on the cancel branch',
+    code: `${HEAD}
+async function run() {
+  try {
+    await job;
+  } catch (e) {
+    if (isCancelError(e)) return Promise.reject(e);
+    toast(e);
+  }
+}`,
+  },
+  {
+    name: 'conditional arm rejecting with the param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => (isCancelError(e) ? Promise.reject(e) : 0));`,
+  },
+  {
+    name: 'negated conditional rejecting with the param on the other arm',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => (!isCancelError(e) ? 0 : Promise.reject(e)));`,
+  },
+  {
     name: 'guard that rethrows the cancel',
     code: `${HEAD}
 cancAsync(function* () {
@@ -315,6 +353,30 @@ cancAsync(function* () {
 });`;
 
 const inlineInvalid: InvalidTestCase<MessageIds, Options>[] = [
+  {
+    name: 'Promise.reject of a new error on the cancel branch still swallows',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (isCancelError(e)) return Promise.reject(new Error('failed'));
+  toast(e);
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 12 }],
+  },
+  {
+    name: 'Promise.reject of the param on the non cancel branch only still swallows',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (!isCancelError(e)) return Promise.reject(e);
+  toast(e);
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 12 }],
+  },
+  {
+    name: 'conditional rejecting on the non cancel arm only still swallows',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => (isCancelError(e) ? 0 : Promise.reject(e)));`,
+    errors: [{ messageId: 'swallowedCancel', line: 12 }],
+  },
   {
     name: 'fallback value from a concise arrow handler',
     code: `${HEAD}
