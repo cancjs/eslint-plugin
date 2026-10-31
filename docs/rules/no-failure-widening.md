@@ -87,13 +87,13 @@ This rule accepts an optional configuration object:
 }
 ```
 
-### `allowWithComment`
+### allowWithComment
 
-Default: `"canc-allow-widening"`. A comment string that acknowledges an intentional widening. When placed on the line immediately preceding the cast or annotation, the rule suppresses the warning.
+The `allowWithComment` option. Default: `"canc-allow-widening"`. A comment string that acknowledges an intentional widening. When placed on the line immediately preceding the cast or annotation, the rule suppresses the warning.
 
-### `allowVariableAnnotationWidening`
+### allowVariableAnnotationWidening
 
-Default: `true`. When set to `true`, variable type annotations that omit failure types (for example, `const x: CancelablePromise<string> = p;`) are allowed without warnings. Setting this option to `false` requires all variable annotations to preserve declared failure types.
+The `allowVariableAnnotationWidening` option. Default: `true`. When set to `true`, variable type annotations that omit failure types (for example, `const x: CancelablePromise<string> = p;`) are allowed without warnings. Setting this option to `false` requires all variable annotations to preserve declared failure types.
 
 ## When not to use it
 

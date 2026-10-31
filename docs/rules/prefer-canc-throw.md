@@ -73,13 +73,13 @@ This rule accepts an optional configuration object:
 }
 ```
 
-### `requireTypeInfo`
+### requireTypeInfo
 
-Default: `false`. When set to `true`, the rule runs only when TypeScript parser services are available and degrades silently when type information is missing.
+The `requireTypeInfo` option. Default: `false`. When set to `true`, the rule runs only when TypeScript parser services are available and degrades silently when type information is missing.
 
-### `allowCatchRethrow`
+### allowCatchRethrow
 
-Default: `true`. When enabled, rethrowing the catch clause parameter (for example, `catch (err) { throw err; }`) is permitted without being flagged as an uncaptured failure.
+The `allowCatchRethrow` option. Default: `true`. When enabled, rethrowing the catch clause parameter (for example, `catch (err) { throw err; }`) is permitted without being flagged as an uncaptured failure.
 
 ### exclude
 
