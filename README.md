@@ -14,7 +14,7 @@ The blessed idioms from the `@cancjs/*` docs are never flagged by the `recommend
 npm install --save-dev @cancjs/eslint-plugin
 ```
 
-Peer dependencies: `eslint` 9 or 10. Rules that read types also need `@typescript-eslint/parser` 8 and `typescript`. Both are optional. Node versions are as declared in `engines`.
+Peer dependencies: `eslint` 9 or 10. Rules that read types also need `@typescript-eslint/parser` 8. The plugin loads `typescript` at runtime and needs `typescript`, which npm 7 and later install together with the parser. Node versions are as declared in `engines`.
 
 ## Quick start
 
@@ -51,7 +51,7 @@ export default [
 ];
 ```
 
-Type-aware rules are silent without type information. They do not guess. The rules list below marks them with a type information icon.
+Type-aware rules are silent without type information. They do not guess. The one exception is `prefer-canc-throw`, which still reports without type information. The rules list below marks them with a type information icon.
 
 ## Presets
 
@@ -93,14 +93,14 @@ export default [
 ```
 
 - `sources`: module specifiers that export cancelable APIs. All `@cancjs/*` packages are built in. Add your own wrappers here.
-- `cancelableTypeNames`: type names treated as cancelable promises. Default `['CancelablePromise']`.
+- `cancelableTypeNames`: type names treated as cancelable promises. A type counts only when it is named in `cancelableTypeNames` and declared in one of `sources`. Default `['CancelablePromise']`.
 - `lazyTypeNames`: type names treated as lazy cancelable promises. Default `['LazyPromise']`.
 - `structuralDetection`: default `false`. When `true`, any type with a callable `then` and a callable `cancel` counts as a cancelable promise.
 - `boundaryFunctions`: helper names that end a cancelable flow on purpose, such as `catchCancel` and `suppressCancel`. Your own helpers are added to the built-in list.
 
 ### Structural detection trade-off
 
-By default a type counts as cancelable only when it is named in `cancelableTypeNames` or comes from a listed source. Turning on `structuralDetection` widens that to every type with `then` and `cancel`, including types from libraries you do not control. That catches wrapper types you did not list.
+By default a type counts as cancelable only when it is named in `cancelableTypeNames` and declared in one of `sources`. Turning on `structuralDetection` widens that to every type with `then` and `cancel`, including types from libraries you do not control. That catches wrapper types you did not list.
 
 The wider match applies to every rule that reads types. It also changes the advice. The fixes those rules suggest name canc APIs, such as `CancelablePromise.fail` and `cancAsync`, even when the foreign type has nothing to do with them. Leave the option off unless you have such wrappers and have checked the results.
 
@@ -110,7 +110,7 @@ The plugin ships configs that settle conflicts with typescript-eslint, eslint-pl
 
 ## Native entry
 
-Packages that use the native-twin builds import from `@cancjs/eslint-plugin/native`. It exports the same three presets, limited to the rules that apply there.
+Packages that use the native-twin builds import from `@cancjs/eslint-plugin/native`. It exports the same three presets, limited to the rules that apply there: [must-consume-lazy](docs/rules/must-consume-lazy.md), [no-abort-listener-leak](docs/rules/no-abort-listener-leak.md), [no-internal-imports](docs/rules/no-internal-imports.md) and [valid-canc-params](docs/rules/valid-canc-params.md). It carries the presets only and has no interop configs.
 
 ## Coroutine factories
 
