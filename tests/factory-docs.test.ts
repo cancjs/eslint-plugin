@@ -15,6 +15,20 @@ const FACTORY_OPTIONS = [
   'genCoroutineFactories',
 ];
 
+interface OptionsSchema {
+  properties?: Record<string, unknown>;
+}
+
+function schemaProperties(rule: (typeof rules)[keyof typeof rules]): string[] {
+  const schema = rule.meta?.schema;
+  const first = (Array.isArray(schema) ? schema[0] : schema) as OptionsSchema | undefined;
+  return Object.keys(first?.properties ?? {});
+}
+
+function defaultsOf(rule: (typeof rules)[keyof typeof rules]): Record<string, unknown> {
+  return (rule.meta?.defaultOptions?.[0] ?? {}) as Record<string, unknown>;
+}
+
 // Pieces are joined so this file does not trip the sweep it mirrors.
 const INTERNAL_WORDS = [
   ['ag', 'ent'],
@@ -43,13 +57,36 @@ describe('coroutine factory option documentation', () => {
     expect(factoryRules.length).toBeGreaterThan(0);
   });
 
-  it.each(factoryRules)('%s documents all four options and the extend and replace behavior', (ruleName) => {
+  it.each(factoryRules)('%s schema declares the four factory options', (ruleName) => {
+    expect(schemaProperties(rules[ruleName])).toEqual(expect.arrayContaining(FACTORY_OPTIONS));
+  });
+
+  it.each(factoryRules)('%s documents every schema option with its default', (ruleName) => {
+    const rule = rules[ruleName];
     const page = fs.readFileSync(path.join(docsDir, `${ruleName}.md`), 'utf8');
-    for (const option of FACTORY_OPTIONS) {
-      expect(page, `Option '${option}' is not a code span in '${ruleName}.md'`).toContain(`\`${option}\``);
+    const defaults = defaultsOf(rule);
+    for (const option of schemaProperties(rule)) {
+      const section = new RegExp(String.raw`^### ${option}\r?\n\r?\n([^\r\n]*)`, 'm').exec(page);
+      expect(section, `Option '${option}' has no heading in '${ruleName}.md'`).not.toBeNull();
+      const expected = option in defaults ? `Default: \`${JSON.stringify(defaults[option])}\`.` : 'Default: not set.';
+      expect(section?.[1], `Option '${option}' default in '${ruleName}.md'`).toContain(expected);
     }
+  });
+
+  it.each(factoryRules)('%s explains extend, replace and the shared setup', (ruleName) => {
+    const page = fs.readFileSync(path.join(docsDir, `${ruleName}.md`), 'utf8');
     expect(page, `'${ruleName}.md' does not explain extend`).toMatch(/\bextend\b/i);
     expect(page, `'${ruleName}.md' does not explain replace`).toMatch(/\breplace\b/i);
+    expect(page, `'${ruleName}.md' does not say an empty list turns the built-in off`).toContain(
+      'An empty list turns the built-in off',
+    );
+    expect(page, `'${ruleName}.md' does not say to share the options`).toContain(
+      'Set the same factory options on every coroutine rule',
+    );
+    expect(page, `'${ruleName}.md' does not describe object entry forms`).toContain('namespace import');
+    expect(page, `'${ruleName}.md' still calls a variable generator unresolved`).not.toContain(
+      'a variable passed in place of the generator',
+    );
   });
 
   it.each(factoryRules)('%s page contains no internal references', (ruleName) => {
