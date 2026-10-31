@@ -186,11 +186,30 @@ async function run() {
 }`,
   },
   {
-    name: 'async function without a return annotation has no declared sink',
+    name: 'async function returning Promise.resolve is safe',
     code: `${HEAD}
-async function run() {
-  return load();
+async function f() {
+  return Promise.resolve(load());
 }`,
+  },
+  {
+    name: 'async function returning await load is safe for this rule',
+    code: `${HEAD}
+async function f() {
+  return await load();
+}`,
+  },
+  {
+    name: 'async function returning cast to Promise is safe for this rule',
+    code: `${HEAD}
+async function f() {
+  return load() as Promise<number>;
+}`,
+  },
+  {
+    name: 'callback returns are skipped',
+    code: `${HEAD}
+[1].map(async () => load());`,
   },
   {
     name: 'floating statement is not a sink of this rule',
@@ -247,6 +266,39 @@ track(load());`,
 ];
 
 const invalid: InvalidTestCase<MessageIds, Options>[] = [
+  {
+    name: 'async function without a return annotation still erases',
+    code: `${HEAD}
+async function run() {
+  return load();
+}`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 5, column: 10 }],
+  },
+  {
+    name: 'concise async arrow erases return',
+    code: `${HEAD}
+const f = async () => load();`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 4, column: 23 }],
+  },
+  {
+    name: 'async method erases return',
+    code: `${HEAD}
+class C {
+  async m() {
+    return load();
+  }
+}`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 6, column: 12 }],
+  },
+  {
+    name: 'async generator erases return',
+    code: `${HEAD}
+async function* g() {
+  yield 1;
+  return load();
+}`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 6, column: 10 }],
+  },
   {
     name: 'direct call argument into a Promise parameter',
     code: `${HEAD}

@@ -228,7 +228,7 @@ export default createRule<[Options], MessageIds>({
       if (!operand || sinkMatchesSomeSpecifier(source, safeSinks, context)) {
         return;
       }
-      if (isCancelableOperand(operand) && isPlainPromiseReturnSink(fn, context)) {
+      if (isCancelableOperand(operand) && (fn.async || isPlainPromiseReturnSink(fn, context))) {
         context.report({ node: source, messageId: fn.async ? 'erasedReturnAsync' : 'erasedReturn' });
       }
     }
