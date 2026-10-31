@@ -113,8 +113,7 @@ async function lint(preset: 'recommended' | 'strict', files: string[]): Promise<
           parserOptions: {
             project: [tsconfigPath],
             tsconfigRootDir: projectDir,
-            // CI=true infers a single run, where parsing a file twice falls back to an unresolved
-            // isolated program. Each preset lints the same files, so keep the full project program.
+            // single-run inference would drop the project program on the second parse
             disallowAutomaticSingleRunInference: true,
           },
         },
