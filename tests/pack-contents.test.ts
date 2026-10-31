@@ -73,6 +73,10 @@ describe('packed file list', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('holds no source map', () => {
+    expect(files.filter((file) => file.endsWith('.map'))).toEqual([]);
+  });
+
   it('holds every export target', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as PackageJson;
     for (const target of collectExportTargets(pkg)) {
