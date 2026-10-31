@@ -6,7 +6,7 @@ import type { InvalidTestCase, ValidTestCase } from '@typescript-eslint/rule-tes
 import { Linter, type Rule } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
-import type { ExecutorParamNamesOptions, MessageIds, RuleOptions } from '../../src/rules/executor-param-names.js';
+import type { MessageIds, RuleOptions } from '../../src/rules/executor-param-names.js';
 import rule from '../../src/rules/executor-param-names.js';
 import { corpusFiles, readMarkers } from '../helpers/corpus.js';
 import { ruleTester } from '../setup.js';

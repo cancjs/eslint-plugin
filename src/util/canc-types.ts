@@ -569,7 +569,7 @@ export function isThenableExpression(
   return isThenableType(type, checker);
 }
 
-const NON_PRIMITIVE_INTRINSICS = new Set(['any', 'unknown', 'never', 'object', 'error']);
+const NON_PRIMITIVE_INTRINSICS = new Set(['any', 'unknown', 'never', 'object', 'error', 'void', 'undefined']);
 
 function isPrimitiveType(type: ts.Type): boolean {
   if (type.isUnion()) {
@@ -582,7 +582,7 @@ function isPrimitiveType(type: ts.Type): boolean {
 }
 
 /**
- * True when the static type of `node` is a primitive (boolean, string, number, bigint, symbol, void, null, undefined
+ * True when the static type of `node` is a primitive (boolean, string, number, bigint, symbol, null
  * or a literal of one), so the value cannot carry an object such as a signal. False without type information.
  */
 export function isPrimitiveExpression(

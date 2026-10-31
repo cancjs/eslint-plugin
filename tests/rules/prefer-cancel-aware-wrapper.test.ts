@@ -138,6 +138,18 @@ describe('prefer-cancel-aware-wrapper', () => {
            c.abort();
          }
        });`,
+      // 11. Signal reduced to a boolean flag before reaching the awaited call
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+       declare function save(url: string, aborted: boolean): Promise<void>;
+       declare function isAborted(signal: AbortSignal): boolean;
+       const run = cancAsync(function* (url: string) {
+         const c = new AbortController();
+         try {
+           yield* cancAwait(save(url, isAborted(c.signal)));
+         } finally {
+           c.abort();
+         }
+       });`,
     ],
     invalid: [
       // 1. Corpus invalid 14 (createAbortSignal with destructuring + abort in finally)
@@ -201,6 +213,21 @@ const run = cancAsync(function* (id: string) {
     yield* cancAwait(rawFetch(id, pick(controller.signal)));
   } finally {
     controller.abort();
+  }
+});`,
+        errors: [{ messageId: 'manualCancelWiring' as const, line: 9, column: 5 }],
+      },
+      // Signal threaded through a void returning callback API
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function fromCallback<T>(fn: (cb: (err: unknown, res: T) => void) => void): Promise<T>;
+declare const api: { get(url: string, opts: { signal: AbortSignal }, cb: (err: unknown, res: string) => void): void };
+const run = cancAsync(function* (url: string) {
+  const c = new AbortController();
+  try {
+    yield* cancAwait(fromCallback((cb) => api.get(url, { signal: c.signal }, cb)));
+  } finally {
+    c.abort();
   }
 });`,
         errors: [{ messageId: 'manualCancelWiring' as const, line: 9, column: 5 }],
