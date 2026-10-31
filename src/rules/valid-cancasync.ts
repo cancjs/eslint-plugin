@@ -41,14 +41,19 @@ function resolveFunction(
   node: TSESTree.Node,
   context: TSESLint.RuleContext<MessageIds, RuleOptions>,
 ): {
-  fn: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression;
+  fn:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.TSDeclareFunction;
   isIdentifier: boolean;
 } | null {
   const unwrapped = unwrapParens(node);
   if (
     unwrapped.type === AST_NODE_TYPES.FunctionExpression ||
     unwrapped.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-    unwrapped.type === AST_NODE_TYPES.FunctionDeclaration
+    unwrapped.type === AST_NODE_TYPES.FunctionDeclaration ||
+    unwrapped.type === AST_NODE_TYPES.TSDeclareFunction
   ) {
     return { fn: unwrapped, isIdentifier: false };
   }
@@ -66,7 +71,10 @@ function resolveFunction(
     }
     // parameter defs point at the owning function, so match the def name too
     for (const def of variable.defs) {
-      if (def.node.type === AST_NODE_TYPES.FunctionDeclaration && def.node.id === def.name) {
+      if (
+        (def.node.type === AST_NODE_TYPES.FunctionDeclaration || def.node.type === AST_NODE_TYPES.TSDeclareFunction) &&
+        def.node.id === def.name
+      ) {
         return { fn: def.node, isIdentifier: true };
       }
       if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.id === def.name && def.node.init) {
@@ -74,7 +82,8 @@ function resolveFunction(
         if (
           init.type === AST_NODE_TYPES.FunctionExpression ||
           init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          init.type === AST_NODE_TYPES.FunctionDeclaration
+          init.type === AST_NODE_TYPES.FunctionDeclaration ||
+          init.type === AST_NODE_TYPES.TSDeclareFunction
         ) {
           return { fn: init, isIdentifier: true };
         }
