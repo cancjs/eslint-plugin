@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const corpusDir = path.resolve(__dirname, '../fixtures/corpus');
 
-// Closed list of the 36 planned catalog rule names.
+// Closed list of the 37 planned catalog rule names.
 export const CATALOG_RULE_IDS = [
   'no-async-executor',
   'no-executor-return',
@@ -37,6 +37,7 @@ export const CATALOG_RULE_IDS = [
   'no-async-loop-callback',
   'prefer-signal-accessor',
   'prefer-canceled-property',
+  'require-loop-advance',
   'prefer-canc-throw',
   'canc-throw-tail-position',
   'exhaustive-catch',

@@ -225,7 +225,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
       })
       .sort();
 
-    expect(phaseValidFiles.length).toBe(50); // 21 coroutine + 8 lazy + 21 hygiene
+    expect(phaseValidFiles.length).toBe(53); // 24 coroutine + 8 lazy + 21 hygiene
 
     const recResults = await eslintRecommended.lintFiles(phaseValidFiles);
     for (const r of recResults) {
@@ -239,7 +239,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(168);
+    expect(allValidFiles.length).toBe(171);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {
