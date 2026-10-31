@@ -140,6 +140,16 @@ if (x instanceof TimeoutError) {}`,
 declare const err: { name: string };
 if (err.name === 'SupersededError') {}`,
 
+    // Node error name check without class or guard imported
+    `import { spawn } from '@cancjs/node';
+declare const e: { name: string };
+if (e.name === 'JsonParseError') {}`,
+
+    // User-defined NotImplementedError class
+    `class NotImplementedError {}
+declare const x: unknown;
+if (x instanceof NotImplementedError) {}`,
+
     // Silent twin: Pattern 4 in a try block without any cancelable
     `declare function run(): void;
 try {
@@ -772,6 +782,49 @@ if (isAbortError(x)) {}`,
           data: { className: 'AbortError', guard: 'isAbortError', value: 'x' },
           line: 3,
           column: 5,
+        },
+      ],
+    },
+
+    // Node error: ProcessExitError instanceof with guard imported
+    {
+      code: `import { ProcessExitError, isProcessExitError } from '@cancjs/node';
+declare function run(): void;
+try { run(); } catch (e) { if (e instanceof ProcessExitError) {} }`,
+      output: `import { ProcessExitError, isProcessExitError } from '@cancjs/node';
+declare function run(): void;
+try { run(); } catch (e) { if (isProcessExitError(e)) {} }`,
+      errors: [
+        {
+          messageId: 'instanceofBrandedError',
+          data: { className: 'ProcessExitError', guard: 'isProcessExitError', value: 'e' },
+          line: 3,
+          column: 32,
+        },
+      ],
+    },
+
+    // Node error: JsonParseError name check with class imported
+    {
+      code: `import { JsonParseError } from '@cancjs/node';
+declare const e: { name: string };
+if (e.name === 'JsonParseError') {}`,
+      output: null,
+      errors: [
+        {
+          messageId: 'nameCheckBrandedError',
+          data: { className: 'JsonParseError', guard: 'isJsonParseError', value: 'e' },
+          line: 3,
+          column: 5,
+          suggestions: [
+            {
+              messageId: 'suggestUseGuard',
+              data: { guard: 'isJsonParseError', value: 'e' },
+              output: `import { JsonParseError } from '@cancjs/node';
+declare const e: { name: string };
+if (isJsonParseError(e)) {}`,
+            },
+          ],
         },
       ],
     },

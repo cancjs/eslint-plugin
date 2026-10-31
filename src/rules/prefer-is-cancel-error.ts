@@ -99,6 +99,10 @@ const BRANDED_ERRORS: readonly { className: string; guard: string; nameAlways: b
   { className: 'AbortError', guard: 'isAbortError', nameAlways: true },
   { className: 'SupersededError', guard: 'isSupersededError', nameAlways: false },
   { className: 'BreakError', guard: 'isBreakError', nameAlways: false },
+  { className: 'ProcessExitError', guard: 'isProcessExitError', nameAlways: false },
+  { className: 'ProcessSpawnError', guard: 'isProcessSpawnError', nameAlways: false },
+  { className: 'JsonParseError', guard: 'isJsonParseError', nameAlways: false },
+  { className: 'NotImplementedError', guard: 'isNotImplementedError', nameAlways: false },
 ];
 
 const FALLBACK_HELPER_NAMES = new Set<string>([...BRANDED_ERRORS.map((b) => b.guard), 'isTimeoutError']);
