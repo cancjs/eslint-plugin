@@ -594,10 +594,11 @@ function hasBoundaryCallInStatements(
       }
     }
     if (stmt.type === AST_NODE_TYPES.IfStatement) {
-      if (hasBoundaryCallInStatements([stmt.consequent], paramName, context, settings)) {
-        return true;
-      }
-      if (stmt.alternate && hasBoundaryCallInStatements([stmt.alternate], paramName, context, settings)) {
+      if (
+        stmt.alternate &&
+        hasBoundaryCallInStatements([stmt.consequent], paramName, context, settings) &&
+        hasBoundaryCallInStatements([stmt.alternate], paramName, context, settings)
+      ) {
         return true;
       }
     }
@@ -711,6 +712,67 @@ function statementsAllLogOrReturn(statements: TSESTree.Statement[]): boolean {
   return true;
 }
 
+function containsExitWithoutRethrow(node: TSESTree.Node, paramName: string, context: Context): boolean {
+  if (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  ) {
+    return false;
+  }
+  if (node.type === AST_NODE_TYPES.ReturnStatement) {
+    return !returnsRejection(node, paramName, context);
+  }
+  if (node.type === AST_NODE_TYPES.BreakStatement || node.type === AST_NODE_TYPES.ContinueStatement) {
+    return true;
+  }
+  if (node.type === AST_NODE_TYPES.BlockStatement) {
+    return node.body.some((s) => containsExitWithoutRethrow(s, paramName, context));
+  }
+  if (node.type === AST_NODE_TYPES.IfStatement) {
+    return (
+      containsExitWithoutRethrow(node.consequent, paramName, context) ||
+      (node.alternate ? containsExitWithoutRethrow(node.alternate, paramName, context) : false)
+    );
+  }
+  if (
+    node.type === AST_NODE_TYPES.WhileStatement ||
+    node.type === AST_NODE_TYPES.DoWhileStatement ||
+    node.type === AST_NODE_TYPES.ForStatement ||
+    node.type === AST_NODE_TYPES.ForInStatement ||
+    node.type === AST_NODE_TYPES.ForOfStatement
+  ) {
+    return containsExitWithoutRethrow(node.body, paramName, context);
+  }
+  if (node.type === AST_NODE_TYPES.SwitchStatement) {
+    return node.cases.some((c) => c.consequent.some((s) => containsExitWithoutRethrow(s, paramName, context)));
+  }
+  if (node.type === AST_NODE_TYPES.TryStatement) {
+    return (
+      containsExitWithoutRethrow(node.block, paramName, context) ||
+      (node.handler ? containsExitWithoutRethrow(node.handler.body, paramName, context) : false) ||
+      (node.finalizer ? containsExitWithoutRethrow(node.finalizer, paramName, context) : false)
+    );
+  }
+  return false;
+}
+
+function statementCanExitWithoutRethrow(stmt: TSESTree.Statement, paramName: string, context: Context): boolean {
+  if (stmt.type === AST_NODE_TYPES.ReturnStatement) {
+    return !returnsRejection(stmt, paramName, context);
+  }
+  if (stmt.type === AST_NODE_TYPES.BreakStatement || stmt.type === AST_NODE_TYPES.ContinueStatement) {
+    return true;
+  }
+  if (stmt.type === AST_NODE_TYPES.IfStatement) {
+    return (
+      containsExitWithoutRethrow(stmt.consequent, paramName, context) ||
+      (stmt.alternate ? containsExitWithoutRethrow(stmt.alternate, paramName, context) : false)
+    );
+  }
+  return false;
+}
+
 /**
  * Classify a catch clause or rejection callback handler for cancel compliance.
  */
@@ -774,17 +836,23 @@ export function analyzeHandler(
     return { compliant: false, via: null, wrapped, destructured, param };
   }
 
+  let canExitBeforeGuard = false;
   let guardSwallows = false;
   for (let i = 0; i < statements.length; i++) {
     const stmt = statements[i];
     if (stmt.type === AST_NODE_TYPES.IfStatement) {
       const guardRes = checkCancelGuard(stmt, param.name, statements.slice(i + 1), context);
       if (guardRes === 'rethrow') {
-        return { compliant: true, via: 'guard', wrapped: false, destructured: false, param };
+        if (!canExitBeforeGuard) {
+          return { compliant: true, via: 'guard', wrapped: false, destructured: false, param };
+        }
       }
       if (guardRes === 'swallow') {
         guardSwallows = true;
       }
+    }
+    if (statementCanExitWithoutRethrow(stmt, param.name, context)) {
+      canExitBeforeGuard = true;
     }
   }
 

@@ -123,6 +123,38 @@ ${firstStatement}`,
 
 const inlineValid: ValidTestCase<Options>[] = [
   {
+    name: 'specific error guard returns, then unconditional rethrow covers cancel',
+    code: `${HEAD}
+class HttpError extends Error {}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof HttpError) {
+      toast(e);
+      return;
+    }
+    throw e;
+  }
+});`,
+  },
+  {
+    name: 'boundary in both branches covers every exit',
+    code: `${HEAD}
+declare const a: boolean;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (a) {
+      suppressErrors(e, CancelError);
+    } else {
+      suppressErrors(e, CancelError);
+    }
+  }
+});`,
+  },
+  {
     name: 'instanceof CancelError guard rethrows before other statements',
     code: `${HEAD}
 cancAsync(function* () {
@@ -433,7 +465,46 @@ cancAsync(function* () {
   }
 });`;
 
+const boundaryOneBranch = `${HEAD}
+declare const rare: boolean;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (rare) {
+      suppressErrors(e, CancelError);
+    }
+    toast(e);
+    return 1;
+  }
+});`;
+
 const inlineInvalid: InvalidTestCase<MessageIds, Options>[] = [
+  {
+    name: 'exit before guard leaves cancel swallowed',
+    code: `${HEAD}
+declare const x: boolean;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (x) return 1;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel' }],
+  },
+  {
+    name: 'boundary in only one branch leaves other branch unguarded',
+    code: boundaryOneBranch,
+    errors: [
+      {
+        messageId: 'swallowedCancel',
+        suggestions: suggested(boundaryOneBranch, '    if (rare) {'),
+      },
+    ],
+  },
   {
     name: 'Promise.reject of a new error on the cancel branch still swallows',
     code: `${HEAD}
