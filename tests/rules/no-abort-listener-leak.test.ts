@@ -653,6 +653,52 @@ function run() {
 }`,
         errors: [{ messageId: 'inlineListenerNoOnce' as const, line: 5 }],
       },
+      // Local signal array mutated with push keeps the array external
+      {
+        code: `function run(extra: AbortSignal) {
+  const first = new AbortController();
+  const signals = [first.signal];
+  signals.push(extra);
+  return signals.map((sig) => new Promise<void>((_r, rej) => {
+    sig.addEventListener('abort', () => rej(new Error('aborted')));
+  }));
+}`,
+        errors: [{ messageId: 'inlineListenerNoOnce' as const, line: 6 }],
+      },
+      // Removal inside a dead/conditional branch does not protect the listener
+      {
+        code: `declare function callRemote(signal: AbortSignal): Promise<string>;
+declare const never: boolean;
+function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  signal.addEventListener('abort', onAbort);
+  if (never) {
+    callRemote(signal).finally(() => signal.removeEventListener('abort', onAbort));
+  }
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 5 }],
+      },
+      // Local shadowed Promise class does not run synchronously
+      {
+        code: `class Promise<T> {
+  constructor(fn: (r: (v: T) => void) => void) {
+    setTimeout(() => fn(() => {}), 0);
+  }
+  then() {}
+}
+async function run(signal: AbortSignal) {
+  const onAbort = () => {};
+  try {
+    await new Promise<void>((resolve) => {
+      signal.addEventListener('abort', onAbort);
+      resolve();
+    });
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}`,
+        errors: [{ messageId: 'leakedAbortListener' as const, line: 11 }],
+      },
     ],
   });
 });

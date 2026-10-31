@@ -1,7 +1,8 @@
 import type { TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES, TSESLint } from '@typescript-eslint/utils';
 
-import { refersTo } from '../util/canc-imports.js';
+import { isGlobalPromiseIdent } from '../util/adoption.js';
+import { isCancCtorIdent, refersTo } from '../util/canc-imports.js';
 import createRule from '../util/create-rule.js';
 import { analyzeExecutor } from '../util/executor.js';
 
@@ -119,6 +120,8 @@ function enclosingFunction(node: TSESTree.Node): TSESTree.Node | undefined {
   return curr;
 }
 
+const MUTATING_ARRAY_METHODS = new Set(['push', 'unshift', 'splice', 'fill', 'copyWithin']);
+
 // `signals.map((sig) => ...)` where `signals` is a const array literal of local signals
 function isLocalSignalMapParameter(
   param: TSESTree.Identifier,
@@ -147,6 +150,7 @@ function isLocalSignalMapParameter(
   const variable = findVariable(source.name, context.sourceCode.getScope(source));
   const def = variable?.defs.length === 1 ? variable.defs[0] : undefined;
   if (
+    !variable ||
     def?.node.type !== AST_NODE_TYPES.VariableDeclarator ||
     def.node.id.type !== AST_NODE_TYPES.Identifier ||
     def.node.parent.kind !== 'const' ||
@@ -160,7 +164,7 @@ function isLocalSignalMapParameter(
     return false;
   }
   const list = unwrapTsExpression(def.node.init);
-  return (
+  const isArrayInit =
     list.type === AST_NODE_TYPES.ArrayExpression &&
     list.elements.length > 0 &&
     list.elements.every(
@@ -168,8 +172,66 @@ function isLocalSignalMapParameter(
         element !== null &&
         element.type !== AST_NODE_TYPES.SpreadElement &&
         isLocallyCreatedSignal(element, owner, context),
-    )
-  );
+    );
+  if (!isArrayInit) {
+    return false;
+  }
+
+  for (const ref of variable.references) {
+    if (ref.identifier === def.node.id || ref.init) {
+      continue;
+    }
+    if (ref.isWrite()) {
+      return false;
+    }
+    const ident = ref.identifier;
+    let expr: TSESTree.Node = ident;
+    while (
+      expr.parent &&
+      (expr.parent.type === AST_NODE_TYPES.TSAsExpression ||
+        expr.parent.type === AST_NODE_TYPES.TSTypeAssertion ||
+        expr.parent.type === AST_NODE_TYPES.TSNonNullExpression ||
+        expr.parent.type === AST_NODE_TYPES.TSSatisfiesExpression)
+    ) {
+      expr = expr.parent;
+    }
+    const parent = expr.parent;
+    if (!parent) {
+      continue;
+    }
+    if (parent.type === AST_NODE_TYPES.MemberExpression && parent.object === expr) {
+      const propName =
+        !parent.computed && parent.property.type === AST_NODE_TYPES.Identifier ? parent.property.name
+        : parent.property.type === AST_NODE_TYPES.Literal && typeof parent.property.value === 'string' ?
+          parent.property.value
+        : undefined;
+      if (
+        propName &&
+        MUTATING_ARRAY_METHODS.has(propName) &&
+        parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+        parent.parent.callee === parent
+      ) {
+        return false;
+      }
+      if (parent.computed) {
+        const memParent = parent.parent;
+        if (
+          (memParent?.type === AST_NODE_TYPES.AssignmentExpression && memParent.left === parent) ||
+          (memParent?.type === AST_NODE_TYPES.UpdateExpression && memParent.argument === parent)
+        ) {
+          return false;
+        }
+      }
+    }
+    if (
+      (parent.type === AST_NODE_TYPES.CallExpression || parent.type === AST_NODE_TYPES.NewExpression) &&
+      parent.arguments.includes(expr as TSESTree.Expression)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function isLocallyCreatedSignal(
@@ -471,12 +533,10 @@ function isForEachCall(call: TSESTree.CallExpression): boolean {
 }
 
 // a Promise executor and a forEach/map callback run synchronously in the enclosing function
-function runsSynchronouslyInParent(fn: TSESTree.Node): boolean {
+function runsSynchronouslyInParent(fn: TSESTree.Node, context: TSESLint.RuleContext<MessageIds, RuleOptions>): boolean {
   const parent = fn.parent;
-  if (parent?.type === AST_NODE_TYPES.NewExpression) {
-    return (
-      parent.callee.type === AST_NODE_TYPES.Identifier && parent.callee.name === 'Promise' && parent.arguments[0] === fn
-    );
+  if (parent?.type === AST_NODE_TYPES.NewExpression && parent.arguments[0] === fn) {
+    return isGlobalPromiseIdent(parent.callee, context) || isCancCtorIdent(parent.callee, context);
   }
   if (parent?.type === AST_NODE_TYPES.CallExpression && parent.arguments[0] === fn) {
     return (
@@ -609,7 +669,15 @@ function hasFinallyCallbackRemoval(
     return false;
   }
   const calls: TSESTree.CallExpression[] = [];
-  findCallsOutsideNestedFunctions(body, calls);
+  if (body.type === AST_NODE_TYPES.BlockStatement) {
+    for (const stmt of body.body) {
+      if (stmt.type === AST_NODE_TYPES.ReturnStatement || stmt.type === AST_NODE_TYPES.ExpressionStatement) {
+        findCallsOutsideNestedFunctions(stmt, calls);
+      }
+    }
+  } else {
+    findCallsOutsideNestedFunctions(body, calls);
+  }
   return calls.some(
     (call) =>
       call.callee.type === AST_NODE_TYPES.MemberExpression &&
@@ -627,7 +695,7 @@ function isProtectedByFinally(
   context: TSESLint.RuleContext<MessageIds, RuleOptions>,
 ): boolean {
   let curr: TSESTree.Node | undefined = regNode.parent;
-  while (curr && !(isFunctionNode(curr) && !runsSynchronouslyInParent(curr))) {
+  while (curr && !(isFunctionNode(curr) && !runsSynchronouslyInParent(curr, context))) {
     if (
       curr.type === AST_NODE_TYPES.TryStatement &&
       curr.finalizer &&
