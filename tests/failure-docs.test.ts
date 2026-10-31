@@ -99,8 +99,8 @@ describe('failure family rule documentation', () => {
       );
 
       if (schemaOptionKeys.length === 0) {
-        expect(content, `Doc page '${ruleName}.md' with empty schema must state it accepts no options`).toMatch(
-          /This rule does not accept any options\./i,
+        expect(content, `Doc page '${ruleName}.md' with empty schema must not have an options section`).not.toMatch(
+          /^## Options$/m,
         );
       }
     }
