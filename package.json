@@ -28,6 +28,13 @@
     "node": ">=18.18",
     "npm": ">=9"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.18.0",
+      "onFail": "warn"
+    }
+  },
   "scripts": {
     "build": "tsdown",
     "test": "vitest run",
