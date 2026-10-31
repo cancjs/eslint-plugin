@@ -54,6 +54,8 @@ export default defineConfig(
     'tests/fixtures/**',
     'tests/integration/lane*/**',
     '**/package-lock.json',
+    // Docs-only shim manifest: the doc generator needs name + main, which the manifest rules reject.
+    'scripts/docs-plugin/package.json',
     '**/~~*',
     '**/*~~',
   ]),
