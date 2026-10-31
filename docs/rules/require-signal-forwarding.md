@@ -37,3 +37,7 @@ const profile = new CancelablePromise<Profile>((resolve, reject, { getSignal }) 
   fetchProfile('/api/user', { signal: getSignal() }).then(resolve, reject);
 });
 ```
+
+## When not to use it
+
+Turn this rule off when the operation cancels through another channel, such as a client object with its own `cancel` method, and the controller only guards unrelated work. Otherwise forward the signal.

@@ -45,6 +45,10 @@ const cancPromise = new CancelablePromise<void>((_resolve, _reject) => {
 });
 ```
 
+## When not to use it
+
+Skip this rule if your codebase already follows a different naming convention for executor parameters, or if generated code you cannot edit uses other names. It only checks naming, so turning it off does not change how cancellation behaves.
+
 ## Options
 
 This rule accepts a single options object with the following properties:

@@ -113,11 +113,11 @@ This rule accepts an optional configuration object:
 }
 ```
 
-### allowRethrow
+### `allowRethrow`
 
 Default: `true`. When set to `true`, an unconditional rethrow of the caught binding (such as `throw err;` or `return yield* canc.throw(err);`) satisfies handling for all remaining declared failure types.
 
-### requireUnlistedFallback
+### `requireUnlistedFallback`
 
 Default: `true`. When set to `true`, a catch block guarding a step with an open failure set must include an unconditional fallback rethrow for errors not covered by the listed guards.
 

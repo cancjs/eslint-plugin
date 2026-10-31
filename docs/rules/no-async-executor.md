@@ -63,3 +63,7 @@ const cancPromise = new CancelablePromise<Report>((resolve, reject, { handleCanc
   buildReport(controller.signal).then(resolve, reject);
 });
 ```
+
+## When not to use it
+
+There is rarely a reason to turn this rule off. If a wrapper you cannot change requires an async function as the executor, disable it for that line and make sure errors are caught and passed to `reject`.

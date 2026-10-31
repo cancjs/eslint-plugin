@@ -71,3 +71,7 @@ cancPromise.finally(cleanup);
 ```ts
 cancPromise.handleCancel(onCancel, { immediate: true });
 ```
+
+## When not to use it
+
+Turn this rule off if your project wraps these methods with helpers that accept different arguments and you have typed them yourself. Without such wrappers, a wrong argument count is a bug and the rule should stay on.

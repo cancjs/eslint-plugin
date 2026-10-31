@@ -43,6 +43,10 @@ Type assertions, non-null assertions and `satisfies` do not change the value, so
 
 - A call with a plain identifier as callee, such as `resolve(norm(d))`, is treated as handing over an operation, not as a transform.
 
+## When not to use it
+
+Skip this rule if you prefer to shape the value inside the executor, for example when the transform is trivial and a `then` step would only add noise. The rule is a style preference and does not affect cancellation.
+
 ## Options
 
 This rule accepts a single options object with the following property:

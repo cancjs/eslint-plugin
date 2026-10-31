@@ -51,3 +51,7 @@ const cancPromise = new CancelablePromise<Report>((resolve, reject, { handleCanc
   fetchReport(controller.signal).then(resolve, reject);
 });
 ```
+
+## When not to use it
+
+Turn this rule off in executors that deliberately start the operation first and register cleanup right after, in the same synchronous block, when a reviewer has confirmed that nothing can cancel the promise in between. In that case the gap the rule guards against does not exist.

@@ -49,6 +49,10 @@ function pipeline(signal: AbortSignal) {
 }
 ```
 
+## When not to use it
+
+Turn this rule off in code that owns the controller on purpose, for example a function that must call `abort()` itself. Passing the whole controller is then the right design.
+
 ## Options
 
 This rule accepts a single options object with the following property:

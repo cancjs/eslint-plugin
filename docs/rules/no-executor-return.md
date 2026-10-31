@@ -58,6 +58,10 @@ const lazy = new LazyPromise<void>((resolve) => {
 });
 ```
 
+## When not to use it
+
+Turn this rule off only for code that targets a promise class other than `CancelablePromise` or `LazyPromise`, where returning a cleanup function from the executor is part of that class's contract.
+
 ## Options
 
 This rule accepts a single options object with the following property:
