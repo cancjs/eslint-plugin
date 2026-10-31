@@ -4,7 +4,7 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { getCancBindings, refersTo } from '../util/canc-imports.js';
 import { analyzeHandler, type CatchSite, getCatchSites } from '../util/catch-flow.js';
 import createRule from '../util/create-rule.js';
-import { getCancSettings } from '../util/settings.js';
+import { getCancSettings, nominalSettings } from '../util/settings.js';
 
 export type MessageIds = 'swallowedCancel' | 'wrappedRethrow' | 'destructuredCatch' | 'suggestRethrowCancel';
 
@@ -154,7 +154,7 @@ export default createRule<RuleOptions, MessageIds>({
   },
   defaultOptions: [{ allowLogAndReturn: false, allowEmptyCatch: false }],
   create(context, [options]) {
-    const settings = getCancSettings(context);
+    const settings = nominalSettings(getCancSettings(context));
     const analyzeOptions = {
       allowLogAndReturn: options.allowLogAndReturn === true,
       allowEmptyCatch: options.allowEmptyCatch === true,

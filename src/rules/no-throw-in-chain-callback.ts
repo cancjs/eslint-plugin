@@ -12,7 +12,7 @@ import {
 import createRule from '../util/create-rule.js';
 import { isUnresolvedType } from '../util/failure-checker-no-throw-in-chain-callback.js';
 import { isCancelErrorThrow } from '../util/failure-types.js';
-import { getCancSettings } from '../util/settings.js';
+import { getCancSettings, nominalSettings } from '../util/settings.js';
 
 export type MessageIds = 'throwInChainCallback' | 'rejectWithoutFailure';
 
@@ -153,7 +153,7 @@ function getCallbackInfo(fn: TSESTree.FunctionLike, context: Context): CallbackI
 
   const receiver = call.callee.object;
   if (hasTypeServices(context)) {
-    if (isCancelableOrLazyExpression(receiver, context)) {
+    if (isCancelableOrLazyExpression(receiver, context, nominalSettings(getCancSettings(context)))) {
       return { method: propName, receiver };
     }
     if (isUnresolvedType(receiver, context) && isSynCancelableChainRoot(receiver, context)) {

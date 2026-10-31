@@ -3,7 +3,7 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { hasTypeServices, isCancelableExpression, isCancelablePattern } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
-import { getCancSettings } from '../util/settings.js';
+import { getCancSettings, nominalSettings } from '../util/settings.js';
 
 export type MessageIds = 'preferCanceledProperty' | 'suggestCanceledKey';
 export type RuleOptions = [];
@@ -29,7 +29,7 @@ export default createRule<RuleOptions, MessageIds>({
       return {};
     }
 
-    const settings = getCancSettings(context);
+    const settings = nominalSettings(getCancSettings(context));
 
     function isCancelableTarget(node: TSESTree.Node): boolean {
       return isCancelableExpression(node as TSESTree.Expression, context, settings);
@@ -108,7 +108,7 @@ export default createRule<RuleOptions, MessageIds>({
           cancelable = isCancelableTarget(pattern.parent.right);
         } else {
           // Check type of pattern directly (e.g. parameter destructuring)
-          cancelable = isCancelablePattern(pattern, context);
+          cancelable = isCancelablePattern(pattern, context, settings);
         }
 
         if (!cancelable) {

@@ -5,7 +5,7 @@ import { getCancBindings, refersTo } from '../util/canc-imports.js';
 import { getCancServices } from '../util/canc-types.js';
 import { isCancelableFlowCatch } from '../util/catch-flow.js';
 import createRule from '../util/create-rule.js';
-import { getCancSettings, type ResolvedCancSettings } from '../util/settings.js';
+import { getCancSettings, nominalSettings, type ResolvedCancSettings } from '../util/settings.js';
 
 export type MessageIds =
   | 'instanceofCancelError'
@@ -346,7 +346,7 @@ export default createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const services = getCancServices(context);
-    const settings = getCancSettings(context);
+    const settings = nominalSettings(getCancSettings(context));
     const sourceCode = context.sourceCode;
 
     return {
