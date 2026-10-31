@@ -203,6 +203,57 @@ describe('configurable coroutine factories', () => {
     ).toThrow(/'useX from @cancjs\/react'/);
   });
 
+  it('rejects a string and an object with the same name across dialects', () => {
+    const message = (options: FactoryOptions): string => {
+      try {
+        resolveFactories(options);
+      } catch (error) {
+        return (error as Error).message;
+      }
+      return '';
+    };
+    const mixed = message({ additionalCoroutineFactories: ['useX'], genCoroutineFactories: [reactEntry] });
+    expect(mixed).toContain("'useX from @cancjs/react'");
+    expect(mixed).toContain("'additionalCoroutineFactories'");
+    expect(mixed).toContain("'genCoroutineFactories'");
+    const reversed = message({ coroutineFactories: [reactEntry], additionalGenCoroutineFactories: ['useX'] });
+    expect(reversed).toContain("'useX from @cancjs/react'");
+    expect(reversed).toContain("'coroutineFactories'");
+    expect(reversed).toContain("'additionalGenCoroutineFactories'");
+    expect(() =>
+      resolveFactories({
+        additionalCoroutineFactories: [reactEntry],
+        additionalGenCoroutineFactories: [{ name: 'useX', source: '@cancjs/vue' }],
+      }),
+    ).not.toThrow();
+  });
+
+  it('gives two zero-config context rules one shared bag', () => {
+    const bags: unknown[] = [];
+    const makeRule = (): TSESLint.RuleModule<'probe', [Record<string, unknown>]> => ({
+      meta: {
+        type: 'problem',
+        messages: { probe: 'probe' },
+        schema: [{ type: 'object', additionalProperties: true }],
+        defaultOptions: [{ allowBareYield: false }],
+      },
+      defaultOptions: [{ allowBareYield: false }],
+      create(context) {
+        bags.push(resolveFactories(context.options[0]));
+        return {};
+      },
+    });
+    const linter = new Linter();
+    linter.verify('const a = 1;', {
+      languageOptions: { parser: tseslintParser, sourceType: 'module' },
+      plugins: { probe: { rules: { one: makeRule(), two: makeRule() } } },
+      rules: { 'probe/one': 'error', 'probe/two': 'error' },
+    });
+    expect(bags).toHaveLength(2);
+    expect(bags[0]).toBe(bags[1]);
+    expect(bags[0]).toBe(resolveFactories());
+  });
+
   it('memoizes by options object and shares the zero-config default', () => {
     const options: FactoryOptions = addAsync(['useX']);
     expect(resolveFactories(options)).toBe(resolveFactories(options));

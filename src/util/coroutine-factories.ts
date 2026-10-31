@@ -81,14 +81,34 @@ function entryKey(entry: FactoryEntry): string {
   return typeof entry === 'string' ? entry : `${entry.name} from ${entry.source}`;
 }
 
+function entryName(entry: FactoryEntry): string {
+  return typeof entry === 'string' ? entry : entry.name;
+}
+
+// a string also matches everything a same-named object does
+function sameEntry(a: FactoryEntry, b: FactoryEntry): boolean {
+  if (typeof a === 'string' || typeof b === 'string') {
+    return entryName(a) === entryName(b);
+  }
+  return a.name === b.name && a.source === b.source;
+}
+
+const FACTORY_OPTION_KEYS = [
+  'additionalCoroutineFactories',
+  'additionalGenCoroutineFactories',
+  'coroutineFactories',
+  'genCoroutineFactories',
+] as const;
+
 /**
  * Merge the factory options of one rule into per-dialect lists.
  *
- * Throws when an entry is listed for both dialects. Without options the
- * result is a shared default, so zero-config callers see one object.
+ * Throws when an entry is listed for both dialects, also when one side is a
+ * string and the other an object with the same name. Without any factory
+ * option the result is a shared default, so zero-config callers see one object.
  */
 export function resolveFactories(options?: FactoryOptions): ResolvedFactories {
-  if (!options) {
+  if (!options || FACTORY_OPTION_KEYS.every((key) => options[key] === undefined)) {
     return DEFAULT_FACTORIES;
   }
   const cached = resolvedCache.get(options);
@@ -96,20 +116,32 @@ export function resolveFactories(options?: FactoryOptions): ResolvedFactories {
     return cached;
   }
 
-  const cancAsync = [...(options.additionalCoroutineFactories ?? []), ...(options.coroutineFactories ?? [])];
-  const cancGenAsync = [...(options.additionalGenCoroutineFactories ?? []), ...(options.genCoroutineFactories ?? [])];
-
-  const asyncKeys = new Set(cancAsync.map(entryKey));
-  const duplicate = cancGenAsync.find((entry) => asyncKeys.has(entryKey(entry)));
-  if (duplicate !== undefined) {
-    throw new Error(
-      `Coroutine factory '${entryKey(duplicate)}' is listed for both the cancAsync and the cancGenAsync dialect.`,
-    );
+  const asyncSources = [
+    { option: 'additionalCoroutineFactories', entries: options.additionalCoroutineFactories ?? [] },
+    { option: 'coroutineFactories', entries: options.coroutineFactories ?? [] },
+  ];
+  const genSources = [
+    { option: 'additionalGenCoroutineFactories', entries: options.additionalGenCoroutineFactories ?? [] },
+    { option: 'genCoroutineFactories', entries: options.genCoroutineFactories ?? [] },
+  ];
+  for (const gen of genSources) {
+    for (const entry of gen.entries) {
+      for (const async of asyncSources) {
+        const other = async.entries.find((candidate) => sameEntry(candidate, entry));
+        if (other !== undefined) {
+          const shown = typeof entry === 'string' ? other : entry;
+          throw new Error(
+            `Coroutine factory '${entryKey(shown)}' is listed in both '${async.option}' and '${gen.option}'. ` +
+              'List it for one dialect only.',
+          );
+        }
+      }
+    }
   }
 
   const resolved: ResolvedFactories = {
-    cancAsync,
-    cancGenAsync,
+    cancAsync: asyncSources.flatMap((source) => source.entries),
+    cancGenAsync: genSources.flatMap((source) => source.entries),
     replaceCancAsync: options.coroutineFactories !== undefined,
     replaceCancGenAsync: options.genCoroutineFactories !== undefined,
   };
