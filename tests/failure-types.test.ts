@@ -312,6 +312,29 @@ export type OrNull = CancelablePromise<string, FooError> | null;
       expect(full.has(typeArgError)).toBe(true);
     });
 
+    it('returns a different result for structural detection on one program, nominal call first', () => {
+      const { program: probeProgram, dir } = createVirtualProgram({
+        'cache-probe.ts': `export class ProbeError extends Error {}
+declare class CancelablePromise<T, E = unknown> {
+  then(onfulfilled?: (value: T) => unknown): unknown;
+  cancel(): void;
+  readonly failure?: E;
+}
+export declare function typed(): CancelablePromise<void, ProbeError>;
+`,
+      });
+      const probeChecker = probeProgram.getTypeChecker();
+      const probeFile = probeProgram.getSourceFile(path.resolve(dir, 'src', 'cache-probe.ts'))!;
+      const probeError = getClassSymbol(probeFile, probeChecker, 'ProbeError');
+      const nominal = getProgramFailureSymbols(probeProgram, probeChecker, {
+        ...defaultSettings,
+        structuralDetection: false,
+      });
+      const structural = getProgramFailureSymbols(probeProgram, probeChecker, defaultSettings);
+      expect(nominal.has(probeError)).toBe(false);
+      expect(structural.has(probeError)).toBe(true);
+    });
+
     it('keys the cache on structuralDetection alone', () => {
       const structural = getProgramFailureSymbols(program, checker, defaultSettings);
       const nominal = getProgramFailureSymbols(program, checker, { ...defaultSettings, structuralDetection: false });
