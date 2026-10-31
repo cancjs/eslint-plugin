@@ -67,17 +67,11 @@ describe.skipIf(!enabled)('packaged plugin smoke', () => {
     }
     mkdirSync(tmpRoot, { recursive: true });
     workDir = mkdtempSync(path.join(tmpRoot, 'pack-smoke-'));
-    const stage = path.join(workDir, 'stage');
     const packDir = path.join(workDir, 'pack');
-    mkdirSync(stage);
     mkdirSync(packDir);
+    pkgName = (JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as { name: string }).name;
 
-    // exactly what a package limited to dist would carry
-    cpSync(path.join(repoRoot, 'dist'), path.join(stage, 'dist'), { recursive: true });
-    cpSync(path.join(repoRoot, 'package.json'), path.join(stage, 'package.json'));
-    pkgName = (JSON.parse(readFileSync(path.join(stage, 'package.json'), 'utf8')) as { name: string }).name;
-
-    const packJson = await run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', packDir], stage);
+    const packJson = await run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', packDir], repoRoot);
     const [packed] = JSON.parse(packJson) as { filename: string }[];
     tarball = path.join(packDir, packed.filename);
     expect(existsSync(tarball)).toBe(true);

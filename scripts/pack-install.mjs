@@ -1,4 +1,4 @@
-// Packs the built plugin and installs the tarball into the ESLint 9 lane, then leaves the probe
+// Packs the repository itself and installs the tarball into the ESLint 9 lane, then leaves the probe
 // scripts in tests/integration/lane9/tmp-pack so any Node version can run them without vitest.
 // Usage: node scripts/pack-install.mjs (run npm run build and npm run test:integration:setup first)
 import { execSync } from 'node:child_process';
@@ -31,16 +31,11 @@ const tmpRoot = path.join(os.tmpdir(), 'canc');
 mkdirSync(tmpRoot, { recursive: true });
 const work = mkdtempSync(path.join(tmpRoot, 'pack-install-'));
 try {
-  const stage = path.join(work, 'stage');
   const packDir = path.join(work, 'pack');
-  mkdirSync(stage);
   mkdirSync(packDir);
-  // exactly what a package limited to dist would carry
-  cpSync(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
-  cpSync(path.join(root, 'package.json'), path.join(stage, 'package.json'));
-  const name = JSON.parse(readFileSync(path.join(stage, 'package.json'), 'utf8')).name;
+  const name = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).name;
 
-  const [packed] = JSON.parse(npm(['pack', '--ignore-scripts', '--json', '--pack-destination', packDir], stage));
+  const [packed] = JSON.parse(npm(['pack', '--ignore-scripts', '--json', '--pack-destination', packDir], root));
   const tarball = path.join(packDir, packed.filename);
   npm(['install', '--no-save', '--ignore-scripts', '--no-audit', '--no-fund', tarball], lane);
 
