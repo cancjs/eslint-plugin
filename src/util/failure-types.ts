@@ -6,7 +6,7 @@ import ts from 'typescript';
 import { refersTo } from './canc-imports.js';
 import { getCancServices, isCancelableType, isLazyType, symbolDeclaredInCancSource } from './canc-types.js';
 import { type CompiledMatchers, matchesName, matchesType } from './class-matcher.js';
-import { getCancSettings, type ResolvedCancSettings } from './settings.js';
+import { getCancSettings, nominalSettings, type ResolvedCancSettings } from './settings.js';
 
 type Context = TSESLint.RuleContext<string, readonly unknown[]>;
 
@@ -119,7 +119,7 @@ export function isCancelErrorThrow(node: TSESTree.Node | null | undefined, conte
   if (services?.program) {
     const checker = services.program.getTypeChecker();
     const type = services.getTypeAtLocation(node);
-    const settings = getCancSettings(context);
+    const settings = nominalSettings(getCancSettings(context));
     if (isCancelErrorType(type, checker, settings)) {
       return true;
     }
@@ -242,7 +242,7 @@ export function getFailureMembers(
   context?: Context,
   options: { ignoreNonCarrierBranches?: boolean } = {},
 ): FailureMembers {
-  const resolvedSettings =
+  const rawSettings =
     settings ??
     (context ?
       getCancSettings(context)
@@ -250,7 +250,9 @@ export function getFailureMembers(
         sources: ['@cancjs/promise', '@cancjs/coroutine', '@cancjs/toolbox'],
         cancelableTypeNames: ['CancelablePromise'],
         lazyTypeNames: ['LazyPromise'],
+        structuralDetection: false,
       } as ResolvedCancSettings));
+  const resolvedSettings = nominalSettings(rawSettings);
 
   if (type.isUnion()) {
     const parts = type.types.filter(
@@ -760,7 +762,7 @@ export function analyzeCatchFailures(
   const checker = services.program.getTypeChecker();
   const nodeMap = services.esTreeNodeToTSNodeMap;
   const program = services.program;
-  const settings = getCancSettings(context);
+  const settings = nominalSettings(getCancSettings(context));
 
   let isAnyStepOpen = false;
   const allListedMap = new Map<string, ts.Type>();

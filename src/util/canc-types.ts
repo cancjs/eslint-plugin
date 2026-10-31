@@ -381,13 +381,13 @@ export function isPlainPromiseSinkExpression(
 export function isCancelableOrLazyExpression(
   node: TSESTree.Node,
   context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings = getCancSettings(context),
 ): boolean {
   const services = getCancServices(context);
   if (!services?.program) {
     return false;
   }
   const checker = services.program.getTypeChecker();
-  const settings = getCancSettings(context);
   const type = services.getTypeAtLocation(node);
   if (isCancelableType(type, checker, settings, context) || isLazyType(type, checker, settings, context)) {
     return true;
@@ -517,13 +517,13 @@ export function hasTypeServices(context: TSESLint.RuleContext<string, readonly u
 export function isCancelablePattern(
   pattern: TSESTree.Node,
   context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings = getCancSettings(context),
 ): boolean {
   const services = getCancServices(context);
   if (!services?.program) {
     return false;
   }
   const checker = services.program.getTypeChecker();
-  const settings = getCancSettings(context);
   const type = services.getTypeAtLocation(pattern);
   return isCancelableType(type, checker, settings, context);
 }
@@ -602,13 +602,13 @@ export function isPrimitiveExpression(
 export function isCancelableReturnFunction(
   fnNode: TSESTree.Node,
   context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings = getCancSettings(context),
 ): boolean {
   const services = getCancServices(context);
   if (!services?.program) {
     return false;
   }
   const checker = services.program.getTypeChecker();
-  const settings = getCancSettings(context);
 
   if (fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression && fnNode.body.type !== AST_NODE_TYPES.BlockStatement) {
     if (isCancelableExpression(fnNode.body, context, settings)) {
