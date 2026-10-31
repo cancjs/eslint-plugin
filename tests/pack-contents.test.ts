@@ -15,6 +15,7 @@ const REQUIRED = [
   'dist/index.d.mts',
   'dist/native.cjs',
   'dist/native.mjs',
+  'LICENSE',
 ];
 const FORBIDDEN = [
   /^tests\//,
@@ -26,6 +27,8 @@ const FORBIDDEN = [
 ];
 
 interface PackageJson {
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   exports: Record<string, Record<string, { types: string; default: string }>>;
 }
 
@@ -62,7 +65,7 @@ describe('packed file list', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('holds every built entry file', () => {
+  it('holds every built entry file and the license', () => {
     for (const required of REQUIRED) {
       expect(files, required).toContain(required);
     }
@@ -82,5 +85,13 @@ describe('packed file list', () => {
     for (const target of collectExportTargets(pkg)) {
       expect(files, target).toContain(target);
     }
+  });
+});
+
+describe('peer dependencies', () => {
+  it('requires typescript', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as PackageJson;
+    expect(pkg.peerDependencies).toHaveProperty('typescript');
+    expect(pkg.peerDependenciesMeta?.typescript?.optional).not.toBe(true);
   });
 });
