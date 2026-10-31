@@ -128,6 +128,18 @@ describe('ci workflow', () => {
     expect(runLines(text.slice(0, text.indexOf("node-version: '18.x'")))).toContain('npm run pack:install');
   });
 
+  it('builds before every job step that runs npm test', () => {
+    const missing: string[] = [];
+    for (const job of splitJobs(readWorkflow())) {
+      const commands = runLines(job.lines.join('\n'));
+      const test = commands.indexOf('npm test');
+      if (test !== -1 && !commands.slice(0, test).includes('npm run build')) {
+        missing.push(job.name);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
   it('runs no vitest command on node 18', () => {
     const job = splitJobs(readWorkflow()).find((j) => j.name === 'dist-node18');
     const text = job!.lines.join('\n');
