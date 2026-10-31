@@ -12,6 +12,7 @@ import {
   refersTo,
 } from './canc-imports.js';
 import { getCancServices, isCancelableExpression, isCancelableType } from './canc-types.js';
+import { unwrapTypeOnly } from './executor.js';
 import type { ResolvedCancSettings } from './settings.js';
 
 export interface CatchSite {
@@ -348,17 +349,38 @@ function isThrowHelperRethrow(stmt: TSESTree.Statement, paramName: string, conte
 
 // Promise.reject(e) rejects the derived promise with the same error
 function isRejectRethrow(node: TSESTree.Node | null | undefined, paramName: string, context: Context): boolean {
-  return (
-    node?.type === AST_NODE_TYPES.CallExpression &&
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier &&
-    node.callee.property.name === 'reject' &&
-    (isGlobalPromiseIdent(node.callee.object, context) || isCancCtorIdent(node.callee.object, context)) &&
-    node.arguments.length === 1 &&
-    node.arguments[0].type === AST_NODE_TYPES.Identifier &&
-    node.arguments[0].name === paramName
-  );
+  if (!node) {
+    return false;
+  }
+  let inner = unwrapTypeOnly(node);
+  if (inner.type === AST_NODE_TYPES.AwaitExpression) {
+    inner = unwrapTypeOnly(inner.argument);
+  }
+  if (
+    inner.type !== AST_NODE_TYPES.CallExpression ||
+    inner.callee.type !== AST_NODE_TYPES.MemberExpression ||
+    inner.callee.computed ||
+    inner.callee.property.type !== AST_NODE_TYPES.Identifier ||
+    inner.callee.property.name !== 'reject' ||
+    inner.arguments.length !== 1
+  ) {
+    return false;
+  }
+  const obj = inner.callee.object;
+  const isPromiseObj =
+    isGlobalPromiseIdent(obj, context) ||
+    isCancCtorIdent(obj, context) ||
+    (obj.type === AST_NODE_TYPES.MemberExpression &&
+      !obj.computed &&
+      obj.property.type === AST_NODE_TYPES.Identifier &&
+      obj.property.name === 'Promise' &&
+      obj.object.type === AST_NODE_TYPES.Identifier &&
+      obj.object.name === 'globalThis');
+  if (!isPromiseObj) {
+    return false;
+  }
+  const arg = unwrapTypeOnly(inner.arguments[0]);
+  return arg.type === AST_NODE_TYPES.Identifier && arg.name === paramName;
 }
 
 function returnsRejection(stmt: TSESTree.ReturnStatement, paramName: string, context: Context): boolean {
@@ -386,6 +408,16 @@ function statementRethrowsParam(stmt: TSESTree.Statement, paramName: string, con
 }
 
 function isCancelCheck(node: TSESTree.Node, paramName: string, context: Context): boolean {
+  if (node.type === AST_NODE_TYPES.BinaryExpression && node.operator === 'instanceof') {
+    const left = unwrapTypeOnly(node.left);
+    if (
+      left.type === AST_NODE_TYPES.Identifier &&
+      left.name === paramName &&
+      refersTo(node.right, context, 'CancelError')
+    ) {
+      return true;
+    }
+  }
   if (node.type === AST_NODE_TYPES.CallExpression) {
     if (node.arguments.length === 0) {
       return false;
@@ -484,11 +516,14 @@ function checkCancelGuard(
 
 // (e) => isCancelError(e) ? Promise.reject(e) : x rethrows on the cancel arm
 function isRejectingConditional(body: TSESTree.Node, paramName: string, context: Context): boolean {
-  if (body.type === AST_NODE_TYPES.CallExpression) {
-    return isRejectRethrow(body, paramName, context);
+  if (isRejectRethrow(body, paramName, context)) {
+    return true;
   }
   if (body.type !== AST_NODE_TYPES.ConditionalExpression) {
     return false;
+  }
+  if (isRejectRethrow(body.consequent, paramName, context) && isRejectRethrow(body.alternate, paramName, context)) {
+    return true;
   }
   if (isCancelCheck(body.test, paramName, context)) {
     return isRejectRethrow(body.consequent, paramName, context);

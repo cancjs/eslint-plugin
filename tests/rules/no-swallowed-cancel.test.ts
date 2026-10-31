@@ -123,6 +123,50 @@ ${firstStatement}`,
 
 const inlineValid: ValidTestCase<Options>[] = [
   {
+    name: 'instanceof CancelError guard rethrows before other statements',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof CancelError) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'await Promise.reject of the param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch(async (e) => {
+  if (isCancelError(e)) return await Promise.reject(e);
+  toast(e);
+});`,
+  },
+  {
+    name: 'conditional where both arms reject with the param',
+    code: `${HEAD}
+declare const x: boolean;
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  return x ? Promise.reject(e) : Promise.reject(e);
+});`,
+  },
+  {
+    name: 'globalThis.Promise.reject of the param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (isCancelError(e)) return globalThis.Promise.reject(e);
+  toast(e);
+});`,
+  },
+  {
+    name: 'Promise.reject with a cast param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (isCancelError(e)) return Promise.reject(e as Error);
+  toast(e);
+});`,
+  },
+  {
     name: 'rejection callback returning Promise.reject of the param on the cancel branch',
     code: `${HEAD}
 new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
