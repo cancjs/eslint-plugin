@@ -16,8 +16,8 @@ In `@cancjs/promise`, the promise executor context provides an `AbortSignal` thr
 
 - Replaced API: `ctx.getSignal()`.
 - Replacement API: `ctx.signal` property accessor or `{ signal }` context parameter.
-- Minimum library version: Available since `@cancjs/promise` version 1.8.0.
-- Compatibility: The legacy `getSignal()` method remains functional and supported until the next major release (version 2.0).
+- Minimum library version: Available since `@cancjs/promise` version 1.1.0.
+- Compatibility: The legacy `getSignal()` method still works and is marked deprecated.
 
 ## Rule details
 
@@ -72,4 +72,4 @@ function fetchResource() {
 
 ## When not to use it
 
-If your codebase targets a version of `@cancjs/promise` older than 1.8.0 where the `signal` property accessor is not yet available, you can disable this rule until dependencies are upgraded.
+If your codebase targets a version of `@cancjs/promise` older than 1.1.0 where the `signal` property accessor is not yet available, you can disable this rule until dependencies are upgraded.

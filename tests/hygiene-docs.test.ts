@@ -92,16 +92,16 @@ describe('lazy and hygiene rule documentation', () => {
     expect(content).toContain('settings.canc.sources');
   });
 
-  it('migration rules document replaced API, minimum version 1.8.0, and 2.0 compatibility', () => {
+  it('migration rules document replaced API, minimum versions, and compatibility', () => {
     const signalAccessor = fs.readFileSync(path.join(docsDir, 'prefer-signal-accessor.md'), 'utf8');
     expect(signalAccessor).toContain('getSignal()');
-    expect(signalAccessor).toContain('1.8.0');
-    expect(signalAccessor).toContain('2.0');
+    expect(signalAccessor).toContain('1.1.0');
+    expect(signalAccessor).toContain('deprecated');
 
     const canceledProp = fs.readFileSync(path.join(docsDir, 'prefer-canceled-property.md'), 'utf8');
     expect(canceledProp).toContain('isCanceled');
-    expect(canceledProp).toContain('1.8.0');
-    expect(canceledProp).toContain('2.0');
+    expect(canceledProp).toContain('1.0.0');
+    expect(canceledProp).toContain('deprecated');
   });
 
   it('strict-tier rule no-abort-listener-leak has When not to use it section', () => {

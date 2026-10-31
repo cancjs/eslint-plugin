@@ -18,8 +18,8 @@ This rule uses TypeScript type checking to identify `isCanceled` property access
 
 - Replaced API: `promise.isCanceled`.
 - Replacement API: `promise.canceled`.
-- Minimum library version: Available since `@cancjs/promise` version 1.8.0.
-- Compatibility: The legacy `isCanceled` property remains functional and supported until the next major release (version 2.0).
+- Minimum library version: Available since `@cancjs/promise` version 1.0.0.
+- Compatibility: The legacy `isCanceled` property still works and is marked deprecated.
 
 ## Rule details
 
@@ -51,4 +51,4 @@ function checkStatus(task: CancelablePromise<void>) {
 
 ## When not to use it
 
-If your project depends on versions of `@cancjs/promise` prior to 1.8.0 that lack the `canceled` property, you can disable this rule until the package is updated.
+If your project depends on versions of `@cancjs/promise` prior to 1.0.0 that lack the `canceled` property, you can disable this rule until the package is updated.
