@@ -178,6 +178,14 @@ new CancelablePromise((resolve, reject) => {
       errors: [{ messageId: 'multipleOperations', line: 3, column: 30, data: { count: 2 } }],
     },
     {
+      name: 'resolve with a cast second call result is a second start',
+      code: `${IMPORT}
+new CancelablePromise<number>((resolve, reject) => {
+  op().then(() => resolve(op2() as unknown as number), reject);
+});`,
+      errors: [{ messageId: 'multipleOperations' }],
+    },
+    {
       name: 'invoked nested function declaration counts',
       code: `${IMPORT}
 new CancelablePromise((resolve, reject) => {
