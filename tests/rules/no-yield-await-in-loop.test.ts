@@ -184,8 +184,50 @@ const run = cancAsync(function* (ids: string[]) {
     yield* cancAwait(f(id, cache.size));
   }
 });`,
+
+      // Cast accumulator with (state as any).cur
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function load(id: string, s: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  let state = { cur: 0 };
+  for (const id of ids) {
+    (state as any).cur = yield* cancAwait(load(id, state));
+  }
+});`,
+
+      // Cast accumulator with state!.cur
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function load(id: string, s: unknown): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  let state: { cur: number } | null = { cur: 0 };
+  for (const id of ids) {
+    state!.cur = yield* cancAwait(load(id, state));
+  }
+});`,
     ],
     invalid: [
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const cache: { set(k: string, v: number): void; delete(k: string): boolean };
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(cache.set(id, 1) as unknown as Promise<void>);
+    yield* cancAwait(cache.delete(id) as unknown as Promise<boolean>);
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const }, { messageId: 'serializedSteps' as const }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: { set(k: string, v: number): Promise<void>; get(k: string): Promise<number> };
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(store.set(id, 1));
+    yield* cancAwait(store.get(id));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const }, { messageId: 'serializedSteps' as const }],
+      },
       // 1. Corpus invalid 15: for-of loop referencing id
       {
         code: codeInvalid15,
@@ -382,6 +424,28 @@ const run = cancAsync(function* (ids: string[]) {
     ],
     invalid: [
       {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const cache: { set(k: string, v: number): void; delete(k: string): boolean };
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(cache.set(id, 1) as unknown as Promise<void>);
+    yield* cancAwait(cache.delete(id) as unknown as Promise<boolean>);
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const }, { messageId: 'serializedSteps' as const }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: { set(k: string, v: number): Promise<void>; get(k: string): Promise<number> };
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(store.set(id, 1));
+    yield* cancAwait(store.get(id));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const }, { messageId: 'serializedSteps' as const }],
+      },
+      {
         code: codeInvalid15,
         errors: [
           {
@@ -428,6 +492,28 @@ cancAsync(function* (xs: string[]) {
       },
     ],
     invalid: [
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const cache: { set(k: string, v: number): void; delete(k: string): boolean };
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(cache.set(id, 1) as unknown as Promise<void>);
+    yield* cancAwait(cache.delete(id) as unknown as Promise<boolean>);
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const }, { messageId: 'serializedSteps' as const }],
+      },
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare const store: { set(k: string, v: number): Promise<void>; get(k: string): Promise<number> };
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* cancAwait(store.set(id, 1));
+    yield* cancAwait(store.get(id));
+  }
+});`,
+        errors: [{ messageId: 'serializedSteps' as const }, { messageId: 'serializedSteps' as const }],
+      },
       {
         code: `import { cancAwait } from '@cancjs/coroutine';
 declare function f(x: string): Promise<void>;

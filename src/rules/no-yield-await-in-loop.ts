@@ -10,6 +10,7 @@ import {
   resolveFactories,
 } from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
+import { unwrapTypeOnly } from '../util/executor.js';
 
 export type MessageIds = 'serializedSteps';
 export type RuleOptions = [FactoryOptions?];
@@ -320,7 +321,7 @@ type StatePaths = Map<string, string[][]>;
 
 function memberPath(node: TSESTree.Node): { root: TSESTree.Identifier; path: string[] } | null {
   const path: string[] = [];
-  let curr = node;
+  let curr = unwrapTypeOnly(node);
   let complete = true;
   while (curr.type === AST_NODE_TYPES.MemberExpression) {
     if (!curr.computed && curr.property.type === AST_NODE_TYPES.Identifier) {
@@ -329,13 +330,13 @@ function memberPath(node: TSESTree.Node): { root: TSESTree.Identifier; path: str
       path.length = 0;
       complete = false;
     }
-    curr = curr.object;
+    curr = unwrapTypeOnly(curr.object);
   }
   if (curr.type !== AST_NODE_TYPES.Identifier) return null;
   return { root: curr, path: complete ? path : [] };
 }
 
-function getMutatedPaths(body: TSESTree.Node, skip: TSESTree.Node): StatePaths {
+function getMutatedPaths(body: TSESTree.Node, skip: ReadonlySet<TSESTree.Node>): StatePaths {
   const mutated: StatePaths = new Map();
 
   function add(name: string, path: string[]) {
@@ -373,7 +374,7 @@ function getMutatedPaths(body: TSESTree.Node, skip: TSESTree.Node): StatePaths {
 
   function walk(node: TSESTree.Node) {
     if (
-      node === skip ||
+      skip.has(node) ||
       node.type === AST_NODE_TYPES.FunctionDeclaration ||
       node.type === AST_NODE_TYPES.FunctionExpression ||
       node.type === AST_NODE_TYPES.ArrowFunctionExpression
@@ -393,9 +394,7 @@ function getMutatedPaths(body: TSESTree.Node, skip: TSESTree.Node): StatePaths {
       MUTATING_METHODS.has(node.callee.property.name)
     ) {
       // collection mutated in the body carries state between iterations
-      const receiver =
-        memberPath(node.callee.object) ??
-        (node.callee.object.type === AST_NODE_TYPES.Identifier ? { root: node.callee.object, path: [] } : null);
+      const receiver = memberPath(node.callee.object);
       if (receiver) add(receiver.root.name, receiver.path);
     }
 
@@ -524,6 +523,40 @@ function operandReferencesAny(operand: TSESTree.Node, targetVars: Set<string>, s
   return references;
 }
 
+function collectAwaitedCalls(body: TSESTree.Node): Set<TSESTree.Node> {
+  const calls = new Set<TSESTree.Node>();
+  function walk(node: TSESTree.Node) {
+    if (
+      node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      return;
+    }
+    if (node.type === AST_NODE_TYPES.YieldExpression && node.delegate && node.argument) {
+      const call = unwrapTypeOnly(node.argument);
+      if (call.type === AST_NODE_TYPES.CallExpression) {
+        calls.add(call);
+      }
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = (node as unknown as Record<string, unknown>)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object' && 'type' in item) walk(item as TSESTree.Node);
+          }
+        } else if ('type' in child) {
+          walk(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+  walk(body);
+  return calls;
+}
+
 export default createRule<RuleOptions, MessageIds>({
   name: 'no-yield-await-in-loop',
   meta: {
@@ -548,6 +581,7 @@ export default createRule<RuleOptions, MessageIds>({
   defaultOptions: [{}],
   create(context) {
     const factories = resolveFactories(context.options[0]);
+    const mutatedPathsCache = new WeakMap<TSESTree.Node, StatePaths>();
 
     return {
       YieldExpression(node) {
@@ -619,8 +653,16 @@ export default createRule<RuleOptions, MessageIds>({
 
         // Silence if operand reads state written elsewhere in the loop body (accumulator)
         const loopBody = (loopNode as TSESTree.ForOfStatement).body;
-        if (loopBody && operandReadsMutatedState(firstArg, getMutatedPaths(loopBody, call), loopVars)) {
-          return;
+        if (loopBody) {
+          let mutated = mutatedPathsCache.get(loopBody);
+          if (!mutated) {
+            const skipped = collectAwaitedCalls(loopBody);
+            mutated = getMutatedPaths(loopBody, skipped);
+            mutatedPathsCache.set(loopBody, mutated);
+          }
+          if (operandReadsMutatedState(firstArg, mutated, loopVars)) {
+            return;
+          }
         }
 
         context.report({
