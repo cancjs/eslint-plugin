@@ -33,8 +33,8 @@ interface Report {
   id: string;
 }
 
-// Evasion variant: an async IIFE inside the executor is the same defect, even for a single
-// operation. The synchronous adapter below is the fix.
+// Evasion variant: an async IIFE inside the executor is the same defect;
+// the synchronous adapter below is the fix.
 const cancPromise = new CancelablePromise<Report>((resolve, reject, { handleCancel }) => {
   const controller = new AbortController();
   handleCancel(() => controller.abort());

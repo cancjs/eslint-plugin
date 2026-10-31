@@ -1,4 +1,4 @@
-// Source: flow.md > canc/prefer-canc-combinators > Correct (block 3, explicit adoption not reported)
+// Source: flow.md > canc/prefer-canc-combinators > Correct (block 3)
 import CancelablePromise, {
   CancelError,
   isCancelError,

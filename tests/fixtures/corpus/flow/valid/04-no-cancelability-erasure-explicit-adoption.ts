@@ -34,7 +34,7 @@ interface Dashboard {
 declare function loadDashboard(): CancelablePromise<Dashboard>;
 declare function trackPromise(p: Promise<unknown>): void;
 
-// Explicit adoption: sanctioned downgrade forms. Each states the intent in the code itself,
+// Explicit adoption: sanctioned downgrade forms that state the intent in code,
 // so the rule accepts them without a disable comment.
 trackPromise(Promise.resolve(loadDashboard()));
 trackPromise(new Promise((resolve) => { resolve(loadDashboard()); }));

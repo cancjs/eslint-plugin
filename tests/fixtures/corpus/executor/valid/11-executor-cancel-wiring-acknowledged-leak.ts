@@ -1,4 +1,4 @@
-// Source: executor.md > canc/executor-cancel-wiring (strict tier) > Correct (block 2, acknowledged leak)
+// Source: executor.md > canc/executor-cancel-wiring (strict tier) > Correct (block 2)
 import CancelablePromise, {
   CancelError,
   isCancelError,

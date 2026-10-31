@@ -36,8 +36,8 @@ declare function render(results: Product[]): void;
 declare function showErrorToast(err: unknown): void;
 
 // Coroutine form: the catch sees CancelError but treats it like any failure.
-// (Written as a coroutine so awaiting the cancelable is itself correct; a plain
-// `await catalogSearch` in an async function would separately trip canc/no-await-cancelable-in-async.)
+// (Written as coroutine so awaiting the cancelable is itself correct; a plain
+// awaiting in an async function would trip canc/no-await-cancelable-in-async.)
 const runSearch = cancAsync(function* () {
   try {
   const results = yield* cancAwait(catalogSearch); // CancelablePromise<Product[]>

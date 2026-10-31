@@ -128,7 +128,7 @@ describe('no-failure-widening (typed lane)', () => {
        class ErrorA extends Error {}
        declare const p: CancelablePromise<string, ErrorA>;
        export const c = p as CancelablePromise<string, ErrorA> | string;`,
-      // Target union with a non-carrier non-callable then branch does not treat it as thenable (silent)
+      // Target union with a non-callable then branch does not treat it as thenable (silent)
       `import type CancelablePromise from '@cancjs/promise';
        class E1 extends Error {}
        class E2 extends Error {}

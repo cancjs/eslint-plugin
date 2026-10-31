@@ -33,7 +33,7 @@ interface User {
 }
 declare function fetchUserCancelable(): CancelablePromise<User>;
 
-// Annotation widening: reported by default (allowAnnotationWidening: false). The annotation may
-// exist for unrelated reasons, so this form hides the downgrade instead of stating it.
+// Annotation widening: reported by default (allowAnnotationWidening: false);
+// this form hides the downgrade instead of stating it.
 const pending: Promise<User> = fetchUserCancelable(); // lint: no-cancelability-erasure silent widening
 
