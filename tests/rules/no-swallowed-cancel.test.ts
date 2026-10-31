@@ -388,6 +388,35 @@ cancAsync(function* () {
     options: [{ allowLogAndReturn: true }],
   },
   {
+    name: 'allowLogAndReturn accepts a guard that returns before log',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isCancelError(e)) return 1;
+    console.error(e);
+  }
+});`,
+    options: [{ allowLogAndReturn: true }],
+  },
+  {
+    name: 'allowLogAndReturn accepts a guard that logs and returns',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isCancelError(e)) {
+      console.log('canceled');
+      return;
+    }
+    console.error(e);
+  }
+});`,
+    options: [{ allowLogAndReturn: true }],
+  },
+  {
     name: 'allowEmptyCatch accepts an empty catch',
     code: `${HEAD}
 cancAsync(function* () {

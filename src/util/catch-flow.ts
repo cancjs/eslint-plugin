@@ -848,6 +848,20 @@ export function analyzeHandler(
         }
       }
       if (guardRes === 'swallow') {
+        const remaining = statements.slice(i + 1);
+        const consequentLogOrReturn =
+          stmt.consequent.type === AST_NODE_TYPES.BlockStatement ? statementsAllLogOrReturn(stmt.consequent.body)
+          : stmt.consequent.type === AST_NODE_TYPES.ReturnStatement ? true
+          : stmt.consequent.type === AST_NODE_TYPES.ExpressionStatement ? isLogExpression(stmt.consequent.expression)
+          : false;
+        if (
+          opts?.allowLogAndReturn &&
+          !canExitBeforeGuard &&
+          consequentLogOrReturn &&
+          statementsAllLogOrReturn(remaining)
+        ) {
+          return { compliant: true, via: 'logReturn', wrapped: false, destructured: false, param };
+        }
         guardSwallows = true;
       }
     }
