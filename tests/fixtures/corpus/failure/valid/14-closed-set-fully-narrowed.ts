@@ -14,6 +14,8 @@ export const run = cancAsync(function* () {
       // handle A
     } else if (e instanceof ErrorB) {
       // handle B
+    } else {
+      throw e;
     }
   }
 });

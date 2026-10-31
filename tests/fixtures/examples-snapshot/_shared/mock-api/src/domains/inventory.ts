@@ -1,0 +1,37 @@
+// Snapshot of examples/_shared/mock-api/src/domains/inventory.ts, copied 2026-10-30 from mono master "Exclude cancellation from failure types and simplify failure helpers (#60)"
+import { AbortSignalLike, MockApi } from '../core';
+
+export interface Inventory {
+  id: string;
+  quantity: number;
+}
+
+const INVENTORY: Inventory[] = [
+  { id: 'product-1', quantity: 10 },
+  { id: 'product-2', quantity: 0 },
+  { id: 'product-3', quantity: 5 },
+  { id: 'p1', quantity: 10 },
+  { id: 'p2', quantity: 0 },
+  { id: 'p3', quantity: 5 },
+  { id: 'p4', quantity: 8 },
+];
+
+export interface InventoryApi {
+  check(id: string, signal?: AbortSignalLike): Promise<number>;
+}
+
+export function createInventoryApi(api: MockApi): InventoryApi {
+  return {
+    check: (id, signal) =>
+      api.respond(
+        'inventory.check',
+        { id },
+        () => {
+          const found = INVENTORY.find((i) => i.id === id);
+          if (!found) throw new Error(`no inventory ${id}`);
+          return found.quantity;
+        },
+        signal,
+      ),
+  };
+}

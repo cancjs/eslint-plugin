@@ -120,8 +120,8 @@ describe('coroutine adversarial false-positive pass', () => {
     });
   });
 
-  it('lints all 10 adversarial fixtures with zero diagnostics under recommended and strict presets', async () => {
-    expect(adversarialFiles).toHaveLength(10);
+  it('lints all 15 adversarial fixtures with zero diagnostics under recommended and strict presets', async () => {
+    expect(adversarialFiles).toHaveLength(15);
 
     const recResults = await eslintRecommended.lintFiles(adversarialFiles);
     const recDiagnostics = recResults.flatMap((r) => r.messages);
@@ -131,6 +131,6 @@ describe('coroutine adversarial false-positive pass', () => {
     const strictDiagnostics = strictResults.flatMap((r) => r.messages);
     expect(strictDiagnostics).toEqual([]);
 
-    console.log('Tested 10 adversarial fixtures, 0 diagnostics');
+    console.log('Tested 15 adversarial fixtures, 0 diagnostics');
   });
 });

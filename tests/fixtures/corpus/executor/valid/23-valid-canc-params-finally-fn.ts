@@ -31,4 +31,4 @@ import {
 declare const cancPromise: CancelablePromise<number>;
 declare function cleanup(): void;
 
-cancPromise.finally(cleanup);
+void cancPromise.finally(cleanup);

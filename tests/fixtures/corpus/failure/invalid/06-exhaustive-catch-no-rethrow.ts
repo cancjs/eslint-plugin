@@ -9,7 +9,7 @@ declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
 export const run = cancAsync(function* () {
   try {
     yield* cancAwait(getUnion());
-  } catch (e) { // lint: exhaustive-catch:noRethrow
+  } catch (e) { // lint: exhaustive-catch:noRethrow,no-swallowed-cancel
     if (e instanceof ErrorA) {
       console.log('Handled A');
     }

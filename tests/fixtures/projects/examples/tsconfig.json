@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "experimentalDecorators": true,
+    "paths": {
+      "@cancjs/*": ["./node_modules/@cancjs/*"],
+      "@shared/mock-api": ["../../examples-snapshot/_shared/mock-api/src/index.ts"],
+      "@shared/mock-api/*": ["../../examples-snapshot/_shared/mock-api/*"],
+      "@shared/util": ["../../examples-snapshot/_shared/util/src/index.ts"]
+    }
+  },
+  "include": ["../../examples-snapshot/**/*.ts"]
+}

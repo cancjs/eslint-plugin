@@ -34,6 +34,6 @@ declare function startCancelable(): CancelablePromise<number>;
 export async function processData(): Promise<string> {
   const backgroundTask = startCancelable();
   const result = await fetchPlain();
-  backgroundTask.cancel();
+  void backgroundTask.cancel();
   return result;
 }

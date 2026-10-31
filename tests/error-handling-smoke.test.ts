@@ -73,6 +73,8 @@ function findTsFiles(dir: string): string[] {
 
 const ERROR_HANDLING_RULES = new Set(['prefer-is-cancel-error']);
 const ERROR_HANDLING_PREFIXED_RULES = new Set([...ERROR_HANDLING_RULES].map((id) => `canc/${id}`));
+// rules that must stay silent on every valid fixture
+const SILENT_ON_VALID_RULES = new Set(['canc/prefer-is-cancel-error', 'canc/no-swallowed-cancel']);
 
 describe('error handling rules phase smoke over built artifacts', () => {
   let cjsPlugin: BuiltPlugin;
@@ -178,14 +180,14 @@ describe('error handling rules phase smoke over built artifacts', () => {
     const recResults = await eslintRecommended.lintFiles(validFiles);
     for (const r of recResults) {
       const rel = path.relative(corpusDir, r.filePath).replaceAll('\\', '/');
-      const messages = r.messages.filter((m) => m.ruleId && ERROR_HANDLING_PREFIXED_RULES.has(m.ruleId));
+      const messages = r.messages.filter((m) => m.ruleId && SILENT_ON_VALID_RULES.has(m.ruleId));
       expect(messages, `Unexpected diagnostic under recommended in ${rel}`).toEqual([]);
     }
 
     const strictResults = await eslintStrict.lintFiles(validFiles);
     for (const r of strictResults) {
       const rel = path.relative(corpusDir, r.filePath).replaceAll('\\', '/');
-      const messages = r.messages.filter((m) => m.ruleId && ERROR_HANDLING_PREFIXED_RULES.has(m.ruleId));
+      const messages = r.messages.filter((m) => m.ruleId && SILENT_ON_VALID_RULES.has(m.ruleId));
       expect(messages, `Unexpected diagnostic under strict in ${rel}`).toEqual([]);
     }
   }, 20000);
@@ -194,12 +196,12 @@ describe('error handling rules phase smoke over built artifacts', () => {
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(161);
+    expect(allValidFiles.length).toBe(168);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {
       const rel = path.relative(corpusDir, r.filePath).replaceAll('\\', '/');
-      const messages = r.messages.filter((m) => m.ruleId && ERROR_HANDLING_PREFIXED_RULES.has(m.ruleId));
+      const messages = r.messages.filter((m) => m.ruleId && SILENT_ON_VALID_RULES.has(m.ruleId));
       expect(messages, `Unexpected diagnostic under recommended in ${rel}`).toEqual([]);
     }
   }, 20000);

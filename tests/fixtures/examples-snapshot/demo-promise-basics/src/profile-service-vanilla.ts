@@ -1,0 +1,24 @@
+// Snapshot of examples/demo-promise-basics/src/profile-service-vanilla.ts, copied 2026-10-30 from mono master "Exclude cancellation from failure types and simplify failure helpers (#60)"
+import type { MockApiBundle } from '@shared/mock-api';
+
+import { Profile } from './profile';
+
+type ProductsApi = MockApiBundle['products'];
+
+/**
+ * Plain promise: no cancellation support. The result is discarded when the caller loses
+ * interest, but the mock API call completes anyway (wasted work).
+ */
+export function loadProfile(productsApi: ProductsApi, userId: string): Promise<Profile> {
+  return productsApi.get(userId);
+}
+
+/**
+ * Attempted cancellation with AbortController: threads the signal down, listens for the abort
+ * event, and checks error.name === 'AbortError' at the call site. The boilerplate teaches
+ * why canc matters: every cleanup point needs manual wiring.
+ * cancellation requires threading and name-checking; regular catch alone is not enough.
+ */
+export function loadProfileAbortable(productsApi: ProductsApi, userId: string, signal: AbortSignal): Promise<Profile> {
+  return productsApi.get(userId, signal);
+}

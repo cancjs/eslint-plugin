@@ -8,7 +8,7 @@ declare function getOpen(): CancelablePromise<string, ErrorA | Unlisted>;
 export const run = cancAsync(function* () {
   try {
     yield* cancAwait(getOpen());
-  } catch (e) { // lint: exhaustive-catch:missingUnlistedFallback
+  } catch (e) { // lint: exhaustive-catch:missingUnlistedFallback,no-swallowed-cancel
     if (e instanceof ErrorA) {
       console.log('Handled A');
     }

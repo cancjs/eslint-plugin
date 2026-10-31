@@ -28,4 +28,4 @@ import {
   suppressTimeout,
 } from '@cancjs/toolbox';
 
-CancelablePromise.resolve();
+void CancelablePromise.resolve();

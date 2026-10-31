@@ -36,8 +36,8 @@ declare function stepTwo(signal: AbortSignal): Promise<void>;
 const checkout = new CancelablePromise<void>((resolve, reject, { handleCancel }) => {
   const controller = new AbortController();
   handleCancel(() => controller.abort());
-  (async () => {
-  await stepOne(controller.signal); // lint: no-multistep-executor first operation
+  (async () => { // lint: no-async-executor
+  await stepOne(controller.signal); // first operation
   await stepTwo(controller.signal); // lint: no-multistep-executor second operation in the same executor
   resolve();
   })().catch(reject);

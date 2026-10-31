@@ -10,6 +10,7 @@ describe('rule registry and tier table', () => {
       const syntheticTiers: Record<string, TierEntry> = {
         'rule-rec-error': { recommended: 'error' },
         'rule-rec-warn-strict-error': { recommended: 'warn', strict: 'error' },
+        'rule-rec-warn': { recommended: 'warn' },
         'rule-stylistic': { stylistic: 'warn' },
       };
 
@@ -23,6 +24,7 @@ describe('rule registry and tier table', () => {
           rules: {
             'canc/rule-rec-error': 'error',
             'canc/rule-rec-warn-strict-error': 'warn',
+            'canc/rule-rec-warn': 'warn',
           },
         },
       ]);
@@ -34,6 +36,7 @@ describe('rule registry and tier table', () => {
           rules: {
             'canc/rule-rec-error': 'error',
             'canc/rule-rec-warn-strict-error': 'error',
+            'canc/rule-rec-warn': 'error',
           },
         },
       ]);
@@ -62,13 +65,18 @@ describe('rule registry and tier table', () => {
         'no-abort-listener-leak',
         'no-async-executor',
         'no-async-loop-callback',
+        'no-await-cancelable-in-async',
+        'no-cancelability-erasure',
         'no-cancellation-gap',
         'no-coroutine-dialect-mismatch',
         'no-executor-return',
         'no-failure-widening',
         'no-internal-imports',
         'no-keyword-alias-import',
+        'no-multistep-executor',
+        'no-swallowed-cancel',
         'no-throw-in-chain-callback',
+        'no-transform-in-executor',
         'no-unstarred-cancawait',
         'no-yield-await-in-loop',
         'prefer-canc-combinators',

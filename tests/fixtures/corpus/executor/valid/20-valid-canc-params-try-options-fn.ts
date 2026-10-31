@@ -31,4 +31,4 @@ import {
 declare const controller: AbortController;
 declare function worker(id: number): void;
 
-CancelablePromise.try({ signal: controller.signal }, worker, 1);
+void CancelablePromise.try({ signal: controller.signal }, worker, 1);

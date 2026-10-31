@@ -7,3 +7,7 @@ coverage/
 # rule tests resolve them like real installs. These are source, not installed deps: keep them.
 !tests/fixtures/projects/*/node_modules/
 !tests/fixtures/projects/*/node_modules/**
+
+# Killed lane runs leave these behind
+tests/integration/lane*/tmp/
+tests/integration/lane*/tmp-pack/

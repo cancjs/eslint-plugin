@@ -10,13 +10,18 @@ import mustConsumeLazy from './must-consume-lazy.js';
 import noAbortListenerLeak from './no-abort-listener-leak.js';
 import noAsyncExecutor from './no-async-executor.js';
 import noAsyncLoopCallback from './no-async-loop-callback.js';
+import noAwaitCancelableInAsync from './no-await-cancelable-in-async.js';
+import noCancelabilityErasure from './no-cancelability-erasure.js';
 import noCancellationGap from './no-cancellation-gap.js';
 import noCoroutineDialectMismatch from './no-coroutine-dialect-mismatch.js';
 import noExecutorReturn from './no-executor-return.js';
 import noFailureWidening from './no-failure-widening.js';
 import noInternalImports from './no-internal-imports.js';
 import noKeywordAliasImport from './no-keyword-alias-import.js';
+import noMultistepExecutor from './no-multistep-executor.js';
+import noSwallowedCancel from './no-swallowed-cancel.js';
 import noThrowInChainCallback from './no-throw-in-chain-callback.js';
+import noTransformInExecutor from './no-transform-in-executor.js';
 import noUnstarredCancawait from './no-unstarred-cancawait.js';
 import noYieldAwaitInLoop from './no-yield-await-in-loop.js';
 import preferCancCombinators from './prefer-canc-combinators.js';
@@ -43,13 +48,18 @@ export const rules: Record<string, Rule.RuleModule | TSESLint.RuleModule<string,
   'no-abort-listener-leak': noAbortListenerLeak,
   'no-async-executor': noAsyncExecutor,
   'no-async-loop-callback': noAsyncLoopCallback,
+  'no-await-cancelable-in-async': noAwaitCancelableInAsync,
+  'no-cancelability-erasure': noCancelabilityErasure,
   'no-cancellation-gap': noCancellationGap,
   'no-coroutine-dialect-mismatch': noCoroutineDialectMismatch,
   'no-executor-return': noExecutorReturn,
   'no-failure-widening': noFailureWidening,
   'no-internal-imports': noInternalImports,
   'no-keyword-alias-import': noKeywordAliasImport,
+  'no-multistep-executor': noMultistepExecutor,
+  'no-swallowed-cancel': noSwallowedCancel,
   'no-throw-in-chain-callback': noThrowInChainCallback,
+  'no-transform-in-executor': noTransformInExecutor,
   'no-unstarred-cancawait': noUnstarredCancawait,
   'no-yield-await-in-loop': noYieldAwaitInLoop,
   'prefer-canc-combinators': preferCancCombinators,

@@ -8,6 +8,8 @@ Catch blocks in cancelable flows must check `isCancelError(err)` and rethrow the
 
 Custom boundary functions can be configured in ESLint settings via `settings.canc.boundaryFunctions`.
 
+Without type information the rule checks only chains that start at a canc constructor or static call, and `try` blocks that hold a `cancAwait` call or one of those calls. A `catch` on a variable that holds a cancelable promise, or a `try` around `await` of one, is checked only when type information is available.
+
 ## Rule details
 
 ### Incorrect
@@ -79,6 +81,16 @@ catalogSearch.catch((err) => {
 });
 ```
 
+In a rejection callback or in any `catch` clause (sync, async, or generator), returning `Promise.reject(err)` (or `CancelablePromise.reject(err)`) on the cancel branch rethrows the same error just like `throw err`, and so does the cancel arm of a returned conditional expression:
+
+```ts
+catalogSearch.catch((err) => (isCancelError(err) ? Promise.reject(err) : renderFallback()));
+```
+
+Rejecting with a new error, or rejecting with `err` only on the non-cancel branch, still swallows the cancellation.
+
+With `handleErrorBoundary` listed in `settings.canc.boundaryFunctions`:
+
 ```ts
 try {
   yield* cancAwait(syncData());
@@ -92,7 +104,7 @@ try {
 This rule accepts an options object with the following properties:
 
 - `allowLogAndReturn` (default: `false`): When set to `true`, handlers that only contain logging calls (such as `console.log` or `logger.warn`) followed by an optional return are permitted.
-- `allowEmptyCatch` (default: `false`): When set to `true`, empty `catch {}` blocks without parameters are ignored.
+- `allowEmptyCatch` (default: `false`): When set to `true`, empty `catch` blocks and empty rejection handlers are ignored, with or without a parameter.
 
 ```json
 {

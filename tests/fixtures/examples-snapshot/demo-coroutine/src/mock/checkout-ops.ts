@@ -1,0 +1,84 @@
+// Snapshot of examples/demo-coroutine/src/mock/checkout-ops.ts, copied 2026-10-30 from mono master "Exclude cancellation from failure types and simplify failure helpers (#60)"
+import type { AbortSignalLike, MockApi } from '@shared/mock-api';
+
+/**
+ * Checkout-specific operations for the demo.
+ * In a real app, these would be API methods on a backend service.
+ */
+
+export interface StockReservation {
+  id: string;
+  productId: string;
+}
+
+export interface Charge {
+  id: string;
+  amount: number;
+}
+
+export interface Confirmation {
+  confirmationId: string;
+  orderId: string;
+}
+
+/** Domain error raised when a charge amount is negative. */
+export class NegativeChargeError extends Error {
+  constructor(message: string = 'Negative charge amount') {
+    super(message);
+    this.name = 'NegativeChargeError';
+  }
+}
+
+export function addCheckoutOperations(api: MockApi) {
+  return {
+    reserveStock: (orderId: string, signal?: AbortSignalLike): Promise<StockReservation> =>
+      api.respond(
+        'checkout.reserveStock',
+        { orderId },
+        () => ({
+          id: `res-${orderId}-${Date.now()}`,
+          productId: 'p1',
+        }),
+        signal,
+      ),
+
+    charge: (orderId: string, signal?: AbortSignalLike): Promise<Charge> =>
+      api.respond(
+        'checkout.charge',
+        { orderId },
+        () => ({
+          id: `charge-${orderId}-${Date.now()}`,
+          amount: 99.99,
+        }),
+        signal,
+      ),
+
+    addPoints: (orderId: string, signal?: AbortSignalLike): Promise<{ points: number }> =>
+      api.respond(
+        'checkout.addPoints',
+        { orderId },
+        () => ({
+          points: 100,
+        }),
+        signal,
+      ),
+
+    confirm: (orderId: string, chargeId: string, signal?: AbortSignalLike): Promise<Confirmation> =>
+      api.respond(
+        'checkout.confirm',
+        { orderId, chargeId },
+        () => ({
+          confirmationId: `conf-${orderId}-${Date.now()}`,
+          orderId,
+        }),
+        signal,
+      ),
+
+    releaseReservation: (reservationId: string, signal?: AbortSignalLike): Promise<void> =>
+      api.respond('checkout.releaseReservation', { reservationId }, () => undefined, signal),
+
+    // Legacy notification vendor lacks a signal parameter and cannot be aborted once started.
+    legacyConfirmEmail: (orderId: string): Promise<void> =>
+      api.respond('checkout.legacyConfirmEmail', { orderId }, () => undefined),
+  };
+}

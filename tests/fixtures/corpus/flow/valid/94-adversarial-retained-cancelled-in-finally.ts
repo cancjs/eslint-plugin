@@ -36,6 +36,6 @@ export function execute() {
   try {
     otherSyncWork();
   } finally {
-    handle.cancel();
+    void handle.cancel();
   }
 }

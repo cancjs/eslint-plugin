@@ -1,4 +1,4 @@
-import CancelablePromise, { CancelError } from '@cancjs/promise';
+import CancelablePromise, { CancelError, isCancelError } from '@cancjs/promise';
 
 class SpecificError extends Error { readonly kind = 'SpecificError'; }
 
@@ -8,7 +8,10 @@ export const c1 = p.then(() => {
   return (CancelablePromise as any).fail(new SpecificError());
 });
 
-export const c2 = p.catch(() => {
+export const c2 = p.catch((e) => {
+  if (isCancelError(e)) {
+    throw e;
+  }
   return CancelablePromise.reject<never, SpecificError>(new SpecificError());
 });
 

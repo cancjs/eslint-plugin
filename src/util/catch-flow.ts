@@ -1,12 +1,14 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
+import { isGlobalPromiseIdent } from './adoption.js';
 import {
   isCancAwaitIdent,
   isCancCtorIdent,
   isCancGenAwaitIdent,
   isCoroutineFnIdent,
   isLazyCtorIdent,
+  isThrowHelperCall,
   refersTo,
 } from './canc-imports.js';
 import { getCancServices, isCancelableExpression, isCancelableType } from './canc-types.js';
@@ -326,13 +328,56 @@ export function isCancelableFlowCatch(
   return tryBlockHasCancelable(parent.block, context, settings);
 }
 
-function statementRethrowsParam(stmt: TSESTree.Statement, paramName: string): boolean {
+// `yield* cancThrow(e)` and `return yield* cancThrow(e)` rethrow inside a coroutine
+function isThrowHelperRethrow(stmt: TSESTree.Statement, paramName: string, context: Context): boolean {
+  const expression =
+    stmt.type === AST_NODE_TYPES.ExpressionStatement ? stmt.expression
+    : stmt.type === AST_NODE_TYPES.ReturnStatement ? stmt.argument
+    : null;
+  if (expression?.type !== AST_NODE_TYPES.YieldExpression || !expression.delegate) {
+    return false;
+  }
+  const call = expression.argument;
+  return (
+    call.type === AST_NODE_TYPES.CallExpression &&
+    isThrowHelperCall(call, context) !== null &&
+    call.arguments[0]?.type === AST_NODE_TYPES.Identifier &&
+    call.arguments[0].name === paramName
+  );
+}
+
+// Promise.reject(e) rejects the derived promise with the same error
+function isRejectRethrow(node: TSESTree.Node | null | undefined, paramName: string, context: Context): boolean {
+  return (
+    node?.type === AST_NODE_TYPES.CallExpression &&
+    node.callee.type === AST_NODE_TYPES.MemberExpression &&
+    !node.callee.computed &&
+    node.callee.property.type === AST_NODE_TYPES.Identifier &&
+    node.callee.property.name === 'reject' &&
+    (isGlobalPromiseIdent(node.callee.object, context) || isCancCtorIdent(node.callee.object, context)) &&
+    node.arguments.length === 1 &&
+    node.arguments[0].type === AST_NODE_TYPES.Identifier &&
+    node.arguments[0].name === paramName
+  );
+}
+
+function returnsRejection(stmt: TSESTree.ReturnStatement, paramName: string, context: Context): boolean {
+  return stmt.argument !== null && isRejectingConditional(stmt.argument, paramName, context);
+}
+
+function statementRethrowsParam(stmt: TSESTree.Statement, paramName: string, context: Context): boolean {
   if (stmt.type === AST_NODE_TYPES.ThrowStatement) {
     return stmt.argument.type === AST_NODE_TYPES.Identifier && stmt.argument.name === paramName;
   }
+  if (isThrowHelperRethrow(stmt, paramName, context)) {
+    return true;
+  }
+  if (stmt.type === AST_NODE_TYPES.ReturnStatement && returnsRejection(stmt, paramName, context)) {
+    return true;
+  }
   if (stmt.type === AST_NODE_TYPES.BlockStatement) {
     for (const inner of stmt.body) {
-      if (statementRethrowsParam(inner, paramName)) {
+      if (statementRethrowsParam(inner, paramName, context)) {
         return true;
       }
     }
@@ -409,7 +454,7 @@ function checkCancelGuard(
   context: Context,
 ): 'rethrow' | 'swallow' | 'none' {
   if (isCancelCheck(ifStmt.test, paramName, context)) {
-    if (statementRethrowsParam(ifStmt.consequent, paramName)) {
+    if (statementRethrowsParam(ifStmt.consequent, paramName, context)) {
       return 'rethrow';
     }
     return 'swallow';
@@ -421,13 +466,13 @@ function checkCancelGuard(
     isCancelCheck(ifStmt.test.argument, paramName, context)
   ) {
     if (ifStmt.alternate) {
-      if (statementRethrowsParam(ifStmt.alternate, paramName)) {
+      if (statementRethrowsParam(ifStmt.alternate, paramName, context)) {
         return 'rethrow';
       }
       return 'swallow';
     }
     for (const stmt of statementsAfter) {
-      if (statementRethrowsParam(stmt, paramName)) {
+      if (statementRethrowsParam(stmt, paramName, context)) {
         return 'rethrow';
       }
     }
@@ -435,6 +480,27 @@ function checkCancelGuard(
   }
 
   return 'none';
+}
+
+// (e) => isCancelError(e) ? Promise.reject(e) : x rethrows on the cancel arm
+function isRejectingConditional(body: TSESTree.Node, paramName: string, context: Context): boolean {
+  if (body.type === AST_NODE_TYPES.CallExpression) {
+    return isRejectRethrow(body, paramName, context);
+  }
+  if (body.type !== AST_NODE_TYPES.ConditionalExpression) {
+    return false;
+  }
+  if (isCancelCheck(body.test, paramName, context)) {
+    return isRejectRethrow(body.consequent, paramName, context);
+  }
+  if (
+    body.test.type === AST_NODE_TYPES.UnaryExpression &&
+    body.test.operator === '!' &&
+    isCancelCheck(body.test.argument, paramName, context)
+  ) {
+    return isRejectRethrow(body.alternate, paramName, context);
+  }
+  return false;
 }
 
 function isBoundaryCall(
@@ -504,22 +570,33 @@ function hasBoundaryCallInStatements(
   return false;
 }
 
-function hasRethrowInStatements(statements: TSESTree.Statement[], paramName: string): boolean {
+function hasRethrowInStatements(statements: TSESTree.Statement[], paramName: string, context: Context): boolean {
   for (const stmt of statements) {
+    if (isThrowHelperRethrow(stmt, paramName, context)) {
+      return true;
+    }
     if (stmt.type === AST_NODE_TYPES.ThrowStatement) {
       if (stmt.argument.type === AST_NODE_TYPES.Identifier && stmt.argument.name === paramName) {
         return true;
       }
     }
-    if (stmt.type === AST_NODE_TYPES.IfStatement && stmt.alternate) {
-      if (statementRethrowsParam(stmt.alternate, paramName)) {
+    if (stmt.type === AST_NODE_TYPES.ReturnStatement && returnsRejection(stmt, paramName, context)) {
+      return true;
+    }
+    if (stmt.type === AST_NODE_TYPES.IfStatement) {
+      // the fallback of an else-if chain sits on the last alternate
+      let alternate = stmt.alternate;
+      while (alternate?.type === AST_NODE_TYPES.IfStatement) {
+        alternate = alternate.alternate;
+      }
+      if (alternate && statementRethrowsParam(alternate, paramName, context)) {
         return true;
       }
     }
     if (stmt.type === AST_NODE_TYPES.SwitchStatement) {
       for (const switchCase of stmt.cases) {
         if (switchCase.test === null) {
-          if (switchCase.consequent.some((s) => statementRethrowsParam(s, paramName))) {
+          if (switchCase.consequent.some((s) => statementRethrowsParam(s, paramName, context))) {
             return true;
           }
         }
@@ -636,6 +713,9 @@ export function analyzeHandler(
     if (param && isBoundaryCall(body, param.name, context, settings)) {
       return { compliant: true, via: 'boundary', wrapped: false, destructured, param };
     }
+    if (param && isRejectingConditional(body, param.name, context)) {
+      return { compliant: true, via: 'rethrow', wrapped: false, destructured, param };
+    }
     if (opts?.allowLogAndReturn && isLogExpression(body)) {
       return { compliant: true, via: 'logReturn', wrapped: false, destructured, param };
     }
@@ -682,7 +762,7 @@ export function analyzeHandler(
     return { compliant: true, via: 'boundary', wrapped: false, destructured: false, param };
   }
 
-  if (hasRethrowInStatements(statements, param.name)) {
+  if (hasRethrowInStatements(statements, param.name, context)) {
     return { compliant: true, via: 'rethrow', wrapped: false, destructured: false, param };
   }
 

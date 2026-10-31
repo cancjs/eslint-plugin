@@ -18,11 +18,11 @@ TypeScript patterns fall into three distinct buckets:
 
 2. **Explicit assertions and adoptions (Sanctioned)**: The code deliberately marks an intent to convert or bridge cancelability:
    - Explicit wrapper functions such as `Promise.resolve(cancPromise)` or `new Promise((resolve) => resolve(cancPromise))`.
-   - Type assertions such as `cancPromise as Promise<T>`.
-   - Boundary helpers such as `catchCancel(p)`, `suppressCancel(p)`, `catchAbort(p)`, `suppressAbort(p)`, `catchTimeout(p)`, and `suppressTimeout(p)`.
+   - Type assertions such as `cancPromise as Promise<T>`, `<Promise<T>>cancPromise` and `cancPromise as unknown as Promise<T>`, plus the JSDoc cast `/** @type {Promise<T>} */ (cancPromise)`.
+   - Boundary helpers such as `catchCancel(p)`, `suppressCancel(p)`, `catchAbort(p)`, `suppressAbort(p)`, `catchTimeout(p)`, and `suppressTimeout(p)`, plus any function named in the `boundaryFunctions` shared setting.
 
 3. **Not erasure (Preserved)**:
-   - `p satisfies Promise<T>`: Asserts promise compatibility without changing or downgrading the expression's static type. Use `satisfies Promise<T>` when verifying interface compatibility while keeping full cancelability.
+   - `p satisfies Promise<T>`: Asserts promise compatibility without changing or downgrading the expression's static type. Use `satisfies Promise<T>` when verifying interface compatibility while keeping full cancelability. The value stays cancelable, so passing it on into a plain promise sink is still reported.
    - Union sinks typed `Promise<T> | CancelablePromise<T>`.
    - Non-null assertions `p!`.
 
@@ -61,7 +61,7 @@ trackPromise(Promise.resolve(fetchUserCancelable()));
 ```
 
 ```ts
-async function getUser(): CancelablePromise<User> {
+function getUser(): CancelablePromise<User> {
   return fetchUserCancelable();
 }
 ```
@@ -76,6 +76,8 @@ const compatible = fetchUserCancelable() satisfies Promise<User>;
 
 ```ts
 import { catchCancel } from '@cancjs/promise';
+
+declare function trackPromise(p: Promise<User>): void;
 
 trackPromise(catchCancel(fetchUserCancelable()));
 ```
@@ -111,7 +113,11 @@ This rule accepts an optional configuration object:
 - `checkReturns` (default: `true`): Reports cancelable promises returned from functions annotated with plain promise return types.
 - `checkAssignments` (default: `true`): Reports assignment to variables or parameters typed as plain promises.
 - `checkProperties` (default: `true`): Reports cancelable promises assigned to plain promise object properties or class fields.
-- `retainedHandle` (default: `true`): Skips reporting if the cancelable promise is stored in a local variable whose `.cancel()` handle is accessed within the same scope.
+- `retainedHandle` (default: `true`): Skips reporting when the source is a local `const` or `let` declared in the same function with a visible cancel path: a `.cancel` access on it, the variable passed as the `ref` option of a `new` expression, a `promise` destructured together with `cancel` from `withResolvers()`, or a value started with the `signal` of a local `AbortController`. Direct call results never qualify.
+
+## Limitations
+
+The rule does not check the return value of a callback passed straight to a call (such as a `.then` callback) unless the callback declares its own return type, since the callee decides what happens to it. Arguments passed to functions declared by the canc packages are not checked, and lazy promises are out of scope. `await` operands, native combinator arguments and floating promises are left to other rules. An async function without a return annotation is not reported, because its return has no declared type. On an async function that does declare `Promise<T>`, the message suggests dropping `async` instead of keeping the cancelable type, since an async function cannot return a cancelable promise type.
 
 ## When not to use it
 

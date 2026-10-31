@@ -2,7 +2,7 @@
 
 Require cancel wiring in promise executors.
 
-A `CancelablePromise` whose executor neither registers a `handleCancel` callback, nor forwards `getSignal()`, nor receives a `signal` constructor option produces a promise whose cancellation stops downstream chain propagation but leaks the underlying asynchronous work. This rule enforces that cancel wiring is explicitly provided for all operations started in executors.
+A `CancelablePromise` whose executor neither registers a `handleCancel` callback, nor forwards `getSignal()`, nor receives a `signal` constructor option produces a promise whose cancellation stops downstream chain propagation but leaks the underlying asynchronous work. This rule enforces that cancel wiring is explicitly provided for all operations started in executors. A promise constructed with `{ shield: true }` is not reported: it ignores cancellation, so there is nothing to wire.
 
 ## Rule details
 

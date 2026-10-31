@@ -4,14 +4,14 @@ import path from 'node:path';
 import tseslintParser from '@typescript-eslint/parser';
 import { describe, expect, it } from 'vitest';
 
-import { CATALOG_RULE_IDS, corpusFiles, readMarkers } from './helpers/corpus.js';
+import { CATALOG_RULE_IDS, corpusFiles, parseMarkerLine, readMarkers } from './helpers/corpus.js';
 
-describe('corpus shape: 260 fixtures across 7 families', () => {
+describe('corpus shape: 273 fixtures across 7 families', () => {
   const families = ['coroutine', 'error-handling', 'executor', 'flow', 'hygiene', 'lazy', 'failure'] as const;
 
-  it('prints per-family counts summing to 260 files', () => {
+  it('prints per-family counts summing to 273 files', () => {
     const allFiles = corpusFiles();
-    expect(allFiles).toHaveLength(260);
+    expect(allFiles).toHaveLength(273);
 
     const counts: Record<string, { total: number; valid: number; invalid: number }> = {};
     for (const fam of families) {
@@ -23,43 +23,43 @@ describe('corpus shape: 260 fixtures across 7 families', () => {
     const summary = families
       .map((fam) => `${fam}: ${counts[fam].total} (${counts[fam].valid} valid, ${counts[fam].invalid} invalid)`)
       .join(', ');
-    console.log(`Corpus shape: 260 files [${summary}]`);
+    console.log(`Corpus shape: 273 files [${summary}]`);
 
     expect(counts.coroutine.total).toBe(37);
     expect(counts.coroutine.valid).toBe(21);
     expect(counts.coroutine.invalid).toBe(16);
 
-    expect(counts['error-handling'].total).toBe(38);
+    expect(counts['error-handling'].total).toBe(39);
     expect(counts['error-handling'].valid).toBe(22);
-    expect(counts['error-handling'].invalid).toBe(16);
+    expect(counts['error-handling'].invalid).toBe(17);
 
-    expect(counts.executor.total).toBe(60);
-    expect(counts.executor.valid).toBe(38);
-    expect(counts.executor.invalid).toBe(22);
+    expect(counts.executor.total).toBe(62);
+    expect(counts.executor.valid).toBe(39);
+    expect(counts.executor.invalid).toBe(23);
 
     expect(counts.flow.total).toBe(40);
     expect(counts.flow.valid).toBe(30);
     expect(counts.flow.invalid).toBe(10);
 
-    expect(counts.hygiene.total).toBe(27);
-    expect(counts.hygiene.valid).toBe(16);
-    expect(counts.hygiene.invalid).toBe(11);
+    expect(counts.hygiene.total).toBe(35);
+    expect(counts.hygiene.valid).toBe(21);
+    expect(counts.hygiene.invalid).toBe(14);
 
     expect(counts.lazy.total).toBe(15);
     expect(counts.lazy.valid).toBe(8);
     expect(counts.lazy.invalid).toBe(7);
 
-    expect(counts.failure.total).toBe(43);
-    expect(counts.failure.valid).toBe(26);
-    expect(counts.failure.invalid).toBe(17);
+    expect(counts.failure.total).toBe(45);
+    expect(counts.failure.valid).toBe(27);
+    expect(counts.failure.invalid).toBe(18);
 
     const sum = Object.values(counts).reduce((acc, c) => acc + c.total, 0);
-    expect(sum).toBe(260);
+    expect(sum).toBe(273);
   });
 
   it('every invalid file has at least 1 marker', () => {
     const invalidFiles = corpusFiles(undefined, 'invalid');
-    expect(invalidFiles.length).toBe(99);
+    expect(invalidFiles.length).toBe(105);
 
     const missingMarkers: string[] = [];
     for (const file of invalidFiles) {
@@ -89,7 +89,7 @@ describe('corpus shape: 260 fixtures across 7 families', () => {
 
   it('valid files carry no marker', () => {
     const validFiles = corpusFiles(undefined, 'valid');
-    expect(validFiles.length).toBe(161);
+    expect(validFiles.length).toBe(168);
 
     const spuriousMarkers: { file: string; line: number; ruleId: string }[] = [];
     for (const file of validFiles) {
@@ -132,5 +132,24 @@ describe('corpus shape: 260 fixtures across 7 families', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+});
+
+describe('marker comments', () => {
+  it('reads one rule with message id and note', () => {
+    expect(parseMarkerLine('  } catch (e) { // lint: exhaustive-catch:noRethrow drops ErrorB', 12)).toEqual([
+      { line: 12, ruleId: 'exhaustive-catch', messageId: 'noRethrow', note: 'drops ErrorB' },
+    ]);
+  });
+
+  it('reads several comma-joined rules on one line, sharing the note', () => {
+    expect(parseMarkerLine('x(); // lint: no-async-executor,must-consume-lazy:unused async lazy', 3)).toEqual([
+      { line: 3, ruleId: 'no-async-executor', note: 'async lazy' },
+      { line: 3, ruleId: 'must-consume-lazy', messageId: 'unused', note: 'async lazy' },
+    ]);
+  });
+
+  it('ignores lines without a marker', () => {
+    expect(parseMarkerLine('const a = 1; // first operation', 1)).toEqual([]);
   });
 });

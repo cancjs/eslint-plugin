@@ -33,7 +33,7 @@ interface Feed {
 }
 declare function openFeed(): Promise<Feed>;
 
-const feed = new LazyPromise<Feed>(async (resolve, reject) => { // lint: no-async-executor async lazy executor
+const feed = new LazyPromise<Feed>(async (resolve, reject) => { // lint: no-async-executor,must-consume-lazy async lazy executor
   resolve(await openFeed());
 });
 

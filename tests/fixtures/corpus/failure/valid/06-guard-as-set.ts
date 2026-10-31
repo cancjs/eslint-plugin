@@ -12,7 +12,7 @@ const isUserFailure = createIsError(HttpError, NotFoundError);
 
 export function handleUserFailure(p: CancelablePromise<string>) {
   const guarded = withFailure(isUserFailure)(p);
-  catchErrors(guarded, isUserFailure);
+  void catchErrors(guarded, isUserFailure);
 
   try {
     // try block

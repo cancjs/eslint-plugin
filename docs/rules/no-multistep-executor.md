@@ -6,6 +6,8 @@ An executor should act as an adapter for exactly one underlying operation. Start
 
 ## Rule details
 
+Each call whose result the executor consumes with `then` or `await`, or passes to `resolve`, counts as one operation. Calls inside a `handleCancel` callback are cleanup and do not count. A call inside a `then` callback that reads the callback's first parameter, such as `openStream().then((stream) => readAll(stream))` or `loadProfile(session.id)`, continues the same operation and does not count separately, however long the chain. A callback that never reads its parameter starts a new operation, and so does the `await` form of the same sequence. The rule reports the first operation past the allowed number.
+
 ### Incorrect
 
 ```ts
@@ -57,6 +59,15 @@ const checkout = reserveStockCancelable().then(() => chargeCardCancelable());
 This rule accepts a single options object with the following property:
 
 - `maxOperations` (integer, default `1`): the maximum number of asynchronous operations permitted to be started within an executor.
+
+## Limitations
+
+The check is syntactic, so a few shapes are judged by their form:
+
+- A step that reads a binding of the previous result, including bindings of an object or array pattern (`op().then(({ length }) => op2(String(length)))`), continues the same operation. A pattern binding the next step never reads does not.
+- An `onRejected` callback that neither settles nor rethrows still counts as a step.
+- `resolve(syncCall())` inside a `.then` callback without parameters counts as a step.
+- A call with a plain identifier as callee, such as `resolve(norm(d))`, is treated as handing over an operation.
 
 ## When not to use it
 
