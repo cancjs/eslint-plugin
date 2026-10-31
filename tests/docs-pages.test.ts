@@ -17,10 +17,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docsDir = path.join(root, 'docs', 'rules');
 const corpusDir = path.join(root, 'tests', 'fixtures', 'corpus');
 
-// same pattern the leak sweep uses
+// internal ids and tool names must not appear on a public page
 const LEAK = new RegExp(
   [
-    'EP-D[0-9]',
+    'EP' + '-D[0-9]',
     String.raw`R[0-9]{1,2}`,
     'TE-[0-9]',
     String.raw`E?P[0-9]+-[0-9]`,
@@ -107,6 +107,13 @@ describe('rule doc pages', () => {
       .filter((id) => strictRules.has(id) || stylisticRules.has(id))
       .filter((id) => !/^#{1,6}\s+when not to use/im.test(page(id)));
     expect(missing).toEqual([]);
+  });
+
+  it('explains the open failure set on both failure-set pages', () => {
+    for (const id of ['exhaustive-catch', 'no-failure-widening']) {
+      expect(page(id), id).toContain('`_cancUnlisted: true`');
+      expect(page(id), id).toMatch(/promise-like[^.]*open failure set/);
+    }
   });
 
   it('contains no internal references', () => {

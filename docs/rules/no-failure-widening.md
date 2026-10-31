@@ -16,6 +16,10 @@ Declared failures on `CancelablePromise<T, F>` represent domain-level error cont
 
 To refine, narrow, or deliberately erase failure types, use the sanctioned `withFailure` helper from `@cancjs/promise`. Alternatively, an explicit line comment marker (default: `canc-allow-widening`) can acknowledge intentional erasures.
 
+## Open failure sets
+
+A failure set is open when it includes a member that declares `_cancUnlisted: true`, wherever that member is declared. The marker is structural, so the name of the type does not matter. A promise-like target branch also claims an open failure set.
+
 ## Sanctioned withFailure forms
 
 The `withFailure` helper provides explicit and documented failure type transitions:
