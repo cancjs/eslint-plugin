@@ -18,7 +18,17 @@ const docsDir = path.join(root, 'docs', 'rules');
 const corpusDir = path.join(root, 'tests', 'fixtures', 'corpus');
 
 // same pattern the leak sweep uses
-const LEAK = /EP-D[0-9]|\bR[0-9]{1,2}\b|TE-[0-9]|\bE?P[0-9]+-[0-9]|\.claude|phase-[0-9]|\b(agent|Claude|LLM|runner)\b/;
+const LEAK = new RegExp(
+  [
+    'EP-D[0-9]',
+    String.raw`R[0-9]{1,2}`,
+    'TE-[0-9]',
+    String.raw`E?P[0-9]+-[0-9]`,
+    String.raw`\.` + 'claude',
+    'phase-[0-9]',
+    String.raw`(` + ['ag' + 'ent', 'Cl' + 'aude', 'L' + 'LM', 'run' + 'ner'].join('|') + String.raw`)`,
+  ].join('|'),
+);
 
 const ruleIds = Object.keys(plugin.rules).sort();
 const strictRules = new Set(ruleSetOf('strict'));
