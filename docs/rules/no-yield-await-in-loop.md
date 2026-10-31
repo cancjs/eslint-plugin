@@ -1,5 +1,11 @@
 # canc/no-yield-await-in-loop
 
+📝 Disallow serialized yield* cancAwait in loops where steps appear independent.
+
+💼 This rule is enabled in the 🔒 `strict` config.
+
+<!-- end auto-generated rule header -->
+
 Disallow awaiting cancelable steps sequentially inside iteration loops.
 
 Using `yield* cancAwait(...)` inside `for`, `for-of`, `for-in`, `while`, or `do-while` loops executes each iteration sequentially. When loop iterations are independent and can run concurrently, awaiting each step sequentially serializes operations and increases total execution time.

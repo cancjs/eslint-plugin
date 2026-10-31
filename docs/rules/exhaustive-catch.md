@@ -1,10 +1,20 @@
 # canc/exhaustive-catch
 
+📝 Require coroutine catch blocks to handle or rethrow all declared failure types.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Require coroutine catch blocks to handle or rethrow all declared failure types.
 
 When a coroutine executes `yield* cancAwait(...)` steps inside a `try` block, each step declares the specific failure types it may throw. If the enclosing `catch` block catches errors, it must handle every declared failure type or provide a fallback rethrow for unhandled types. Silently dropping declared failures leads to unexpected silent swallows of domain errors.
 
-For open failure sets (types that include the `Unlisted` marker), a catch block must provide an unconditional fallback rethrow unless configured otherwise, since unlisted error types may still arrive at runtime.
+A failure set is open when it includes a member that declares `_cancUnlisted: true`, wherever that member is declared. The name of the type does not matter. A promise-like branch in the failure union also claims an open failure set. For an open failure set, a catch block must provide an unconditional fallback rethrow unless configured otherwise, since unlisted error types may still arrive at runtime.
 
 ## Rule details
 
@@ -83,6 +93,8 @@ export const run = cancAsync(function* () {
   }
 });
 ```
+
+An exhaustive `switch` on a discriminant of the caught error without `default: throw e` is still reported. Add the default so errors outside the listed cases are rethrown.
 
 ## Options
 

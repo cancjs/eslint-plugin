@@ -1,5 +1,11 @@
 # canc/no-abort-listener-leak
 
+📝 Require removing abort listeners on all code paths or using { once: true } to prevent leaks.
+
+💼 This rule is enabled in the 🔒 `strict` config.
+
+<!-- end auto-generated rule header -->
+
 Disallow registering abort event listeners on external signals without guaranteed removal or once option.
 
 Registering an `'abort'` event listener on an external `AbortSignal` via `signal.addEventListener('abort', handler)` creates a memory leak if the listener is not removed when the associated operation finishes. Because external signals often outlive individual sub-tasks, registered listeners accumulate in memory and retain closures over local variables.
@@ -72,10 +78,6 @@ function watchOperation(signal: AbortSignal) {
   });
 }
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

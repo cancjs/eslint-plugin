@@ -1,5 +1,15 @@
 # canc/prefer-is-cancel-error
 
+📝 Prefer brand-checking functions over instanceof or name checks for cancellation errors.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+🔧💡 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) and manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Prefer brand-checking functions over instanceof or name checks for cancellation errors.
 
 Checks such as `err instanceof CancelError` or `err.name === 'CancelError'` fail across package copies and different JavaScript realms. Because brand symbols in `@cancjs` are collision-proof and frozen, helper functions such as `isCancelError` and `isCancPromise` provide dependable identity verification across multiple library instances.
@@ -84,10 +94,6 @@ fetchPlain().catch((err) => {
   throw err;
 });
 ```
-
-## Options
-
-This rule has no options.
 
 ## When not to use it
 

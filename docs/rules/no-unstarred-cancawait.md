@@ -1,5 +1,13 @@
 # canc/no-unstarred-cancawait
 
+📝 Require yield* on cancAwait calls and disallow unused statement-position cancAwait calls.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Require `yield*` delegation on `cancAwait` and `cancGenAwait` calls inside coroutines.
 
 The `cancAwait` and `cancGenAwait` helpers return a one-shot generator object. Calling `yield cancAwait(...)` without an asterisk delegates the generator object itself to the coroutine driver rather than unwinding the generator. The driver treats the generator object as an already-resolved plain object, resuming immediately with the generator instance while leaving the underlying promise unawaited and cancellation unwired.

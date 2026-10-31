@@ -1,5 +1,11 @@
 # canc/must-consume-lazy
 
+📝 Ensure LazyPromise instances are consumed rather than dropped.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+<!-- end auto-generated rule header -->
+
 Ensure created LazyPromise instances are consumed.
 
 A `LazyPromise` does not begin executing its underlying asynchronous operation until it is consumed. Unlike a standard eager `Promise` or `CancelablePromise`, dropping a `LazyPromise` without consuming it results in completely silent dead code where the executor never runs.
@@ -76,10 +82,6 @@ function getTask() {
   return LazyPromise.resolve(42);
 }
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

@@ -1,5 +1,15 @@
 # canc/require-error-discriminant
 
+📝 Require declared error classes in failure sets to have a discriminant property.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Require error classes used in declared failure unions to declare a discriminant field, literal name, or brand.
 
 TypeScript checks and compares types structurally rather than nominally. Two distinct error classes that both extend `Error` without declaring unique fields share an identical structural type shape. When used in a failure union (such as `CancelablePromise<string, NotFoundError | UnauthorizedError>`), attempting to narrow or subtract one class using `Exclude` or type predicates inadvertently matches and removes both classes.
@@ -9,6 +19,8 @@ To guarantee that failure union members can be distinguished and narrowed safely
 1. A unique discriminant property (for example, `readonly kind = 'NotFoundError';`),
 2. A literal `name` property (for example, `override readonly name = 'NotFoundError' as const;`), or
 3. A unique brand key or symbol (for example, `readonly [BRAND] = true;`).
+
+Any non-static instance member counts: a property, an accessor, a getter, a method, an abstract member, or a constructor parameter property (for example `constructor(readonly kind: string)`).
 
 Static members never count. A static field lives on the class constructor, not on its instances, so two classes that differ only by a static field still have identical instance types and still collapse in a union.
 

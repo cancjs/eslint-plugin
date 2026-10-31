@@ -1,5 +1,13 @@
 # canc/no-async-loop-callback
 
+📝 Disallow async callbacks in cancForAwait and cancGenForAwait loops.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Disallow async function callbacks for `cancForAwait` and `cancGenForAwait`.
 
 The `cancForAwait` and `cancGenForAwait` helpers iterate over asynchronous streams while participating in coroutine cancellation. Passing an `async` function as the per-item iteration callback breaks cancellation propagation:
@@ -47,10 +55,6 @@ const processStream = cancAsync(function* (source: AsyncIterable<Item>) {
   });
 });
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

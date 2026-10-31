@@ -1,5 +1,15 @@
 # canc/no-failure-widening
 
+📝 Disallow casts and type annotations that drop declared failure types.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Disallow casts and type annotations that silently drop declared failure types from a CancelablePromise.
 
 Declared failures on `CancelablePromise<T, F>` represent domain-level error contracts. Using a type assertion (`as CancelablePromise<T>`) or an annotated assignment that drops failure members bypasses the compiler's failure tracking without runtime handling, resulting in unexpected unhandled rejections downstream.

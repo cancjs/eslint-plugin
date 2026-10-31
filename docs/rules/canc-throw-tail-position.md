@@ -1,5 +1,13 @@
 # canc/canc-throw-tail-position
 
+📝 Require 'return yield* canc.throw(...)' in tail position so following code is unreachable.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+🔧💡 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) and manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Require `return yield* canc.throw(...)` in tail position so following code is unreachable.
 
 `canc.throw(...)` (along with `cancGen.throw`, `cancThrow`, and `cancGenThrow`) returns a step generator that throws an error when delegated via `yield*`. At runtime, execution halts and the error propagates to the enclosing `try/catch` or rejects the coroutine promise.
@@ -57,10 +65,6 @@ export const processItem = cancAsync(function* (item: Item) {
   }
 });
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

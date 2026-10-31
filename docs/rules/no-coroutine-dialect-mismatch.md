@@ -1,5 +1,11 @@
 # canc/no-coroutine-dialect-mismatch
 
+📝 Disallow mixing coroutine helper dialects inside coroutine bodies.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+<!-- end auto-generated rule header -->
+
 Disallow mixing coroutine helpers between `cancAsync` and `cancGenAsync` dialects.
 
 The `@cancjs` suite provides two coroutine drivers with distinct semantics:

@@ -1,5 +1,11 @@
 # canc/no-multistep-executor
 
+📝 Disallow starting multiple async operations in one executor.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Disallow starting multiple async operations in one executor.
 
 An executor should act as an adapter for exactly one underlying operation. Starting multiple operations sequentially or in parallel inside a single executor collapses cancellation granularity. A single cancel handler cannot determine which step is currently executing, and steps running between operations continue to execute after cancellation. Multi-step workflows should be broken into individual cancelable promises and composed using promise chains or coroutines.

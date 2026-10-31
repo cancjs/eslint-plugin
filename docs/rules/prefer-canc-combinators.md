@@ -1,5 +1,15 @@
 # canc/prefer-canc-combinators
 
+📝 Prefer CancelablePromise combinators over native Promise combinators when inputs are cancelable.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+🔧💡 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) and manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Prefer CancelablePromise combinators over native Promise combinators when any input is cancelable.
 
 Native combinators like `Promise.all`, `Promise.race`, `Promise.any`, and `Promise.allSettled` perform cancellation-blind consumption. When a cancelable promise is passed into a native combinator, cancellation capability is lost. In `Promise.race`, when one promise settles first, native combinators leave the losing cancelable operations running in the background indefinitely. In `Promise.all`, when one input rejects, the remaining inputs are not cancelled. Additionally, the returned native promise cannot be cancelled from downstream consumers.
@@ -59,10 +69,6 @@ const results = CancelablePromise.allSettled([
 ```ts
 const adopted = Promise.resolve(fetchUserCancelable());
 ```
-
-## Options
-
-This rule has no options.
 
 ## When not to use it
 

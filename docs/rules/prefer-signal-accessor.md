@@ -1,5 +1,13 @@
 # canc/prefer-signal-accessor
 
+📝 Prefer 'signal' accessor over deprecated 'getSignal()' on executor context.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+🔧💡 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) and manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Prefer the `ctx.signal` property accessor over `ctx.getSignal()`.
 
 In `@cancjs/promise`, the promise executor context provides an `AbortSignal` through property access `ctx.signal` (or parameter destructuring `{ signal }`). The legacy method `ctx.getSignal()` is deprecated in favor of this property accessor.
@@ -61,10 +69,6 @@ function fetchResource() {
   });
 }
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

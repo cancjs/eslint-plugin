@@ -1,5 +1,11 @@
 # canc/valid-canc-params
 
+📝 Enforce valid parameter count and shapes for cancelable promise methods.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+<!-- end auto-generated rule header -->
+
 Enforce valid argument count and shapes for cancellable promise methods.
 
 This rule enforces valid argument counts and shapes for static and instance methods of `CancelablePromise` and `LazyPromise`. It validates static methods such as `all`, `race`, `any`, `allSettled`, `resolve`, `reject`, `withResolvers`, and `try`, as well as instance methods such as `then`, `catch`, `finally`, and `handleCancel`.
@@ -65,7 +71,3 @@ cancPromise.finally(cleanup);
 ```ts
 cancPromise.handleCancel(onCancel, { immediate: true });
 ```
-
-## Options
-
-This rule has no options.

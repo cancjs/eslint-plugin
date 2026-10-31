@@ -1,5 +1,13 @@
 # canc/no-transform-in-executor
 
+📝 Disallow transforming data before resolving in executor.
+
+⚠️ This rule _warns_ in the 🎨 `stylistic` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Disallow transforming data before resolving in executor.
 
 Transforming data inside an executor mixes data transformation logic into the adapter layer. Any exception thrown during data transformation inside the executor must be manually caught and routed to `reject`, whereas performing transformations in a chained `.then` method propagates errors naturally through the promise chain.

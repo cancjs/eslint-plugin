@@ -1,5 +1,13 @@
 # canc/prefer-cancawait
 
+📝 Prefer yield* cancAwait(...) over bare yield inside cancAsync coroutines.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Require `yield* cancAwait(...)` instead of bare `yield` in `cancAsync` coroutines.
 
 Inside a `cancAsync` coroutine body, yielding a promise directly via a bare `yield expr` works at runtime, but it destroys TypeScript per-step type inference. In TypeScript, generator functions evaluate any plain `yield` expression to the generator-wide `TNext` parameter, which typically defaults to `unknown`.

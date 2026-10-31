@@ -1,5 +1,11 @@
 # canc/no-executor-return
 
+📝 Disallow returning values from CancelablePromise or LazyPromise executors.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+<!-- end auto-generated rule header -->
+
 Disallow returning values from promise executors.
 
 An executor communicates its outcome exclusively through its `resolve` and `reject` callbacks (and registers cancellation cleanup through `handleCancel`). Returning a value from an executor is ignored by `CancelablePromise`. In `CancelablePromise`, returning a function is also disallowed because `CancelablePromise` does not execute returned functions on cancellation; cleanup must instead be registered with `handleCancel`. In contrast, `LazyPromise` executors have an explicit asymmetry where returning a teardown function is supported, while returning non-function values remains disallowed.

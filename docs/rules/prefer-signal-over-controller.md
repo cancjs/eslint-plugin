@@ -1,5 +1,13 @@
 # canc/prefer-signal-over-controller
 
+📝 Prefer passing AbortSignal instead of AbortController.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Prefer passing AbortSignal rather than whole AbortController.
 
 Accepting a whole `AbortController` parameter, or forwarding a controller instance to a downstream function, hands `abort()` capability to code that does not own the controller. Platform conventions pass `AbortSignal`, keeping `abort()` control with the creator of the controller.
