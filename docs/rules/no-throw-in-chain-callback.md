@@ -1,5 +1,15 @@
 # canc/no-throw-in-chain-callback
 
+📝 Require returning CancelablePromise.fail() instead of throwing inside chain callbacks on cancelable promises.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Disallow bare `throw` inside `CancelablePromise` chain callbacks; prefer returning `CancelablePromise.fail(error)`.
 
 In a `CancelablePromise` method chain (`.then(...)`, `.catch(...)`, or `.finally(...)`), throwing an exception synchronously inside a callback causes the runtime to reject the resulting promise. However, TypeScript cannot infer the failure type from a `throw` statement within a callback return signature, causing the chain's failure type to evaluate to `never` or `unknown`.

@@ -1,5 +1,11 @@
 # canc/prefer-cancel-aware-wrapper
 
+📝 Prefer cancelify or promisify over hand-rolled signal threading and finally abort.
+
+💼 This rule is enabled in the 🔒 `strict` config.
+
+<!-- end auto-generated rule header -->
+
 Disallow hand-rolled signal wiring and manual finally abort inside coroutines.
 
 Creating an `AbortController` or `createAbortSignal()` inside a `cancAsync` or `cancGenAsync` coroutine, threading its signal into downstream calls, and calling `.abort()` in a `finally` block re-implements cancel propagation manually.

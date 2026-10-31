@@ -1,5 +1,13 @@
 # canc/no-await-cancelable-in-async
 
+📝 Disallow awaiting cancelable promises in plain async functions.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Disallow awaiting cancelable promises in plain async functions.
 
 Awaiting a `CancelablePromise` inside a native `async` function results in cancellation-blind consumption. When cancellation occurs on an operation, the enclosing native `async` function cannot be cooperatively cancelled or halted midway: it continues executing subsequent statements across future `await` points, leading to stale updates and resource leaks.

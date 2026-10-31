@@ -1,5 +1,13 @@
 # canc/prefer-canceled-property
 
+📝 Prefer 'canceled' over deprecated 'isCanceled' property on cancelables.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+🔧💡 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) and manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Prefer the `canceled` property over deprecated `isCanceled` on cancelable promises.
 
 In `@cancjs/promise`, `CancelablePromise` instances expose a boolean property `canceled` indicating whether the promise has been canceled. The older property name `isCanceled` is deprecated to standardize naming across the ecosystem.
@@ -40,10 +48,6 @@ function checkStatus(task: CancelablePromise<void>) {
   }
 }
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

@@ -1,5 +1,13 @@
 # canc/no-cancelability-erasure
 
+📝 Disallow passing or returning cancelable promises where plain promises are expected.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Disallow passing or returning cancelable promises where plain promises are expected.
 
 Cancelability erasure occurs when a `CancelablePromise` is silently widened or passed into a cancellation-blind sink (such as a plain `Promise<T>` or `PromiseLike<T>`), causing downstream consumers to lose the ability to cancel the underlying task. This creates resource leaks and prevents cooperative abort signals from propagating.

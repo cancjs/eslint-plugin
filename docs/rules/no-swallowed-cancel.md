@@ -1,5 +1,13 @@
 # canc/no-swallowed-cancel
 
+📝 Disallow catch handlers on cancelable flows that swallow the cancellation.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Ensure cancellation errors are not swallowed or mishandled in catch blocks.
 
 In `@cancjs`, coroutine cancellation normally unwinds generators via `return()`, executing `finally` blocks rather than body `catch` handlers. However, when an inner cancelable sub-operation rejects with `CancelError`, an enclosing `catch` handler receives that error. Treating a cancellation like an ordinary error causes canceled operations to trigger unexpected error notifications, retry loops, or false failure alerts.

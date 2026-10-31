@@ -110,7 +110,12 @@ async function lint(preset: 'recommended' | 'strict', files: string[]): Promise<
         files: ['**/*.ts'],
         languageOptions: {
           parser: tseslintParser,
-          parserOptions: { project: [tsconfigPath], tsconfigRootDir: projectDir },
+          parserOptions: {
+            project: [tsconfigPath],
+            tsconfigRootDir: projectDir,
+            // single-run inference would drop the project program on the second parse
+            disallowAutomaticSingleRunInference: true,
+          },
         },
       },
       ...presetConfigs,

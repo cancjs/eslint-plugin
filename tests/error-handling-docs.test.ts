@@ -77,8 +77,8 @@ describe('error handling rule documentation', () => {
     const readmeContent = fs.readFileSync(readmePath, 'utf8');
 
     for (const ruleName of EXPECTED_RULES) {
-      const expectedLink = `[\`canc/${ruleName}\`](docs/rules/${ruleName}.md)`;
-      expect(readmeContent, `README.md missing table row for rule 'canc/${ruleName}'`).toContain(expectedLink);
+      const expectedLink = `[${ruleName}](docs/rules/${ruleName}.md)`;
+      expect(readmeContent, `README.md missing table row for rule '${ruleName}'`).toContain(expectedLink);
     }
   });
 });

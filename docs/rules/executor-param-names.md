@@ -1,5 +1,11 @@
 # canc/executor-param-names
 
+📝 Enforce standard parameter names for cancelable promise executors.
+
+⚠️ This rule _warns_ in the 🎨 `stylistic` config.
+
+<!-- end auto-generated rule header -->
+
 Enforce standardized parameter names in promise executors.
 
 Standardized parameter names in promise executors improve readability and consistency across a codebase. The first executor parameter must match the expected name for `resolve`, the second parameter must match `reject`, and an optional third parameter must be a destructuring pattern or an identifier matching `context` (or legacy `handleCancel`).
@@ -38,6 +44,10 @@ const cancPromise = new CancelablePromise<void>((resolve, reject, ctx) => {
 const cancPromise = new CancelablePromise<void>((_resolve, _reject) => {
 });
 ```
+
+## When not to use it
+
+Skip this rule if your codebase already follows a different naming convention for executor parameters, or if generated code you cannot edit uses other names. It only checks naming, so turning it off does not change how cancellation behaves.
 
 ## Options
 

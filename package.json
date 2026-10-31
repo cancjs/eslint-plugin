@@ -1,6 +1,15 @@
 {
   "name": "@cancjs/eslint-plugin",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "ESLint rules for cancelable promises and coroutines.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cancjs/eslint-plugin.git"
+  },
+  "homepage": "https://github.com/cancjs/eslint-plugin#readme",
+  "bugs": "https://github.com/cancjs/eslint-plugin/issues",
+  "author": "bisubus",
   "type": "module",
   "exports": {
     ".": {
@@ -28,12 +37,20 @@
     "node": ">=18.18",
     "npm": ">=9"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.18.0",
+      "onFail": "warn"
+    }
+  },
   "scripts": {
     "build": "tsdown",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run tests/integration",
     "smoke:pack": "vitest run tests/pack-smoke",
+    "pack:install": "node scripts/pack-install.mjs",
     "test:integration:setup": "npm ci --prefix tests/integration/lane9 && npm ci --prefix tests/integration/lane10",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -43,10 +60,21 @@
     "format:src": "eslint --fix ./src",
     "format:all": "eslint --fix .",
     "gen:stubs": "node scripts/gen-fixture-stubs.mjs",
-    "docs": "eslint-doc-generator",
-    "docs:check": "eslint-doc-generator --check",
+    "docs": "eslint-doc-generator scripts/docs-plugin",
+    "docs:check": "eslint-doc-generator scripts/docs-plugin --check",
     "prepublishOnly": "npm run build && npm run lint && npm run typecheck && npm run test"
   },
+  "files": ["dist", "docs", "!dist/**/*.map"],
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "eslint-plugin",
+    "canc",
+    "cancel",
+    "cancelable",
+    "abort",
+    "promise"
+  ],
   "dependencies": {
     "@typescript-eslint/type-utils": "^8.0.0",
     "@typescript-eslint/utils": "^8.0.0",
@@ -84,9 +112,6 @@
   },
   "peerDependenciesMeta": {
     "@typescript-eslint/parser": {
-      "optional": true
-    },
-    "typescript": {
       "optional": true
     }
   }

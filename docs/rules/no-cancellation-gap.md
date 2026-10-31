@@ -1,5 +1,11 @@
 # canc/no-cancellation-gap
 
+📝 Disallow non-cancelable promise steps inside cancelable flows and chains.
+
+💼 This rule is enabled in the 🔒 `strict` config.
+
+<!-- end auto-generated rule header -->
+
 Disallow non-cancelable promises inside cancelable coroutines and promise chains.
 
 A cancellation gap occurs when an operation embedded inside a cancelable coroutine (`cancAwait` operand or bare `yield`) or inside a cancelable promise chain (`.then`, `.catch`, or `.finally` handler) returns a plain `Promise` instead of a `CancelablePromise`.

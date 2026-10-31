@@ -1,5 +1,11 @@
 # canc/valid-cancasync
 
+📝 Ensure coroutines are driven by valid generator functions with proper type annotations.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+<!-- end auto-generated rule header -->
+
 Enforce valid generator function arguments and return types for coroutine drivers.
 
 The `cancAsync` and `cancGenAsync` coroutine drivers require a synchronous generator function (`function*`). Passing an `async` function or an `async` generator (`async function*`) breaks the cancellation driver because cancel propagation relies on synchronous generator stepping and generator unwinding via `.return()`.

@@ -1,5 +1,13 @@
 # canc/no-internal-imports
 
+📝 Disallow imports from non-public internal package subpaths in @cancjs.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+🔧💡 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) and manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Disallow importing internal or undocumented subpaths of `@cancjs` packages.
 
 Importing internal files directly (such as `dist/`, `src/`, or undocumented internal modules) bypasses public package export maps. In modern TypeScript and JavaScript packages, internal imports risk pulling dual-package copies into bundle graphs, resulting in fragmented symbol registries and broken brand checks (`isCancelError`, `isCancPromise`).
@@ -62,9 +70,9 @@ import { cancGenAsync } from '@cancjs/coroutine/gen';
 import { readFile } from '@cancjs/node/fs';
 ```
 
-## Options
+## Settings
 
-This rule does not accept any options. To configure recognized package names, use shared settings:
+The rule has no options. To configure recognized package names, use shared settings:
 
 ```json
 {

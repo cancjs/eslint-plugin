@@ -1,10 +1,24 @@
 # canc/no-failure-widening
 
+📝 Disallow casts and type annotations that drop declared failure types.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Disallow casts and type annotations that silently drop declared failure types from a CancelablePromise.
 
 Declared failures on `CancelablePromise<T, F>` represent domain-level error contracts. Using a type assertion (`as CancelablePromise<T>`) or an annotated assignment that drops failure members bypasses the compiler's failure tracking without runtime handling, resulting in unexpected unhandled rejections downstream.
 
 To refine, narrow, or deliberately erase failure types, use the sanctioned `withFailure` helper from `@cancjs/promise`. Alternatively, an explicit line comment marker (default: `canc-allow-widening`) can acknowledge intentional erasures.
+
+## Open failure sets
+
+A failure set is open when it includes a member that declares `_cancUnlisted: true`, wherever that member is declared. The marker is structural, so the name of the type does not matter. A promise-like target branch also claims an open failure set.
 
 ## Sanctioned withFailure forms
 
@@ -79,11 +93,11 @@ This rule accepts an optional configuration object:
 
 ### allowWithComment
 
-Default: `"canc-allow-widening"`. A comment string that acknowledges an intentional widening. When placed on the line immediately preceding the cast or annotation, the rule suppresses the warning.
+The `allowWithComment` option. Default: `"canc-allow-widening"`. A comment string that acknowledges an intentional widening. When placed on the line immediately preceding the cast or annotation, the rule suppresses the warning.
 
 ### allowVariableAnnotationWidening
 
-Default: `true`. When set to `true`, variable type annotations that omit failure types (for example, `const x: CancelablePromise<string> = p;`) are allowed without warnings. Setting this option to `false` requires all variable annotations to preserve declared failure types.
+The `allowVariableAnnotationWidening` option. Default: `true`. When set to `true`, variable type annotations that omit failure types (for example, `const x: CancelablePromise<string> = p;`) are allowed without warnings. Setting this option to `false` requires all variable annotations to preserve declared failure types.
 
 ## When not to use it
 

@@ -1,5 +1,13 @@
 # canc/prefer-signal-option
 
+📝 Prefer passing signal as constructor option over manual wiring or pre-abort check inside executor.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+<!-- end auto-generated rule header -->
+
 Prefer passing an external signal via constructor options rather than wiring it manually inside the executor.
 
 When creating a `CancelablePromise` that links to an external `AbortSignal`, wiring the signal manually inside the executor body (by calling `signal.addEventListener('abort', ...)` or checking `signal.aborted`) is error-prone. Manual wiring often neglects:
@@ -54,10 +62,6 @@ function fetchResource(signal: AbortSignal) {
   }, { signal });
 }
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

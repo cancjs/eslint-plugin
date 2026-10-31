@@ -1,5 +1,11 @@
 # canc/no-async-executor
 
+📝 Disallow async functions as executor in CancelablePromise or LazyPromise.
+
+💼 This rule is enabled in the following configs: ✅ `recommended`, 🔒 `strict`.
+
+<!-- end auto-generated rule header -->
+
 Disallow async functions as promise executors.
 
 Passing an async function as a promise executor is problematic because any error thrown inside the async function will reject the async function's own internal promise rather than the surrounding `CancelablePromise`. Thrown errors are effectively lost. Furthermore, after cancellation occurs, an async executor cannot be stopped synchronously: execution continues across subsequent `await` expressions. An async IIFE inside the executor exhibits the same defects.
@@ -58,6 +64,6 @@ const cancPromise = new CancelablePromise<Report>((resolve, reject, { handleCanc
 });
 ```
 
-## Options
+## When not to use it
 
-This rule has no options.
+There is rarely a reason to turn this rule off. If a wrapper you cannot change requires an async function as the executor, disable it for that line and make sure errors are caught and passed to `reject`.

@@ -1,5 +1,13 @@
 # canc/no-keyword-alias-import
 
+📝 Disallow importing keyword aliases from @cancjs/coroutine and @cancjs/coroutine/gen directly as named bindings; prefer canonical names or namespace imports.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Disallow importing keyword alias names (`async`, `await`, `forAwait`, `delegate`, `throw`) from coroutine packages.
 
 The `@cancjs/coroutine` and `@cancjs/coroutine/gen` packages export aliases named `async`, `await`, `forAwait`, `delegate`, and `throw` primarily for namespace import usage (`import * as canc from '@cancjs/coroutine'; canc.async(...)`, `canc.await(...)`, `canc.forAwait(...)`, `canc.delegate(...)`, `canc.throw(...)`).
@@ -38,10 +46,6 @@ const load = canc.async(function* () {
   return user;
 });
 ```
-
-## Options
-
-This rule does not accept any options.
 
 ## When not to use it
 

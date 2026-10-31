@@ -1,5 +1,15 @@
 # canc/prefer-canc-throw
 
+📝 Require yield* canc.throw(...) instead of bare throw in coroutines.
+
+💼⚠️ This rule is enabled in the 🔒 `strict` config. This rule _warns_ in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 Require `return yield* canc.throw(...)` instead of bare `throw` inside coroutines so TypeScript infers failure types.
 
 In `@cancjs/coroutine`, the return type of a `cancAsync` coroutine is inferred from its yielded steps. A bare `throw` statement inside a coroutine body bypasses the yield-based type collection mechanism, causing TypeScript to infer `CancelablePromise<T, never>` instead of propagating the thrown error type into the failure union.
@@ -65,11 +75,11 @@ This rule accepts an optional configuration object:
 
 ### requireTypeInfo
 
-Default: `false`. When set to `true`, the rule runs only when TypeScript parser services are available and degrades silently when type information is missing.
+The `requireTypeInfo` option. Default: `false`. When set to `true`, the rule runs only when TypeScript parser services are available and degrades silently when type information is missing.
 
 ### allowCatchRethrow
 
-Default: `true`. When enabled, rethrowing the catch clause parameter (for example, `catch (err) { throw err; }`) is permitted without being flagged as an uncaptured failure.
+The `allowCatchRethrow` option. Default: `true`. When enabled, rethrowing the catch clause parameter (for example, `catch (err) { throw err; }`) is permitted without being flagged as an uncaptured failure.
 
 ### exclude
 

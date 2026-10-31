@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint:all
+      - run: npm run build
+      - run: npm run docs:check
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node-version: ['20.19.x', '22.x', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm test
+
+  integration:
+    # lanes install eslint 9 and eslint 10 from the registry, so this job needs network
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22.x', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:integration:setup
+      - run: npm run build
+      - run: npm run test:integration
+
+  pack-smoke:
+    # the packed tarball is installed with its runtime deps, so the lanes must be installed first with network
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:integration:setup
+      - run: npm run build
+      - run: npm run smoke:pack
+
+  dist-node18:
+    # build, pack and install on 22, then run only the plain probe scripts on the declared engines floor (no vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:integration:setup
+      - run: npm run build
+      - run: npm run pack:install
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+      - run: node tests/integration/lane9/tmp-pack/probe.cjs @cancjs/eslint-plugin tests/integration/lane9/tmp-pack/bad.js
+      - run: node tests/integration/lane9/tmp-pack/probe.mjs @cancjs/eslint-plugin tests/integration/lane9/tmp-pack/bad.js
