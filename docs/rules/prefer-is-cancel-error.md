@@ -10,7 +10,7 @@
 
 <!-- end auto-generated rule header -->
 
-Prefer brand-checking functions over instanceof or name checks for cancellation errors.
+Prefer brand-checking functions over instanceof or name checks for cancellation and library errors.
 
 Checks such as `err instanceof CancelError` or `err.name === 'CancelError'` fail across package copies and different JavaScript realms. Because brand symbols in `@cancjs` are collision-proof and frozen, helper functions such as `isCancelError` and `isCancPromise` provide dependable identity verification across multiple library instances.
 
@@ -20,9 +20,11 @@ This rule also guards against incorrect AbortError handling: when a cancelable p
 
 - `x instanceof CancelError`: Automated fix (`--fix`) to `isCancelError(x)` when a local `isCancelError` import is available in scope; otherwise reports without suggestion.
 - `x instanceof CancelablePromise`: Automated fix (`--fix`) to `isCancPromise(x)` when a local `isCancPromise` import is available in scope; otherwise reports without suggestion.
+- `x instanceof <ErrorClass>` (for other canc classes): Automated fix (`--fix`) to `<guard>(x)` when the guard is imported; otherwise reports without suggestion.
 - `err.name === 'CancelError'` or `switch`: Reports with suggestion to use `isCancelError(err)`.
 - `err.name === 'AbortError'` in cancelable catch with `DOMException`: Reports with suggestion to use `isCancelError(err)` for direct pairs.
 - Standalone `err.name === 'AbortError'`: Reports with suggestion to use `isAbortError(err)`.
+- `err.name === '<ErrorClass>'` or `switch`: Reports with suggestion to use `<guard>(err)`.
 
 ## Rule details
 
@@ -93,6 +95,57 @@ fetchPlain().catch((err) => {
   }
   throw err;
 });
+```
+
+## Other canc error classes
+
+Beyond `CancelError`, other error classes in the canc ecosystem provide branded identity guards that avoid `instanceof` hazards across package copies and realms.
+
+| Class                 | Brand guard             | Package                               | Name compare reported           |
+| --------------------- | ----------------------- | ------------------------------------- | ------------------------------- |
+| `TimeoutError`        | `isTimeoutError`        | `@cancjs/promise` / `@cancjs/toolbox` | Always                          |
+| `AbortError`          | `isAbortError`          | `@cancjs/promise` / `@cancjs/toolbox` | Always                          |
+| `SupersededError`     | `isSupersededError`     | `@cancjs/toolbox`                     | When class or guard is imported |
+| `BreakError`          | `isBreakError`          | `@cancjs/coroutine`                   | When class or guard is imported |
+| `ProcessExitError`    | `isProcessExitError`    | `@cancjs/node`                        | When class or guard is imported |
+| `ProcessSpawnError`   | `isProcessSpawnError`   | `@cancjs/node`                        | When class or guard is imported |
+| `JsonParseError`      | `isJsonParseError`      | `@cancjs/node`                        | When class or guard is imported |
+| `NotImplementedError` | `isNotImplementedError` | `@cancjs/node`                        | When class or guard is imported |
+
+### Import condition for name comparisons
+
+For classes whose name compare is not flagged globally (`SupersededError`, `BreakError`, and `@cancjs/node` classes), the rule flags `err.name === 'ClassName'` or switch cases only when the file imports that class or its corresponding brand guard from a canc package. This prevents false positives on user-defined errors sharing the same name.
+
+### Incorrect (TimeoutError)
+
+```ts
+import { TimeoutError } from '@cancjs/toolbox';
+
+try {
+  yield* cancAwait(fetchWithTimeout());
+} catch (err) {
+  if (err instanceof TimeoutError) {
+    handleTimeout();
+    return;
+  }
+  throw err;
+}
+```
+
+### Correct (TimeoutError)
+
+```ts
+import { isTimeoutError } from '@cancjs/toolbox';
+
+try {
+  yield* cancAwait(fetchWithTimeout());
+} catch (err) {
+  if (isTimeoutError(err)) {
+    handleTimeout();
+    return;
+  }
+  throw err;
+}
 ```
 
 ## When not to use it
