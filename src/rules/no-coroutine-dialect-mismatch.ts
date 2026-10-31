@@ -2,11 +2,18 @@ import type { TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCoroutineContext, refersTo } from '../util/canc-imports.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  type ResolvedFactories,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'cancAwaitInIter' | 'iterAwaitInCancAsync' | 'forAwaitInIter' | 'iterForAwaitInCancAsync';
 
-export type RuleOptions = [];
+export type RuleOptions = [FactoryOptions?];
 
 function unwrap(node: TSESTree.Node): TSESTree.Node {
   let curr = node;
@@ -23,8 +30,9 @@ function unwrap(node: TSESTree.Node): TSESTree.Node {
 function getHelperMismatch(
   node: TSESTree.Node,
   context: Parameters<Parameters<typeof createRule<RuleOptions, MessageIds>>[0]['create']>[0],
+  factories: ResolvedFactories,
 ): { messageId: MessageIds; helper: string } | null {
-  const coroutineCtx = getCoroutineContext(node, context);
+  const coroutineCtx = getCoroutineContext(node, context, factories);
   if (!coroutineCtx) {
     return null;
   }
@@ -101,7 +109,15 @@ export default createRule<RuleOptions, MessageIds>({
     docs: {
       description: 'Disallow mixing coroutine helper dialects inside coroutine bodies.',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: factoryOptionsSchema,
+        allOf: factoryOptionsConstraints,
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{}],
     messages: {
       cancAwaitInIter:
         "'{{helper}}' inside a cancGenAsync body emits the inner promise to the consumer instead of awaiting it. Use 'cancGenAwait'.",
@@ -113,11 +129,13 @@ export default createRule<RuleOptions, MessageIds>({
         "'{{helper}}' inside a cancAsync body yields markers that the cancAsync driver cannot read. Use 'cancForAwait'.",
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const factories = resolveFactories(context.options[0]);
+
     return {
       CallExpression(node) {
-        const mismatch = getHelperMismatch(node.callee, context);
+        const mismatch = getHelperMismatch(node.callee, context, factories);
         if (mismatch) {
           context.report({
             node,
@@ -137,7 +155,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        const mismatch = getHelperMismatch(unwrapped, context);
+        const mismatch = getHelperMismatch(unwrapped, context, factories);
         if (mismatch) {
           context.report({
             node: unwrapped,

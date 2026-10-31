@@ -3,10 +3,17 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { isCoroutineFnIdent } from '../util/canc-imports.js';
 import { isNonIteratorReturnFunction } from '../util/canc-types.js';
+import {
+  calleeDialect,
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'asyncFunction' | 'syncFunction' | 'asyncGenerator' | 'anyReturnAnnotation';
-export type RuleOptions = [];
+export type RuleOptions = [FactoryOptions?];
 
 function unwrapParens(node: TSESTree.Node): TSESTree.Node {
   let curr = node;
@@ -84,7 +91,15 @@ export default createRule<RuleOptions, MessageIds>({
     docs: {
       description: 'Ensure coroutines are driven by valid generator functions with proper type annotations.',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: factoryOptionsSchema,
+        allOf: factoryOptionsConstraints,
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{}],
     messages: {
       asyncFunction:
         "'{{driver}}' needs a generator function. An async function has no steps for the driver to run or cancel. Use 'function*' and write 'yield* {{await}}(...)' for each await.",
@@ -96,15 +111,20 @@ export default createRule<RuleOptions, MessageIds>({
         "A return type of 'any' on a coroutine makes every 'yield*' step 'any', which removes per-step type inference. Remove the annotation, or state the result with 'AsyncResult' (or 'AsyncGenResult' for cancGenAsync).",
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const factories = resolveFactories(context.options[0]);
+
     return {
       CallExpression(node) {
-        const isCanc = isCoroutineFnIdent(node.callee, context, 'cancAsync');
-        const isCancGen = isCoroutineFnIdent(node.callee, context, 'cancGenAsync');
-        if (!isCanc && !isCancGen) {
+        const dialect = calleeDialect(node.callee, context, factories);
+        if (!dialect) {
           return;
         }
+        const isCancGen = dialect === 'cancGenAsync';
+        const isBuiltin =
+          (!factories.replaceCancAsync && isCoroutineFnIdent(node.callee, context, 'cancAsync')) ||
+          (!factories.replaceCancGenAsync && isCoroutineFnIdent(node.callee, context, 'cancGenAsync'));
 
         const arg0 = node.arguments[0];
         if (!arg0) {
@@ -117,6 +137,10 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         const { fn, isIdentifier } = resolved;
+        // a configured factory may accept other shapes, so only plain generators are checked
+        if (!isBuiltin && (!fn.generator || fn.async)) {
+          return;
+        }
         const driver = context.sourceCode.getText(node.callee);
         const awaitName = isCancGen ? 'cancGenAwait' : 'cancAwait';
         const reportNode = isIdentifier ? unwrapParens(arg0) : fn;

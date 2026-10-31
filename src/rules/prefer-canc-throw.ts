@@ -10,13 +10,19 @@ import {
   compileMatchers,
   matchesName,
 } from '../util/class-matcher.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 import { isThrownTypeExcluded } from '../util/failure-checker-prefer-canc-throw.js';
 import { isCancelErrorThrow } from '../util/failure-types.js';
 
 export type MessageIds = 'preferCancThrow';
 
-export interface PreferCancThrowOptions {
+export interface PreferCancThrowOptions extends FactoryOptions {
   requireTypeInfo?: boolean;
   exclude?: ClassMatcher[];
   allowCatchRethrow?: boolean;
@@ -174,7 +180,9 @@ export default createRule<RuleOptions, MessageIds>({
             type: 'boolean',
             description: 'Whether rethrowing the enclosing catch binding is permitted.',
           },
+          ...factoryOptionsSchema,
         },
+        allOf: factoryOptionsConstraints,
         additionalProperties: false,
       },
     ],
@@ -203,12 +211,13 @@ export default createRule<RuleOptions, MessageIds>({
       return {};
     }
 
+    const factories = resolveFactories(context.options[0]);
     const compiledExclude = compileMatchers(options?.exclude ?? []);
     const allowCatchRethrow = options?.allowCatchRethrow !== false;
 
     return {
       ThrowStatement(node) {
-        const coroutine = getCoroutineContext(node, context);
+        const coroutine = getCoroutineContext(node, context, factories);
         if (!coroutine) {
           return;
         }

@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/no-yield-await-in-loop.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -390,5 +391,104 @@ const run = cancAsync(function* (ids: string[]) {
         ],
       },
     ],
+  });
+});
+
+describe('no-yield-await-in-loop factory options', () => {
+  typedTester.run('no-yield-await-in-loop factory', rule, {
+    valid: [
+      // same code without the option: not a coroutine
+      `import { cancAwait } from '@cancjs/coroutine';
+declare function f(x: string): Promise<void>;
+useX(function* (xs: string[]) {
+  for (const x of xs) {
+    yield* cancAwait(f(x));
+  }
+});`,
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+declare function f(x: string): Promise<void>;
+useX(function* (xs: string[]) {
+  for (const x of xs) {
+    yield* cancAwait(f("fixed"));
+  }
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+      },
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function f(x: string): Promise<void>;
+cancAsync(function* (xs: string[]) {
+  for (const x of xs) {
+    yield* cancAwait(f(x));
+  }
+});`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+    ],
+    invalid: [
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+declare function f(x: string): Promise<void>;
+useX(function* (xs: string[]) {
+  for (const x of xs) {
+    yield* cancAwait(f(x));
+  }
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        errors: [{ messageId: 'serializedSteps' as const, line: 5 }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+import { useX as u } from '@cancjs/react';
+declare function f(x: string): Promise<void>;
+u(function* (xs: string[]) {
+  for (const x of xs) {
+    yield* cancAwait(f(x));
+  }
+});`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+        errors: [{ messageId: 'serializedSteps' as const, line: 6 }],
+      },
+      {
+        code: `import { cancGenAwait } from '@cancjs/coroutine/gen';
+declare function f(x: string): Promise<void>;
+ui.setup(function* (xs: string[]) {
+  for (const x of xs) {
+    yield* cancGenAwait(f(x));
+  }
+});`,
+        options: [{ additionalGenCoroutineFactories: ['setup'] }],
+        errors: [{ messageId: 'serializedSteps' as const, line: 5 }],
+      },
+      // the built-in stays on when the other dialect is replaced
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function f(x: string): Promise<void>;
+cancAsync(function* (xs: string[]) {
+  for (const x of xs) {
+    yield* cancAwait(f(x));
+  }
+});`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+        errors: [{ messageId: 'serializedSteps' as const, line: 5 }],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });

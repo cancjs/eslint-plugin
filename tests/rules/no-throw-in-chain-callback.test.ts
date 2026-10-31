@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { Linter } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/no-throw-in-chain-callback.js';
@@ -437,5 +438,121 @@ export const _assert: AssertFailure = true;
         fs.unlinkSync(tempFilePath);
       }
     }
+  });
+});
+
+describe('no-throw-in-chain-callback factory options', () => {
+  untypedTester.run('no-throw-in-chain-callback factory', rule, {
+    valid: [
+      // a configured factory body is owned by the throw-in-coroutine rule
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  throw new Error('boom');
+});`,
+        options: [{ additionalCoroutineFactories: ['then'] }],
+      },
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  throw new Error('boom');
+});`,
+        options: [{ additionalGenCoroutineFactories: ['then'] }],
+      },
+    ],
+    invalid: [
+      // same code without the option is a chain callback throw
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  throw new Error('boom');
+});`,
+        output: null,
+        errors: [
+          {
+            messageId: 'throwInChainCallback' as const,
+            line: 3,
+            data: { method: 'then' },
+            suggestions: [
+              {
+                messageId: 'throwInChainCallback' as const,
+                data: { method: 'then' },
+                output: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  return CancelablePromise.fail(new Error('boom'));
+});`,
+              },
+            ],
+          },
+        ],
+      },
+      // a factory from another source does not apply
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  throw new Error('boom');
+});`,
+        options: [{ additionalCoroutineFactories: [{ name: 'then', source: '@cancjs/react' }] }],
+        output: null,
+        errors: [
+          {
+            messageId: 'throwInChainCallback' as const,
+            line: 3,
+            data: { method: 'then' },
+            suggestions: [
+              {
+                messageId: 'throwInChainCallback' as const,
+                data: { method: 'then' },
+                output: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  return CancelablePromise.fail(new Error('boom'));
+});`,
+              },
+            ],
+          },
+        ],
+      },
+      // a replace list without the callee leaves a plain chain callback
+      {
+        code: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  throw new Error('boom');
+});`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+        output: null,
+        errors: [
+          {
+            messageId: 'throwInChainCallback' as const,
+            line: 3,
+            data: { method: 'then' },
+            suggestions: [
+              {
+                messageId: 'throwInChainCallback' as const,
+                data: { method: 'then' },
+                output: `import CancelablePromise from '@cancjs/promise';
+export const c = CancelablePromise.resolve(1).then(function* () {
+  return CancelablePromise.fail(new Error('boom'));
+});`,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });

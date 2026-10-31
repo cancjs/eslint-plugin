@@ -325,3 +325,72 @@ const p = u;`,
     invalid: [],
   });
 });
+
+describe('canc-types: structural detection', () => {
+  const wrapper = `type Wrapper = { then(onfulfilled: (value: number) => void): unknown; cancel(): void };
+               declare const src: Wrapper;
+               const p = src;`;
+  const settings = { canc: { structuralDetection: true } };
+
+  ruleTester().run('probe', probeRule, {
+    valid: [
+      // non-callable then is not cancelable
+      {
+        code: `declare const src: { then: number; cancel(): void };
+               const p = src;`,
+        settings,
+      },
+      // any and unknown never match
+      {
+        code: `declare const src: any;
+               const p = src;`,
+        settings,
+      },
+      {
+        code: `declare const src: unknown;
+               const p = src;`,
+        settings,
+      },
+    ],
+    invalid: [
+      // default settings stay nominal only: the shape is just a plain sink
+      {
+        code: wrapper,
+        errors: [{ messageId: 'plainSink' }],
+      },
+      {
+        code: wrapper,
+        settings,
+        errors: [{ messageId: 'cancelable' }],
+      },
+      // callable then without cancel is not cancelable
+      {
+        code: `declare const src: { then(onfulfilled: (value: number) => void): unknown };
+               const p = src;`,
+        settings,
+        errors: [{ messageId: 'plainSink' }],
+      },
+      // non-callable cancel is not cancelable
+      {
+        code: `declare const src: { then(onfulfilled: (value: number) => void): unknown; cancel: boolean };
+               const p = src;`,
+        settings,
+        errors: [{ messageId: 'plainSink' }],
+      },
+      // a union member with the shape is enough
+      {
+        code: `type Wrapper = { then(onfulfilled: (value: number) => void): unknown; cancel(): void };
+               declare const src: Wrapper | undefined;
+               const p = src;`,
+        settings,
+        errors: [{ messageId: 'cancelable' }],
+      },
+      // plain Promise has then but no cancel
+      {
+        code: `${importPromise}const p = Promise.resolve(1);`,
+        settings,
+        errors: [{ messageId: 'plainSink' }],
+      },
+    ],
+  });
+});

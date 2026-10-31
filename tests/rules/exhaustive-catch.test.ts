@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/exhaustive-catch.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -778,5 +779,164 @@ describe('exhaustive-catch (untyped lane)', () => {
       codeInvalid07,
     ],
     invalid: [],
+  });
+});
+
+describe('exhaustive-catch factory options', () => {
+  typedTester.run('exhaustive-catch factory', rule, {
+    valid: [
+      // same code without the option: not a coroutine
+      `import { cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { TimeoutError } from '@cancjs/toolbox';
+import type { Unlisted } from '@cancjs/promise';
+
+declare function timeout<T>(p: CancelablePromise<T>, ms: number): CancelablePromise<T, TimeoutError | Unlisted>;
+declare const p: CancelablePromise<string>;
+
+useX(function* () {
+  try {
+    yield* cancAwait(timeout(p, 10));
+  } catch {
+    console.error('failed');
+  }
+});`,
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { TimeoutError } from '@cancjs/toolbox';
+import type { Unlisted } from '@cancjs/promise';
+
+declare function timeout<T>(p: CancelablePromise<T>, ms: number): CancelablePromise<T, TimeoutError | Unlisted>;
+declare const p: CancelablePromise<string>;
+
+useX(function* () {
+  try {
+    yield* cancAwait(timeout(p, 10));
+  } catch (e) {
+    throw e;
+  }
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+      },
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { TimeoutError } from '@cancjs/toolbox';
+import type { Unlisted } from '@cancjs/promise';
+
+declare function timeout<T>(p: CancelablePromise<T>, ms: number): CancelablePromise<T, TimeoutError | Unlisted>;
+declare const p: CancelablePromise<string>;
+
+cancAsync(function* () {
+  try {
+    yield* cancAwait(timeout(p, 10));
+  } catch {
+    console.error('failed');
+  }
+});`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+    ],
+    invalid: [
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { TimeoutError } from '@cancjs/toolbox';
+import type { Unlisted } from '@cancjs/promise';
+
+declare function timeout<T>(p: CancelablePromise<T>, ms: number): CancelablePromise<T, TimeoutError | Unlisted>;
+declare const p: CancelablePromise<string>;
+
+useX(function* () {
+  try {
+    yield* cancAwait(timeout(p, 10));
+  } catch {
+    console.error('failed');
+  }
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        output: null,
+        errors: [{ messageId: 'unhandledFailure' as const, line: 12, data: { names: 'TimeoutError' } }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { TimeoutError } from '@cancjs/toolbox';
+import type { Unlisted } from '@cancjs/promise';
+
+declare function timeout<T>(p: CancelablePromise<T>, ms: number): CancelablePromise<T, TimeoutError | Unlisted>;
+declare const p: CancelablePromise<string>;
+
+ui.setup(function* () {
+  try {
+    yield* cancAwait(timeout(p, 10));
+  } catch {
+    console.error('failed');
+  }
+});`,
+        options: [{ additionalGenCoroutineFactories: ['setup'] }],
+        output: null,
+        errors: [{ messageId: 'unhandledFailure' as const, line: 12, data: { names: 'TimeoutError' } }],
+      },
+      {
+        code: `import { useX as u } from '@cancjs/react';
+import { cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { TimeoutError } from '@cancjs/toolbox';
+import type { Unlisted } from '@cancjs/promise';
+
+declare function timeout<T>(p: CancelablePromise<T>, ms: number): CancelablePromise<T, TimeoutError | Unlisted>;
+declare const p: CancelablePromise<string>;
+
+u(function* () {
+  try {
+    yield* cancAwait(timeout(p, 10));
+  } catch {
+    console.error('failed');
+  }
+});`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+        output: null,
+        errors: [{ messageId: 'unhandledFailure' as const, line: 13, data: { names: 'TimeoutError' } }],
+      },
+      // the built-in stays on when the other dialect is replaced
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+import type { TimeoutError } from '@cancjs/toolbox';
+import type { Unlisted } from '@cancjs/promise';
+
+declare function timeout<T>(p: CancelablePromise<T>, ms: number): CancelablePromise<T, TimeoutError | Unlisted>;
+declare const p: CancelablePromise<string>;
+
+cancAsync(function* () {
+  try {
+    yield* cancAwait(timeout(p, 10));
+  } catch {
+    console.error('failed');
+  }
+});`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+        output: null,
+        errors: [{ messageId: 'unhandledFailure' as const, line: 12, data: { names: 'TimeoutError' } }],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });

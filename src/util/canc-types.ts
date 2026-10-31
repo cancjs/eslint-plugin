@@ -49,6 +49,9 @@ function normalizePath(filePath: string): string {
 // Mirrors ts.SymbolFlags.Alias; typescript is a type-only import, so the enum is absent at runtime.
 const SYMBOL_FLAG_ALIAS = 2097152;
 
+// Mirrors ts.SignatureKind.Call, same reason
+const SIGNATURE_KIND_CALL = 0;
+
 /**
  * A symbol is a canc entity when at least one of its declarations lives in a declaration file under
  * one of the configured canc packages. Path-based nominal check: no runtime dependency on the real
@@ -165,6 +168,23 @@ function matchesNominalName(
   return false;
 }
 
+function hasCallableProperty(type: ts.Type, name: string, checker: ts.TypeChecker): boolean {
+  const symbol = checker.getPropertyOfType(type, name);
+  if (!symbol) {
+    return false;
+  }
+  return checker.getSignaturesOfType(checker.getTypeOfSymbol(symbol), SIGNATURE_KIND_CALL).length > 0;
+}
+
+// opt-in shape check for foreign cancelable promises: callable then and cancel
+function isStructurallyCancelable(type: ts.Type, checker: ts.TypeChecker): boolean {
+  if (isTypeAnyType(type) || isTypeNeverType(type) || isTypeUnknownType(type)) {
+    return false;
+  }
+  const apparent = checker.getApparentType(type);
+  return hasCallableProperty(apparent, 'then', checker) && hasCallableProperty(apparent, 'cancel', checker);
+}
+
 /**
  * Nominal check: is `type` (or a union member, or a base type of it) a CancelablePromise declared in
  * a configured canc package? Walks unions and the base-type chain so subclasses match. Extra nominal
@@ -176,7 +196,12 @@ export function isCancelableType(
   settings: ResolvedCancSettings,
   context?: TSESLint.RuleContext<string, readonly unknown[]>,
 ): boolean {
-  return matchesNominalName(type, checker, settings, settings.cancelableTypeNames, new Set(), context);
+  if (matchesNominalName(type, checker, settings, settings.cancelableTypeNames, new Set(), context)) {
+    return true;
+  }
+  return (
+    settings.structuralDetection && [type, ...typeParts(type)].some((part) => isStructurallyCancelable(part, checker))
+  );
 }
 
 /**

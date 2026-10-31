@@ -9,10 +9,16 @@ import {
   isCancelableOrLazyExpression,
   isPlainPromiseSinkExpression,
 } from '../util/canc-types.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 
 export type MessageIds = 'gapStep' | 'gapChainStep';
-export type RuleOptions = [];
+export type RuleOptions = [FactoryOptions?];
 
 const COMBINATOR_MEMBERS = new Set(['all', 'race', 'any', 'allSettled']);
 
@@ -35,7 +41,15 @@ export default createRule<RuleOptions, MessageIds>({
     docs: {
       description: 'Disallow non-cancelable promise steps inside cancelable flows and chains.',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: factoryOptionsSchema,
+        allOf: factoryOptionsConstraints,
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{}],
     messages: {
       gapStep:
         "This step awaits a promise that cannot be canceled. After a cancel its result is discarded but the work keeps running. Make the operation cancelable at its source (for example with 'cancelify' or 'promisify'), or acknowledge the gap with a disable comment.",
@@ -43,8 +57,10 @@ export default createRule<RuleOptions, MessageIds>({
         'This callback returns a plain promise into a cancelable chain, so the work it starts keeps running after a cancel. Return a cancelable promise instead.',
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const factories = resolveFactories(context.options[0]);
+
     const services = getCancServices(context);
     if (!services) {
       return {};
@@ -53,7 +69,7 @@ export default createRule<RuleOptions, MessageIds>({
     return {
       CallExpression(node) {
         // 1. Check combinator or step call inside coroutine
-        const coroutineCtx = getCoroutineContext(node, context);
+        const coroutineCtx = getCoroutineContext(node, context, factories);
         if (coroutineCtx) {
           const target = coroutineCtx.kind === 'cancGenAsync' ? 'cancGenAwait' : 'cancAwait';
           const callee = node.callee;
@@ -125,7 +141,7 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         const unwrapped = unwrapParens(node.argument);
-        const coroutineCtx = getCoroutineContext(node, context);
+        const coroutineCtx = getCoroutineContext(node, context, factories);
         if (coroutineCtx?.kind === 'cancAsync') {
           // If it's a tracked cancAwait call, CallExpression visitor handles it
           if (

@@ -3,6 +3,12 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 import { getCancBindings, getCoroutineContext, isCancCtorIdent, refersTo } from '../util/canc-imports.js';
 import { hasTypeServices, isCancelableOrLazyExpression } from '../util/canc-types.js';
+import {
+  type FactoryOptions,
+  factoryOptionsConstraints,
+  factoryOptionsSchema,
+  resolveFactories,
+} from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
 import { isUnresolvedType } from '../util/failure-checker-no-throw-in-chain-callback.js';
 import { isCancelErrorThrow } from '../util/failure-types.js';
@@ -10,7 +16,7 @@ import { getCancSettings } from '../util/settings.js';
 
 export type MessageIds = 'throwInChainCallback' | 'rejectWithoutFailure';
 
-export type RuleOptions = [];
+export type RuleOptions = [FactoryOptions?];
 
 type Context = TSESLint.RuleContext<MessageIds, RuleOptions>;
 
@@ -173,7 +179,15 @@ export default createRule<RuleOptions, MessageIds>({
       requiresTypeChecking: true,
     },
     hasSuggestions: true,
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: factoryOptionsSchema,
+        allOf: factoryOptionsConstraints,
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{}],
     messages: {
       throwInChainCallback:
         "A throw inside a '{{method}}' callback is not part of the promise's declared failure type. Return 'CancelablePromise.fail(error)' instead.",
@@ -181,8 +195,10 @@ export default createRule<RuleOptions, MessageIds>({
         "'reject(error)' declares no failure type. Return 'CancelablePromise.fail(error)', or name the type with 'reject<never, E>(error)'.",
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const factories = resolveFactories(context.options[0]);
+
     return {
       ThrowStatement(node) {
         const fn = getNearestEnclosingFunction(node);
@@ -191,7 +207,7 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         // Coroutine body throw is owned by prefer-canc-throw
-        if (getCoroutineContext(node, context)) {
+        if (getCoroutineContext(node, context, factories)) {
           return;
         }
 

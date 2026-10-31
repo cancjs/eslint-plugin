@@ -1,6 +1,7 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
+import { calleeDialect, type ResolvedFactories, resolveFactories } from './coroutine-factories.js';
 import { getCancSettings } from './settings.js';
 
 /**
@@ -488,7 +489,8 @@ export interface CoroutineContext {
   delegated: boolean;
 }
 
-const coroutineContextCache = new WeakMap<object, Map<TSESTree.Node, CoroutineContext>>();
+// keyed by Program, then by the resolved factory bag a rule passes in
+const coroutineContextCache = new WeakMap<object, WeakMap<ResolvedFactories, Map<TSESTree.Node, CoroutineContext>>>();
 
 function unwrapParens(node: TSESTree.Node): TSESTree.Node {
   let curr = node;
@@ -528,15 +530,20 @@ function resolveGeneratorFnFromIdentifier(
   return null;
 }
 
-function getCoroutineFileMap(context: Context): Map<TSESTree.Node, CoroutineContext> {
+function getCoroutineFileMap(context: Context, factories: ResolvedFactories): Map<TSESTree.Node, CoroutineContext> {
   const program = context.sourceCode.ast;
-  const cached = coroutineContextCache.get(program);
+  let byFactories = coroutineContextCache.get(program);
+  if (!byFactories) {
+    byFactories = new WeakMap();
+    coroutineContextCache.set(program, byFactories);
+  }
+  const cached = byFactories.get(factories);
   if (cached) {
     return cached;
   }
 
   const map = new Map<TSESTree.Node, CoroutineContext>();
-  coroutineContextCache.set(program, map);
+  byFactories.set(factories, map);
 
   interface Candidate {
     kind: 'cancAsync' | 'cancGenAsync';
@@ -558,20 +565,17 @@ function getCoroutineFileMap(context: Context): Map<TSESTree.Node, CoroutineCont
 
   function walkAST(node: TSESTree.Node): void {
     if (node.type === AST_NODE_TYPES.CallExpression) {
-      let kind: 'cancAsync' | 'cancGenAsync' | null = null;
-      if (isCoroutineFnIdent(node.callee, context, 'cancAsync')) {
-        kind = 'cancAsync';
-      } else if (isCoroutineFnIdent(node.callee, context, 'cancGenAsync')) {
-        kind = 'cancGenAsync';
-      }
+      const kind = calleeDialect(node.callee, context, factories);
 
       if (kind) {
         let options: TSESTree.ObjectExpression | null = null;
-        if (kind === 'cancAsync') {
+        // option positions are known for the built-in drivers only
+        const builtIn = isCoroutineFnIdent(node.callee, context, kind);
+        if (builtIn && kind === 'cancAsync') {
           if (node.arguments[2]?.type === AST_NODE_TYPES.ObjectExpression) {
             options = node.arguments[2];
           }
-        } else {
+        } else if (builtIn) {
           if (node.arguments[1]?.type === AST_NODE_TYPES.ObjectExpression) {
             options = node.arguments[1];
           }
@@ -737,8 +741,12 @@ function getCoroutineFileMap(context: Context): Map<TSESTree.Node, CoroutineCont
   return map;
 }
 
-export function getCoroutineContext(node: TSESTree.Node, context: Context): CoroutineContext | null {
-  const fileMap = getCoroutineFileMap(context);
+export function getCoroutineContext(
+  node: TSESTree.Node,
+  context: Context,
+  factories: ResolvedFactories = resolveFactories(),
+): CoroutineContext | null {
+  const fileMap = getCoroutineFileMap(context, factories);
 
   if (node.type === AST_NODE_TYPES.CallExpression) {
     const arg0 = node.arguments[0];

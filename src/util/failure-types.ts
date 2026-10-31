@@ -427,7 +427,12 @@ const THROW_HELPER_NAMES = ['cancThrow', 'cancGenThrow', 'throw', 'fail'];
 const MATCHER_HELPER_NAMES = ['isErrorOf', 'createIsError', 'withFailure'];
 
 function settingsCacheKey(settings: ResolvedCancSettings): string {
-  return JSON.stringify([settings.sources, settings.cancelableTypeNames, settings.lazyTypeNames]);
+  return JSON.stringify([
+    settings.sources,
+    settings.cancelableTypeNames,
+    settings.lazyTypeNames,
+    settings.structuralDetection,
+  ]);
 }
 
 function resolveAliasedSymbol(symbol: ts.Symbol, checker: ts.TypeChecker): ts.Symbol {

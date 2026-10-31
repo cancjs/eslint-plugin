@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe } from 'vitest';
+import { Linter } from 'eslint';
+import { describe, expect, it } from 'vitest';
 
 import rule from '../../src/rules/prefer-cancel-aware-wrapper.js';
 import { readMarkers } from '../helpers/corpus.js';
@@ -229,5 +230,154 @@ const run = cancAsync(function* (id: string) {
         ],
       },
     ],
+  });
+});
+
+describe('prefer-cancel-aware-wrapper factory options', () => {
+  typedTester.run('prefer-cancel-aware-wrapper factory', rule, {
+    valid: [
+      // same code without the option: not a coroutine
+      `import { cancAwait } from '@cancjs/coroutine';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+useX(function* (id: string) {
+  const controller = new AbortController();
+  let done = false;
+  try {
+    yield* cancAwait(rawFetch(id, controller.signal));
+    done = true;
+  } finally {
+    if (!done) {
+      controller.abort();
+    }
+  }
+});`,
+      // replace drops the built-in driver
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+cancAsync(function* (id: string) {
+  const controller = new AbortController();
+  let done = false;
+  try {
+    yield* cancAwait(rawFetch(id, controller.signal));
+    done = true;
+  } finally {
+    if (!done) {
+      controller.abort();
+    }
+  }
+});`,
+        options: [{ coroutineFactories: ['onlyMine'] }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+import { useX } from 'other-lib';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+useX(function* (id: string) {
+  const controller = new AbortController();
+  let done = false;
+  try {
+    yield* cancAwait(rawFetch(id, controller.signal));
+    done = true;
+  } finally {
+    if (!done) {
+      controller.abort();
+    }
+  }
+});`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+      },
+    ],
+    invalid: [
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+useX(function* (id: string) {
+  const controller = new AbortController();
+  let done = false;
+  try {
+    yield* cancAwait(rawFetch(id, controller.signal));
+    done = true;
+  } finally {
+    if (!done) {
+      controller.abort();
+    }
+  }
+});`,
+        options: [{ additionalCoroutineFactories: ['useX'] }],
+        errors: [{ messageId: 'manualCancelWiring' as const, line: 11, column: 7 }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+import { useX as u } from '@cancjs/react';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+u(function* (id: string) {
+  const controller = new AbortController();
+  let done = false;
+  try {
+    yield* cancAwait(rawFetch(id, controller.signal));
+    done = true;
+  } finally {
+    if (!done) {
+      controller.abort();
+    }
+  }
+});`,
+        options: [{ additionalCoroutineFactories: [{ name: 'useX', source: '@cancjs/react' }] }],
+        errors: [{ messageId: 'manualCancelWiring' as const, line: 12, column: 7 }],
+      },
+      {
+        code: `import { cancAwait } from '@cancjs/coroutine';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+ui.setup(function* (id: string) {
+  const controller = new AbortController();
+  let done = false;
+  try {
+    yield* cancAwait(rawFetch(id, controller.signal));
+    done = true;
+  } finally {
+    if (!done) {
+      controller.abort();
+    }
+  }
+});`,
+        options: [{ additionalGenCoroutineFactories: ['setup'] }],
+        errors: [{ messageId: 'manualCancelWiring' as const, line: 11, column: 7 }],
+      },
+      // the built-in stays on when the other dialect is replaced
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function rawFetch(id: string, signal: AbortSignal): Promise<void>;
+cancAsync(function* (id: string) {
+  const controller = new AbortController();
+  let done = false;
+  try {
+    yield* cancAwait(rawFetch(id, controller.signal));
+    done = true;
+  } finally {
+    if (!done) {
+      controller.abort();
+    }
+  }
+});`,
+        options: [{ genCoroutineFactories: ['onlyMine'] }],
+        errors: [{ messageId: 'manualCancelWiring' as const, line: 11, column: 7 }],
+      },
+    ],
+  });
+
+  it('rejects add and replace of one dialect together', () => {
+    const linter = new Linter({ configType: 'flat' });
+    const verify = (options: object) =>
+      linter.verify('', [
+        { plugins: { canc: { rules: { r: rule as never } } }, rules: { 'canc/r': ['error', options] } },
+      ]);
+    expect(() => verify({ additionalCoroutineFactories: ['a'], coroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalGenCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).toThrow(
+      /should NOT be valid/,
+    );
+    expect(() => verify({ additionalCoroutineFactories: ['a'], genCoroutineFactories: ['b'] })).not.toThrow();
   });
 });
