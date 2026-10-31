@@ -566,6 +566,9 @@ export function isThenableExpression(
   }
   const checker = services.program.getTypeChecker();
   const type = services.getTypeAtLocation(node);
+  if (isTypeAnyType(type) || isTypeUnknownType(type)) {
+    return true;
+  }
   return isThenableType(type, checker);
 }
 

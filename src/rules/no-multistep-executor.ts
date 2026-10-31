@@ -1,11 +1,13 @@
-import type { TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
+import { hasTypeServices, isThenableExpression } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
-import { analyzeExecutor } from '../util/executor.js';
+import { analyzeExecutor, unwrapTypeOnly } from '../util/executor.js';
 
 export type MessageIds = 'multipleOperations';
 export type RuleOptions = [{ maxOperations?: number }];
+type Context = TSESLint.RuleContext<MessageIds, RuleOptions>;
 
 function paramName(param: TSESTree.Parameter | undefined): string | undefined {
   if (param?.type === AST_NODE_TYPES.Identifier) {
@@ -34,31 +36,6 @@ function chainHead(call: TSESTree.CallExpression): TSESTree.CallExpression {
   return curr;
 }
 
-function readsName(node: TSESTree.Node, name: string): boolean {
-  if (node.type === AST_NODE_TYPES.Identifier) {
-    return node.name === name;
-  }
-  return Object.entries(node).some(([key, value]) => {
-    if (key === 'parent' || key === 'loc' || key === 'range') {
-      return false;
-    }
-    if (node.type === AST_NODE_TYPES.MemberExpression && key === 'property' && !node.computed) {
-      return false;
-    }
-    if (node.type === AST_NODE_TYPES.Property && key === 'key' && !node.computed) {
-      return false;
-    }
-    const children: unknown[] = Array.isArray(value) ? value : [value];
-    return children.some(
-      (child) =>
-        typeof child === 'object' &&
-        child !== null &&
-        typeof (child as TSESTree.Node).type === 'string' &&
-        readsName(child as TSESTree.Node, name),
-    );
-  });
-}
-
 /** Every name a parameter binds, through object, array, rest and default patterns. */
 function patternNames(node: TSESTree.Node | null | undefined): string[] {
   switch (node?.type) {
@@ -83,7 +60,7 @@ function patternNames(node: TSESTree.Node | null | undefined): string[] {
  * A step that consumes the value the previous step produced (`open().then((stream) => readAll(stream))`)
  * continues the same operation on its resource rather than starting an independent one.
  */
-function continuesPreviousStep(call: TSESTree.CallExpression): boolean {
+function continuesPreviousStep(call: TSESTree.CallExpression, context: Context): boolean {
   let fn: TSESTree.Node | undefined = call.parent;
   while (
     fn &&
@@ -97,8 +74,10 @@ function continuesPreviousStep(call: TSESTree.CallExpression): boolean {
     return false;
   }
   const thenCall = fn.parent;
+  if (!thenCall || thenCall.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
   const isThenCallback =
-    thenCall.type === AST_NODE_TYPES.CallExpression &&
     thenCall.arguments[0] === fn &&
     thenCall.callee.type === AST_NODE_TYPES.MemberExpression &&
     !thenCall.callee.computed &&
@@ -107,8 +86,48 @@ function continuesPreviousStep(call: TSESTree.CallExpression): boolean {
   if (!isThenCallback || fn.params.length === 0) {
     return false;
   }
-  const names = patternNames(fn.params[0]);
-  return names.some((name) => readsName(call.callee, name) || call.arguments.some((arg) => readsName(arg, name)));
+
+  const names = new Set(patternNames(fn.params[0]));
+  const declaredVars = context.sourceCode.getDeclaredVariables(fn);
+  const paramVars = declaredVars.filter((v) => names.has(v.name));
+
+  const [callStart, callEnd] = call.range;
+  return paramVars.some((v) =>
+    v.references.some((ref) => {
+      const [refStart, refEnd] = ref.identifier.range;
+      return refStart >= callStart && refEnd <= callEnd;
+    }),
+  );
+}
+
+function isResolveFirstArgument(call: TSESTree.CallExpression, resolveName: string | undefined): boolean {
+  if (!resolveName) {
+    return false;
+  }
+  let curr: TSESTree.Node = call;
+  while (curr.parent) {
+    const parent = curr.parent;
+    if (
+      parent.type === AST_NODE_TYPES.TSAsExpression ||
+      parent.type === AST_NODE_TYPES.TSTypeAssertion ||
+      parent.type === AST_NODE_TYPES.TSNonNullExpression ||
+      parent.type === AST_NODE_TYPES.TSInstantiationExpression
+    ) {
+      curr = parent;
+      continue;
+    }
+    if (
+      parent.type === AST_NODE_TYPES.CallExpression &&
+      parent.arguments.length > 0 &&
+      unwrapTypeOnly(parent.arguments[0]) === call &&
+      parent.callee.type === AST_NODE_TYPES.Identifier &&
+      parent.callee.name === resolveName
+    ) {
+      return true;
+    }
+    break;
+  }
+  return false;
 }
 
 export default createRule<RuleOptions, MessageIds>({
@@ -154,12 +173,18 @@ export default createRule<RuleOptions, MessageIds>({
           ...shape.handleCancelCalls.map((call) => call.node),
           ...shape.getSignalCalls,
         ]);
+        const resolveName = paramName(shape.params.resolve);
         const starts = [...new Set(shape.operationStarts.map(chainHead))]
           .filter(
             (call) =>
               !wiringCalls.has(call) &&
               !(call.callee.type === AST_NODE_TYPES.Identifier && settleNames.has(call.callee.name)) &&
-              !continuesPreviousStep(call),
+              !continuesPreviousStep(call, context) &&
+              !(
+                isResolveFirstArgument(call, resolveName) &&
+                hasTypeServices(context) &&
+                !isThenableExpression(call, context)
+              ),
           )
           .sort((a, b) => a.range[0] - b.range[0]);
 
