@@ -131,7 +131,7 @@ export function resolveFactories(options?: FactoryOptions): ResolvedFactories {
         if (other !== undefined) {
           const shown = typeof entry === 'string' ? other : entry;
           throw new Error(
-            `Coroutine factory '${entryKey(shown)}' is listed in both '${async.option}' and '${gen.option}'. ` +
+            `Invalid coroutine factory options: Coroutine factory '${entryKey(shown)}' is listed in both '${async.option}' and '${gen.option}'. ` +
               'List it for one dialect only.',
           );
         }
@@ -238,27 +238,88 @@ export function scanImports(program: TSESTree.Program, source: string): Readonly
   return scan.get(source) ?? new Map<string, string>();
 }
 
-// shadowing: the name at this position must resolve to the import or require declarator itself
-function isImportedHere(node: TSESTree.Identifier, context: Context, source: string): boolean {
-  let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(node);
+function exportedNameOf(id: TSESTree.Identifier, context: Context, source: string): string | undefined {
+  let scope: TSESLint.Scope.Scope | null = context.sourceCode.getScope(id);
   while (scope) {
-    const variable = scope.set.get(node.name);
+    const variable = scope.set.get(id.name);
     if (variable) {
-      return variable.defs.some((def) => {
+      for (const def of variable.defs) {
         const { node } = def;
-        if (
-          node.type === AST_NODE_TYPES.ImportSpecifier ||
-          node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-          node.type === AST_NODE_TYPES.ImportNamespaceSpecifier
-        ) {
-          return node.parent.type === AST_NODE_TYPES.ImportDeclaration && node.parent.source.value === source;
+        if (node.type === AST_NODE_TYPES.ImportSpecifier) {
+          const decl = node.parent;
+          if (
+            decl.type === AST_NODE_TYPES.ImportDeclaration &&
+            decl.importKind !== 'type' &&
+            node.importKind !== 'type' &&
+            decl.source.value === source
+          ) {
+            return node.imported.type === AST_NODE_TYPES.Identifier ? node.imported.name : String(node.imported.value);
+          }
+        } else if (node.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+          const decl = node.parent;
+          if (
+            decl.type === AST_NODE_TYPES.ImportDeclaration &&
+            decl.importKind !== 'type' &&
+            decl.source.value === source
+          ) {
+            return 'default';
+          }
+        } else if (node.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+          const decl = node.parent;
+          if (
+            decl.type === AST_NODE_TYPES.ImportDeclaration &&
+            decl.importKind !== 'type' &&
+            decl.source.value === source
+          ) {
+            return '*';
+          }
+        } else {
+          const importEquals =
+            node.type === AST_NODE_TYPES.TSImportEqualsDeclaration ? node
+            : node.parent?.type === AST_NODE_TYPES.TSImportEqualsDeclaration ? node.parent
+            : undefined;
+          if (importEquals) {
+            const modRef = importEquals.moduleReference;
+            if (
+              modRef.type === AST_NODE_TYPES.TSExternalModuleReference &&
+              modRef.expression.type === AST_NODE_TYPES.Literal &&
+              modRef.expression.value === source
+            ) {
+              return '*';
+            }
+          }
+          const declarator =
+            node.type === AST_NODE_TYPES.VariableDeclarator ? node
+            : node.parent?.type === AST_NODE_TYPES.VariableDeclarator ? node.parent
+            : node.parent?.parent?.type === AST_NODE_TYPES.VariableDeclarator ? node.parent.parent
+            : undefined;
+          if (declarator && requireSourceOf(declarator.init) === source) {
+            if (declarator.id.type === AST_NODE_TYPES.Identifier) {
+              return '*';
+            }
+            if (declarator.id.type === AST_NODE_TYPES.ObjectPattern) {
+              for (const prop of declarator.id.properties) {
+                if (
+                  prop.type === AST_NODE_TYPES.Property &&
+                  prop.value.type === AST_NODE_TYPES.Identifier &&
+                  prop.value.name === id.name
+                ) {
+                  return (
+                    !prop.computed && prop.key.type === AST_NODE_TYPES.Identifier ? prop.key.name
+                    : prop.key.type === AST_NODE_TYPES.Literal && typeof prop.key.value === 'string' ? prop.key.value
+                    : undefined
+                  );
+                }
+              }
+            }
+          }
         }
-        return node.type === AST_NODE_TYPES.VariableDeclarator && requireSourceOf(node.init) === source;
-      });
+      }
+      return undefined;
     }
     scope = scope.upper;
   }
-  return false;
+  return undefined;
 }
 
 function memberPropertyName(node: TSESTree.MemberExpression): string | undefined {
@@ -273,16 +334,12 @@ function entryMatches(callee: TSESTree.Node, context: Context, entry: FactoryEnt
     return callee.type === AST_NODE_TYPES.MemberExpression && memberPropertyName(callee) === entry;
   }
 
-  const bindings = scanImports(context.sourceCode.ast, entry.source);
   if (callee.type === AST_NODE_TYPES.Identifier) {
-    return bindings.get(callee.name) === entry.name && isImportedHere(callee, context, entry.source);
+    return exportedNameOf(callee, context, entry.source) === entry.name;
   }
   if (callee.type === AST_NODE_TYPES.MemberExpression && callee.object.type === AST_NODE_TYPES.Identifier) {
-    return (
-      memberPropertyName(callee) === entry.name &&
-      bindings.get(callee.object.name) === '*' &&
-      isImportedHere(callee.object, context, entry.source)
-    );
+    const exp = exportedNameOf(callee.object, context, entry.source);
+    return memberPropertyName(callee) === entry.name && (exp === '*' || exp === 'default');
   }
   return false;
 }

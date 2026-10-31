@@ -187,6 +187,30 @@ const rows: Row[] = [
     options: addAsync(['useX']),
     expected: null,
   },
+  {
+    name: 'inner require binding another name shadows top import',
+    code: `import { useX } from '@cancjs/react'; function f() { const { other: useX } = require('@cancjs/react'); useX(function* () { PROBE; }); }`,
+    options: addAsync([reactEntry]),
+    expected: null,
+  },
+  {
+    name: 'default import used as namespace',
+    code: `import ns from '@cancjs/react'; ns.useX(function* () { PROBE; });`,
+    options: addAsync([reactEntry]),
+    expected: 'cancAsync',
+  },
+  {
+    name: 'import equals require namespace',
+    code: `import r = require('@cancjs/react'); r.useX(function* () { PROBE; });`,
+    options: addAsync([reactEntry]),
+    expected: 'cancAsync',
+  },
+  {
+    name: 'require inside a function',
+    code: `function f() { const { useX } = require('@cancjs/react'); useX(function* () { PROBE; }); }`,
+    options: addAsync([reactEntry]),
+    expected: 'cancAsync',
+  },
 ];
 
 describe('configurable coroutine factories', () => {
@@ -275,5 +299,31 @@ describe('configurable coroutine factories', () => {
     `;
     expect(probeKind(code)).toBe('cancGenAsync');
     expect(probeKind(code, {})).toBe('cancGenAsync');
+  });
+
+  it('throws through linter when an entry is listed in both dialects', () => {
+    const makeRule = (): TSESLint.RuleModule<'probe', [FactoryOptions]> => ({
+      meta: {
+        type: 'problem',
+        messages: { probe: 'probe' },
+        schema: [{ type: 'object', additionalProperties: true }],
+        defaultOptions: [{}],
+      },
+      defaultOptions: [{}],
+      create(context) {
+        resolveFactories(context.options[0]);
+        return {};
+      },
+    });
+    const linter = new Linter();
+    expect(() =>
+      linter.verify('const a = 1;', {
+        languageOptions: { parser: tseslintParser, sourceType: 'module' },
+        plugins: { probe: { rules: { r: makeRule() } } },
+        rules: {
+          'probe/r': ['error', { additionalCoroutineFactories: ['useX'], additionalGenCoroutineFactories: ['useX'] }],
+        },
+      }),
+    ).toThrow(/listed in both/);
   });
 });
