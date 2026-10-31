@@ -1,6 +1,120 @@
 # @cancjs/eslint-plugin
 
-ESLint plugin for `@cancjs/*`.
+ESLint rules that keep cancellation intact in code that uses `@cancjs/*`.
+
+Cancellation is viral. A cancelable promise only stays cancelable if every consumer passes the cancel handle along. When a plain `async` function awaits it, or a native `Promise.all` wraps it, nobody holds the handle anymore. The work keeps running after the cancel, and the type system does not complain.
+
+This plugin finds those spots. It reports cancelable promises consumed by code that cannot cancel them, executors that start work they never stop, catch blocks that swallow a cancellation, and coroutines that mix helper styles. Each message names the problem, says what goes wrong at runtime and shows the fix.
+
+The blessed idioms from the `@cancjs/*` docs are never flagged by the `recommended` preset.
+
+## Install
+
+```sh
+npm install --save-dev @cancjs/eslint-plugin
+```
+
+Peer dependencies: `eslint` 9 or 10. Rules that read types also need `@typescript-eslint/parser` 8 and `typescript`. Both are optional. Node versions are as declared in `engines`.
+
+## Quick start
+
+Add the preset to your flat config. The parser line is only needed for TypeScript files.
+
+```js
+// readme-test
+import canc from '@cancjs/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
+
+export default [
+  { files: ['**/*.ts'], languageOptions: { parser: tsParser } },
+  ...canc.configs.recommended,
+];
+```
+
+In a plain JavaScript project, spread `canc.configs.recommended` and nothing else.
+
+## Typed setup
+
+Some rules compare types, for example to tell a cancelable promise from a plain one. Turn on `projectService` to give them type information.
+
+```js
+// readme-test
+import canc from '@cancjs/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
+
+export default [
+  {
+    files: ['**/*.ts'],
+    languageOptions: { parser: tsParser, parserOptions: { projectService: true } },
+  },
+  ...canc.configs.recommended,
+];
+```
+
+Type-aware rules are silent without type information. They do not guess. The rules list below marks them with a type information icon.
+
+## Presets
+
+The icons in the rules list show which preset enables each rule. This table says what each preset is for.
+
+| Preset                    | Contents                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `recommended`             | Rules that never flag the blessed idioms. Some rules are set to warn.         |
+| `strict`                  | `recommended` with warnings promoted to errors, plus the stricter rules.      |
+| `stylistic`               | Style-only rules, set to warn.                                                |
+| `interopTypescriptEslint` | Settings for typescript-eslint rules that would otherwise fight these idioms. |
+| `interopPromise`          | Turns off eslint-plugin-promise rules that conflict with cancelable promises. |
+| `interopUnicorn`          | Turns off eslint-plugin-unicorn rules that conflict with cancelable promises. |
+
+The same presets are exported from `@cancjs/eslint-plugin/native` for the rules that apply to native-twin consumers.
+
+## Settings
+
+Shared settings live under `settings.canc`. Every key is optional. List keys add to the built-in values and never replace them.
+
+```js
+// readme-test
+import canc from '@cancjs/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
+
+export default [
+  {
+    files: ['**/*.ts'],
+    languageOptions: { parser: tsParser },
+    settings: {
+      canc: {
+        sources: ['@acme/cancel-utils'],
+        cancelableTypeNames: ['AcmeTask'],
+      },
+    },
+  },
+  ...canc.configs.recommended,
+];
+```
+
+- `sources`: module specifiers that export cancelable APIs. All `@cancjs/*` packages are built in. Add your own wrappers here.
+- `cancelableTypeNames`: type names treated as cancelable promises. Default `['CancelablePromise']`.
+- `lazyTypeNames`: type names treated as lazy cancelable promises. Default `['LazyPromise']`.
+- `structuralDetection`: default `false`. When `true`, any type with a callable `then` and a callable `cancel` counts as a cancelable promise.
+- `boundaryFunctions`: helper names that end a cancelable flow on purpose, such as `catchCancel` and `suppressCancel`. Your own helpers are added to the built-in list.
+
+### Structural detection trade-off
+
+By default a type counts as cancelable only when it is named in `cancelableTypeNames` or comes from a listed source. Turning on `structuralDetection` widens that to every type with `then` and `cancel`, including types from libraries you do not control. That catches wrapper types you did not list.
+
+The wider match applies to every rule that reads types. It also changes the advice. The fixes those rules suggest name canc APIs, such as `CancelablePromise.fail` and `cancAsync`, even when the foreign type has nothing to do with them. Leave the option off unless you have such wrappers and have checked the results.
+
+## Interop
+
+The plugin ships configs that settle conflicts with typescript-eslint, eslint-plugin-promise and eslint-plugin-unicorn. They hold rule entries only and add no dependency. See the [interop guide](https://github.com/cancjs/eslint-plugin/blob/master/docs/interop.md).
+
+## Native entry
+
+Packages that use the native-twin builds import from `@cancjs/eslint-plugin/native`. It exports the same three presets, limited to the rules that apply there.
+
+## Coroutine factories
+
+Rules that check coroutine helpers accept options that add your own factory functions or replace the built-in ones. The options are described on the rule pages, for example [exhaustive-catch](https://github.com/cancjs/eslint-plugin/blob/master/docs/rules/exhaustive-catch.md). The full list of rules follows.
 
 ## Rules
 
@@ -55,18 +169,3 @@ ESLint plugin for `@cancjs/*`.
 | [valid-cancasync](docs/rules/valid-cancasync.md)                             | Ensure coroutines are driven by valid generator functions with proper type annotations.                                                                      | ✅ 🔒 |     |     |     |     |
 
 <!-- end auto-generated rules list -->
-
-## Presets
-
-The `Set in` icons in the rules list show which preset enables each rule. The generator does not read the flat config presets for descriptions, so the presets are summarized here.
-
-| Preset                    | Contents                                                                      |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| `recommended`             | Rules that never flag the blessed idioms. Some rules are set to warn.         |
-| `strict`                  | `recommended` with warnings promoted to errors, plus the stricter rules.      |
-| `stylistic`               | Style-only rules, set to warn.                                                |
-| `interopTypescriptEslint` | Settings for typescript-eslint rules that would otherwise fight these idioms. |
-| `interopPromise`          | Turns off eslint-plugin-promise rules that conflict with cancelable promises. |
-| `interopUnicorn`          | Turns off eslint-plugin-unicorn rules that conflict with cancelable promises. |
-
-The same presets are exported from `@cancjs/eslint-plugin/native` for the rules that apply to native-twin consumers.
