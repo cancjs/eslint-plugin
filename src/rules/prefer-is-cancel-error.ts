@@ -91,6 +91,15 @@ function getFunctionName(
   return null;
 }
 
+const BRANDED_ERRORS: readonly { className: string; guard: string; nameAlways: boolean }[] = [
+  { className: 'AbortError', guard: 'isAbortError', nameAlways: true },
+];
+
+const FALLBACK_HELPER_NAMES = new Set<string>([
+  ...BRANDED_ERRORS.map((b) => b.guard),
+  'isTimeoutError',
+]);
+
 function isInsideFallbackHelper(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node.parent;
   while (current) {
@@ -100,7 +109,7 @@ function isInsideFallbackHelper(node: TSESTree.Node): boolean {
       current.type === AST_NODE_TYPES.ArrowFunctionExpression
     ) {
       const name = getFunctionName(current);
-      if (name && (name === 'isTimeoutError' || name === 'isAbortError')) {
+      if (name && FALLBACK_HELPER_NAMES.has(name)) {
         return true;
       }
     }
@@ -434,26 +443,30 @@ export default createRule<[], MessageIds>({
           return;
         }
 
-        if (nameCheck.expectedName === 'AbortError') {
-          if (isPartOfCompoundCheck(node) || isInsideFallbackHelper(node)) {
+        const branded = BRANDED_ERRORS.find((b) => b.className === nameCheck.expectedName);
+        if (branded) {
+          if (branded.className === 'AbortError') {
+            if (isPartOfCompoundCheck(node) || isInsideFallbackHelper(node)) {
+              return;
+            }
+            const value = sourceCode.getText(nameCheck.member.object);
+            const replacement = isNeq ? `!${branded.guard}(${value})` : `${branded.guard}(${value})`;
+            context.report({
+              node,
+              messageId: 'preferIsAbortError',
+              data: { value },
+              suggest: [
+                {
+                  messageId: 'suggestUseIsAbortError',
+                  data: { value },
+                  fix(fixer) {
+                    return fixer.replaceText(node, replacement);
+                  },
+                },
+              ],
+            });
             return;
           }
-          const value = sourceCode.getText(nameCheck.member.object);
-          const replacement = isNeq ? `!isAbortError(${value})` : `isAbortError(${value})`;
-          context.report({
-            node,
-            messageId: 'preferIsAbortError',
-            data: { value },
-            suggest: [
-              {
-                messageId: 'suggestUseIsAbortError',
-                data: { value },
-                fix(fixer) {
-                  return fixer.replaceText(node, replacement);
-                },
-              },
-            ],
-          });
         }
       },
 
