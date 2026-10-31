@@ -49,6 +49,7 @@ const EXPECTED: Record<string, Expected> = {
   'prefer-signal-option': { recommended: 'warn', strict: 'error' },
   'prefer-signal-over-controller': { recommended: 'warn', strict: 'error' },
   'require-error-discriminant': { recommended: 'warn', strict: 'error' },
+  'require-loop-advance': { recommended: 'warn', strict: 'error' },
   'require-signal-forwarding': { recommended: 'warn', strict: 'error' },
   'valid-canc-params': { recommended: 'error', strict: 'error', native: true },
   'valid-cancasync': { recommended: 'error', strict: 'error' },

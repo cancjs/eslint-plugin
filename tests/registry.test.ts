@@ -89,6 +89,7 @@ describe('rule registry and tier table', () => {
         'prefer-signal-option',
         'prefer-signal-over-controller',
         'require-error-discriminant',
+        'require-loop-advance',
         'require-signal-forwarding',
         'valid-canc-params',
         'valid-cancasync',

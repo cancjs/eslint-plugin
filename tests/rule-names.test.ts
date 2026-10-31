@@ -43,6 +43,7 @@ const PUBLIC_RULE_IDS = [
   'prefer-signal-option',
   'prefer-signal-over-controller',
   'require-error-discriminant',
+  'require-loop-advance',
   'require-signal-forwarding',
   'valid-canc-params',
   'valid-cancasync',

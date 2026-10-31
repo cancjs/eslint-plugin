@@ -41,6 +41,7 @@ export const TIERS: Record<string, TierEntry> = {
   'prefer-signal-option': { recommended: 'warn' },
   'prefer-signal-over-controller': { recommended: 'warn', strict: 'error' },
   'require-error-discriminant': { recommended: 'warn' },
+  'require-loop-advance': { recommended: 'warn' },
   'require-signal-forwarding': { recommended: 'warn' },
   'valid-canc-params': { recommended: 'error', native: true },
   'valid-cancasync': { recommended: 'error' },

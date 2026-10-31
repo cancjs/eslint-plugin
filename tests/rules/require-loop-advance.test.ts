@@ -32,8 +32,8 @@ const markers19 = readMarkers(invalid19Path);
 const markers20 = readMarkers(invalid20Path);
 
 const outputInvalid19 = codeInvalid19.replace(
-  '    if (item.skip) continue; // lint: require-loop-advance:continueBeforeAdvance\n    yield* cancAwait(save(item));\n    yield* loop.next();',
-  '    yield* loop.next();\n    if (item.skip) continue; // lint: require-loop-advance:continueBeforeAdvance\n    yield* cancAwait(save(item));',
+  '    if (item.skip) continue; // lint: require-loop-advance:continueBeforeAdvance\n    if (item.done) break;\n    yield* cancAwait(save(item));\n    yield* loop.next();',
+  '    yield* loop.next();\n    if (item.skip) continue; // lint: require-loop-advance:continueBeforeAdvance\n    if (item.done) break;\n    yield* cancAwait(save(item));',
 );
 
 const untypedTester = ruleTester({ types: false });
@@ -132,8 +132,8 @@ describe('require-loop-advance', () => {
             {
               messageId: 'suggestAdvanceFirst' as const,
               output: codeInvalid18.replace(
-                '    yield* cancAwait(save(item));',
-                '    yield* cancForAwait.next();\n    yield* cancAwait(save(item));',
+                '    if (item.done) break;\n    yield* cancAwait(save(item));',
+                '    yield* cancForAwait.next();\n    if (item.done) break;\n    yield* cancAwait(save(item));',
               ),
             },
           ],
@@ -452,8 +452,8 @@ const run = cancAsync(function* (s1: AsyncIterable<number>, s2: AsyncIterable<nu
             {
               messageId: 'suggestAdvanceFirst' as const,
               output: codeInvalid18.replace(
-                '    yield* cancAwait(save(item));',
-                '    yield* cancForAwait.next();\n    yield* cancAwait(save(item));',
+                '    if (item.done) break;\n    yield* cancAwait(save(item));',
+                '    yield* cancForAwait.next();\n    if (item.done) break;\n    yield* cancAwait(save(item));',
               ),
             },
           ],

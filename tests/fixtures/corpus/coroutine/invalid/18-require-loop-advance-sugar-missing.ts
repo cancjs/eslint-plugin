@@ -38,6 +38,7 @@ declare const source: AsyncIterable<Item>;
 
 const processItems = cancAsync(function* (source: AsyncIterable<Item>) {
   for (const item of yield* cancForAwait(source)) { // lint: require-loop-advance:missingAdvance
+    if (item.done) break;
     yield* cancAwait(save(item));
   }
 });

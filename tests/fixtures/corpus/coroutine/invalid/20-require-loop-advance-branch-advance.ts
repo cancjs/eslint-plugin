@@ -43,6 +43,7 @@ const processItems = cancAsync(function* (source: AsyncIterable<Item>) {
       yield* loop.next();
     }
     if (item.skip) continue; // lint: require-loop-advance:continueBeforeAdvance
+    if (item.done) break;
     yield* cancAwait(save(item));
   }
 });
