@@ -61,6 +61,7 @@ describe('ci workflow', () => {
   it('runs only install and package scripts that exist', () => {
     const bad = runLines(readWorkflow()).filter((command) => {
       if (command === 'npm ci' || command === 'npm test') return false;
+      if (/^node tests\/integration\/lane9\/tmp-pack\/probe\.(cjs|mjs) \S+ \S+$/.test(command)) return false;
       const script = /^npm run (\S+)$/.exec(command)?.[1];
       return script === undefined || !(script in pkg.scripts);
     });
@@ -120,6 +121,18 @@ describe('ci workflow', () => {
     expect(text).toContain("node-version: '18.x'");
     expect(text.indexOf("node-version: '22.x'")).toBeGreaterThan(-1);
     expect(text.indexOf("node-version: '22.x'")).toBeLessThan(text.indexOf("node-version: '18.x'"));
-    expect(runLines(job!.lines.join('\n')).at(-1)).toBe('npm run smoke:pack');
+    const afterNode18 = runLines(text.slice(text.indexOf("node-version: '18.x'")));
+    expect(afterNode18).toHaveLength(2);
+    expect(afterNode18[0]).toMatch(/^node tests\/integration\/lane9\/tmp-pack\/probe\.cjs /);
+    expect(afterNode18[1]).toMatch(/^node tests\/integration\/lane9\/tmp-pack\/probe\.mjs /);
+    expect(runLines(text.slice(0, text.indexOf("node-version: '18.x'")))).toContain('npm run pack:install');
+  });
+
+  it('runs no vitest command on node 18', () => {
+    const job = splitJobs(readWorkflow()).find((j) => j.name === 'dist-node18');
+    const text = job!.lines.join('\n');
+    const onNode18 = runLines(text.slice(text.indexOf("node-version: '18.x'")));
+    const bad = onNode18.filter((command) => /vitest|npm test|npm run smoke:pack|npm run test/.test(command));
+    expect(bad).toEqual([]);
   });
 });

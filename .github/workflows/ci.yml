@@ -78,7 +78,7 @@ jobs:
       - run: npm run smoke:pack
 
   dist-node18:
-    # build and install on 22, then load the built output on the declared engines floor
+    # build, pack and install on 22, then run only the plain probe scripts on the declared engines floor (no vitest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +89,9 @@ jobs:
       - run: npm ci
       - run: npm run test:integration:setup
       - run: npm run build
+      - run: npm run pack:install
       - uses: actions/setup-node@v4
         with:
           node-version: '18.x'
-      - run: npm run smoke:pack
+      - run: node tests/integration/lane9/tmp-pack/probe.cjs @cancjs/eslint-plugin tests/integration/lane9/tmp-pack/bad.js
+      - run: node tests/integration/lane9/tmp-pack/probe.mjs @cancjs/eslint-plugin tests/integration/lane9/tmp-pack/bad.js

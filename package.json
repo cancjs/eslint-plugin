@@ -41,6 +41,7 @@
     "test:watch": "vitest",
     "test:integration": "vitest run tests/integration",
     "smoke:pack": "vitest run tests/pack-smoke",
+    "pack:install": "node scripts/pack-install.mjs",
     "test:integration:setup": "npm ci --prefix tests/integration/lane9 && npm ci --prefix tests/integration/lane10",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
