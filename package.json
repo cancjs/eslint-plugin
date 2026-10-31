@@ -55,7 +55,7 @@
     "docs:check": "eslint-doc-generator scripts/docs-plugin --check",
     "prepublishOnly": "npm run build && npm run lint && npm run typecheck && npm run test"
   },
-  "files": ["dist", "docs"],
+  "files": ["dist", "docs", "!dist/**/*.map"],
   "dependencies": {
     "@typescript-eslint/type-utils": "^8.0.0",
     "@typescript-eslint/utils": "^8.0.0",
