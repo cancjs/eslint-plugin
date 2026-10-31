@@ -139,7 +139,8 @@ export function isUnlistedMarker(type: ts.Type, checker: ts.TypeChecker): boolea
 
 /** Whether a branch is a promise or thenable, which claims an open failure set of its own. */
 function isThenableType(type: ts.Type, checker: ts.TypeChecker): boolean {
-  return checker.getPropertyOfType(checker.getApparentType(type), 'then') !== undefined;
+  const sym = checker.getPropertyOfType(checker.getApparentType(type), 'then');
+  return sym !== undefined && checker.getTypeOfSymbol(sym).getCallSignatures().length > 0;
 }
 
 function isCancCarrierType(
@@ -221,7 +222,19 @@ function extractFromFailureType(failureType: ts.Type, checker: ts.TypeChecker): 
   const listed: ts.Type[] = [];
 
   for (const part of parts) {
-    if (isUnlistedMarker(part, checker)) {
+    if (part.isIntersection()) {
+      const nonMarkers = part.types.filter((c) => !isUnlistedMarker(c, checker));
+      if (nonMarkers.length < part.types.length) {
+        open = true;
+        for (const nm of nonMarkers) {
+          if (!isCancelErrorType(nm, checker)) {
+            listed.push(nm);
+          }
+        }
+      } else if (!isCancelErrorType(part, checker)) {
+        listed.push(part);
+      }
+    } else if (isUnlistedMarker(part, checker)) {
       open = true;
     } else if (!isCancelErrorType(part, checker)) {
       listed.push(part);
@@ -242,17 +255,16 @@ export function getFailureMembers(
   context?: Context,
   options: { ignoreNonCarrierBranches?: boolean } = {},
 ): FailureMembers {
-  const rawSettings =
+  const resolvedSettings =
     settings ??
     (context ?
-      getCancSettings(context)
+      nominalSettings(getCancSettings(context))
     : ({
         sources: ['@cancjs/promise', '@cancjs/coroutine', '@cancjs/toolbox'],
         cancelableTypeNames: ['CancelablePromise'],
         lazyTypeNames: ['LazyPromise'],
         structuralDetection: false,
       } as ResolvedCancSettings));
-  const resolvedSettings = nominalSettings(rawSettings);
 
   if (type.isUnion()) {
     const parts = type.types.filter(

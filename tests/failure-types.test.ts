@@ -216,6 +216,7 @@ export type RealUnlisted = CancelablePromise<number, Unlisted>;
 export interface UnlistedCopy { readonly _cancUnlisted: true }
 export interface UnlistedWrongLiteral { readonly _cancUnlisted: false }
 export type CopyOpen = CancelablePromise<number, Unlisted | UnlistedCopy>;
+export type IntersectionOpen = CancelablePromise<number, Unlisted & UnlistedCopy>;
 export type OrNull = CancelablePromise<string, FooError> | null;
 `,
     };
@@ -261,6 +262,12 @@ export type OrNull = CancelablePromise<string, FooError> | null;
       expect(isUnlistedMarker(virtualType('b3-unlisted.ts', 'UnlistedCopy'), virtualChecker)).toBe(true);
       expect(isUnlistedMarker(virtualType('b3-unlisted.ts', 'UnlistedWrongLiteral'), virtualChecker)).toBe(false);
       const res = getFailureMembers(virtualType('b3-unlisted.ts', 'CopyOpen'), virtualChecker);
+      expect(res.open).toBe(true);
+      expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['Unlisted']);
+    });
+
+    it('marker on an intersection keeps the other constituent and sets open true', () => {
+      const res = getFailureMembers(virtualType('b3-unlisted.ts', 'IntersectionOpen'), virtualChecker);
       expect(res.open).toBe(true);
       expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['Unlisted']);
     });
