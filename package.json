@@ -1,6 +1,15 @@
 {
   "name": "@cancjs/eslint-plugin",
   "version": "0.1.0",
+  "description": "ESLint rules for cancelable promises and coroutines.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cancjs/eslint-plugin.git"
+  },
+  "homepage": "https://github.com/cancjs/eslint-plugin#readme",
+  "bugs": "https://github.com/cancjs/eslint-plugin/issues",
+  "author": "bisubus",
   "type": "module",
   "exports": {
     ".": {
@@ -56,6 +65,16 @@
     "prepublishOnly": "npm run build && npm run lint && npm run typecheck && npm run test"
   },
   "files": ["dist", "docs", "!dist/**/*.map"],
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "eslint-plugin",
+    "canc",
+    "cancel",
+    "cancelable",
+    "abort",
+    "promise"
+  ],
   "dependencies": {
     "@typescript-eslint/type-utils": "^8.0.0",
     "@typescript-eslint/utils": "^8.0.0",

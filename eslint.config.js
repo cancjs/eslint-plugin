@@ -220,6 +220,8 @@ export default defineConfig(
       // The import and require conditions are exhaustive and each carries its own types, so a
       // top-level default fallback would only hide a genuinely missing condition.
       'package-json/require-default-condition': 'off',
+      // The repository object form is the published value; the shorthand string would change it.
+      'package-json/prefer-shorthand': 'off',
 
       // Real gaps in a manifest that is still scaffolding. They need content decisions, so
       // they stay visible as warnings rather than blocking a lint run.
