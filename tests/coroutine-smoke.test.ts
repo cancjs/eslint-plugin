@@ -239,7 +239,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(171);
+    expect(allValidFiles.length).toBe(172);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {

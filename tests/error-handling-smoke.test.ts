@@ -145,7 +145,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
   });
 
   it('matches markers on invalid error-handling fixtures under recommended and strict presets', async () => {
-    expect(invalidFiles.length).toBe(8);
+    expect(invalidFiles.length).toBe(9);
 
     for (const linter of [eslintRecommended, eslintStrict]) {
       const results = await linter.lintFiles(invalidFiles);
@@ -175,7 +175,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
 
   it('reports zero false positives across error-handling valid fixtures', async () => {
     const validFiles = findTsFiles(path.join(corpusDir, 'error-handling/valid')).sort();
-    expect(validFiles.length).toBe(22);
+    expect(validFiles.length).toBe(23);
 
     const recResults = await eslintRecommended.lintFiles(validFiles);
     for (const r of recResults) {
@@ -196,7 +196,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
     const allValidFiles = findTsFiles(corpusDir)
       .filter((f) => f.replaceAll('\\', '/').includes('/valid/'))
       .sort();
-    expect(allValidFiles.length).toBe(171);
+    expect(allValidFiles.length).toBe(172);
 
     const recResults = await eslintRecommended.lintFiles(allValidFiles);
     for (const r of recResults) {
@@ -248,6 +248,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
       'error-handling/invalid/14-prefer-is-cancel-error-switch-name.ts',
       'error-handling/invalid/15-prefer-is-cancel-error-negated-instanceof.ts',
       'error-handling/invalid/16-prefer-is-cancel-error-name-aborterror.ts',
+      'error-handling/invalid/18-prefer-is-cancel-error-branded-instanceof.ts',
     ]);
   }, 20000);
 });
