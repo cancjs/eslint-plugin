@@ -113,9 +113,6 @@
   "peerDependenciesMeta": {
     "@typescript-eslint/parser": {
       "optional": true
-    },
-    "typescript": {
-      "optional": true
     }
   }
 }
