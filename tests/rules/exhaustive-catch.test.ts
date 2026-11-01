@@ -75,6 +75,12 @@ const switchKindBoth = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
         console.log(2);
         break;
     }`);
+const switchKindFallthrough = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+      case 'ErrorB':
+        console.log('handled');
+        break;
+    }`);
 const switchKindOnlyA = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
       case 'ErrorA':
         console.log(1);
@@ -368,6 +374,7 @@ export const run = cancGenAsync(function* () {
     }`),
       // Discriminant switch on a cast binding handles every listed case without a default
       switchKindBoth,
+      switchKindFallthrough,
       // Discriminant switch on literal name properties handles every listed case
       `import { cancAsync, cancAwait } from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';

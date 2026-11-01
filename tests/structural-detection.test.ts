@@ -27,7 +27,7 @@ const settingsStructural = {
   },
 };
 
-describe('structural-detection (EP-D4)', () => {
+describe('structural-detection', () => {
   describe('Group A & B: structural detection enabled reports foreign Task', () => {
     tester.run('no-cancelability-erasure', noCancelabilityErasure, {
       valid: [
