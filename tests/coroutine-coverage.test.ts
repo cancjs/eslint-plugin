@@ -48,6 +48,7 @@ const REQUIRED_MESSAGE_IDS: Record<string, string[]> = {
   'no-async-loop-callback': ['asyncLoopCallback'],
   'prefer-canceled-property': ['preferCanceledProperty'],
   'prefer-signal-accessor': ['preferSignalAccessor'],
+  'require-loop-advance': ['missingAdvance', 'continueBeforeAdvance'],
 };
 
 const RULE_TOPIC_MATCHERS: Record<string, (filename: string) => boolean> = {
@@ -66,6 +67,7 @@ const RULE_TOPIC_MATCHERS: Record<string, (filename: string) => boolean> = {
   'no-async-loop-callback': (f) => f.includes('no-async-loop-callback'),
   'prefer-canceled-property': (f) => f.includes('prefer-canceled-property'),
   'prefer-signal-accessor': (f) => f.includes('prefer-signal-accessor'),
+  'require-loop-advance': (f) => f.includes('require-loop-advance'),
 };
 
 describe('coroutine coverage', () => {

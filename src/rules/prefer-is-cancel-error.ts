@@ -14,7 +14,10 @@ export type MessageIds =
   | 'abortErrorWrongLayer'
   | 'preferIsAbortError'
   | 'suggestUseIsCancelError'
-  | 'suggestUseIsAbortError';
+  | 'suggestUseIsAbortError'
+  | 'instanceofBrandedError'
+  | 'nameCheckBrandedError'
+  | 'suggestUseGuard';
 
 type Context = TSESLint.RuleContext<MessageIds, []>;
 
@@ -91,6 +94,19 @@ function getFunctionName(
   return null;
 }
 
+const BRANDED_ERRORS: readonly { className: string; guard: string; nameAlways: boolean }[] = [
+  { className: 'TimeoutError', guard: 'isTimeoutError', nameAlways: true },
+  { className: 'AbortError', guard: 'isAbortError', nameAlways: true },
+  { className: 'SupersededError', guard: 'isSupersededError', nameAlways: false },
+  { className: 'BreakError', guard: 'isBreakError', nameAlways: false },
+  { className: 'ProcessExitError', guard: 'isProcessExitError', nameAlways: false },
+  { className: 'ProcessSpawnError', guard: 'isProcessSpawnError', nameAlways: false },
+  { className: 'JsonParseError', guard: 'isJsonParseError', nameAlways: false },
+  { className: 'NotImplementedError', guard: 'isNotImplementedError', nameAlways: false },
+];
+
+const FALLBACK_HELPER_NAMES = new Set<string>([...BRANDED_ERRORS.map((b) => b.guard), 'isTimeoutError']);
+
 function isInsideFallbackHelper(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node.parent;
   while (current) {
@@ -100,7 +116,7 @@ function isInsideFallbackHelper(node: TSESTree.Node): boolean {
       current.type === AST_NODE_TYPES.ArrowFunctionExpression
     ) {
       const name = getFunctionName(current);
-      if (name && (name === 'isTimeoutError' || name === 'isAbortError')) {
+      if (name && FALLBACK_HELPER_NAMES.has(name)) {
         return true;
       }
     }
@@ -341,6 +357,11 @@ export default createRule<[], MessageIds>({
         "Comparing 'name' to 'AbortError' is not a dependable check across realms. Use 'isAbortError({{value}})'.",
       suggestUseIsCancelError: "Use 'isCancelError({{value}})' instead.",
       suggestUseIsAbortError: "Use 'isAbortError({{value}})' instead.",
+      instanceofBrandedError:
+        "'instanceof {{className}}' fails across package copies and realms. Use '{{guard}}({{value}})', which checks a shared brand.",
+      nameCheckBrandedError:
+        "Comparing 'name' to '{{className}}' is not a dependable check across package copies and realms. Use '{{guard}}({{value}})'.",
+      suggestUseGuard: "Use '{{guard}}({{value}})' instead.",
     },
   },
   defaultOptions: [],
@@ -397,6 +418,31 @@ export default createRule<[], MessageIds>({
             }
             return;
           }
+
+          for (const branded of BRANDED_ERRORS) {
+            if (refersTo(node.right, context, branded.className)) {
+              const value = sourceCode.getText(node.left);
+              const trackedName = getTrackedImportName(context, branded.guard, node);
+              if (trackedName) {
+                const range = getReplacementRange(node, context);
+                context.report({
+                  node,
+                  messageId: 'instanceofBrandedError',
+                  data: { className: branded.className, guard: branded.guard, value },
+                  fix(fixer) {
+                    return fixer.replaceTextRange(range, `${trackedName}(${value})`);
+                  },
+                });
+              } else {
+                context.report({
+                  node,
+                  messageId: 'instanceofBrandedError',
+                  data: { className: branded.className, guard: branded.guard, value },
+                });
+              }
+              return;
+            }
+          }
           return;
         }
 
@@ -434,26 +480,59 @@ export default createRule<[], MessageIds>({
           return;
         }
 
-        if (nameCheck.expectedName === 'AbortError') {
-          if (isPartOfCompoundCheck(node) || isInsideFallbackHelper(node)) {
+        const branded = BRANDED_ERRORS.find((b) => b.className === nameCheck.expectedName);
+        if (branded) {
+          if (branded.className === 'AbortError') {
+            if (isPartOfCompoundCheck(node) || isInsideFallbackHelper(node)) {
+              return;
+            }
+            const value = sourceCode.getText(nameCheck.member.object);
+            const replacement = isNeq ? `!${branded.guard}(${value})` : `${branded.guard}(${value})`;
+            context.report({
+              node,
+              messageId: 'preferIsAbortError',
+              data: { value },
+              suggest: [
+                {
+                  messageId: 'suggestUseIsAbortError',
+                  data: { value },
+                  fix(fixer) {
+                    return fixer.replaceText(node, replacement);
+                  },
+                },
+              ],
+            });
             return;
           }
-          const value = sourceCode.getText(nameCheck.member.object);
-          const replacement = isNeq ? `!isAbortError(${value})` : `isAbortError(${value})`;
-          context.report({
-            node,
-            messageId: 'preferIsAbortError',
-            data: { value },
-            suggest: [
-              {
-                messageId: 'suggestUseIsAbortError',
-                data: { value },
-                fix(fixer) {
-                  return fixer.replaceText(node, replacement);
+
+          if (isInsideFallbackHelper(node)) {
+            return;
+          }
+
+          const shouldReport =
+            branded.nameAlways ||
+            getTrackedImportName(context, branded.className, node) !== null ||
+            getTrackedImportName(context, branded.guard, node) !== null;
+
+          if (shouldReport) {
+            const value = sourceCode.getText(nameCheck.member.object);
+            const replacement = isNeq ? `!${branded.guard}(${value})` : `${branded.guard}(${value})`;
+            context.report({
+              node,
+              messageId: 'nameCheckBrandedError',
+              data: { className: branded.className, guard: branded.guard, value },
+              suggest: [
+                {
+                  messageId: 'suggestUseGuard',
+                  data: { guard: branded.guard, value },
+                  fix(fixer) {
+                    return fixer.replaceText(node, replacement);
+                  },
                 },
-              },
-            ],
-          });
+              ],
+            });
+            return;
+          }
         }
       },
 
@@ -465,15 +544,38 @@ export default createRule<[], MessageIds>({
         const value = sourceCode.getText(member.object);
 
         for (const caseNode of node.cases) {
-          if (caseNode.test && isStringLiteral(caseNode.test) && caseNode.test.value === 'CancelError') {
-            if (isInsideFallbackHelper(caseNode)) {
+          const test = caseNode.test;
+          if (test && isStringLiteral(test)) {
+            if (test.value === 'CancelError') {
+              if (isInsideFallbackHelper(caseNode)) {
+                continue;
+              }
+              context.report({
+                node: caseNode,
+                messageId: 'nameCheckCancelError',
+                data: { value },
+              });
               continue;
             }
-            context.report({
-              node: caseNode,
-              messageId: 'nameCheckCancelError',
-              data: { value },
-            });
+
+            const branded = BRANDED_ERRORS.find((b) => b.className === test.value);
+            if (branded && branded.className !== 'AbortError') {
+              if (isInsideFallbackHelper(caseNode)) {
+                continue;
+              }
+              const shouldReport =
+                branded.nameAlways ||
+                getTrackedImportName(context, branded.className, caseNode) !== null ||
+                getTrackedImportName(context, branded.guard, caseNode) !== null;
+
+              if (shouldReport) {
+                context.report({
+                  node: caseNode,
+                  messageId: 'nameCheckBrandedError',
+                  data: { className: branded.className, guard: branded.guard, value },
+                });
+              }
+            }
           }
         }
       },

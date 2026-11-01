@@ -34,6 +34,7 @@ import preferSignalAccessor from './prefer-signal-accessor.js';
 import preferSignalOption from './prefer-signal-option.js';
 import preferSignalOverController from './prefer-signal-over-controller.js';
 import requireErrorDiscriminant from './require-error-discriminant.js';
+import requireLoopAdvance from './require-loop-advance.js';
 import requireSignalForwarding from './require-signal-forwarding.js';
 import validCancParams from './valid-canc-params.js';
 import validCancasync from './valid-cancasync.js';
@@ -72,6 +73,7 @@ export const rules: Record<string, Rule.RuleModule | TSESLint.RuleModule<string,
   'prefer-signal-option': preferSignalOption,
   'prefer-signal-over-controller': preferSignalOverController,
   'require-error-discriminant': requireErrorDiscriminant,
+  'require-loop-advance': requireLoopAdvance,
   'require-signal-forwarding': requireSignalForwarding,
   'valid-canc-params': validCancParams,
   'valid-cancasync': validCancasync,

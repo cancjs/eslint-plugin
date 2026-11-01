@@ -45,6 +45,10 @@ const invalid16Path = path.resolve(
   __dirname,
   '../fixtures/corpus/error-handling/invalid/16-prefer-is-cancel-error-name-aborterror.ts',
 );
+const invalid18Path = path.resolve(
+  __dirname,
+  '../fixtures/corpus/error-handling/invalid/18-prefer-is-cancel-error-branded-instanceof.ts',
+);
 
 const valid04Path = path.resolve(__dirname, '../fixtures/corpus/error-handling/valid/04-prefer-is-cancel-error.ts');
 const valid05Path = path.resolve(
@@ -58,6 +62,10 @@ const valid06Path = path.resolve(
 const valid12Path = path.resolve(
   __dirname,
   '../fixtures/corpus/error-handling/valid/12-prefer-is-cancel-error-istimeouterror-fallback.ts',
+);
+const valid13Path = path.resolve(
+  __dirname,
+  '../fixtures/corpus/error-handling/valid/13-prefer-is-cancel-error-branded-guards.ts',
 );
 
 const PREAMBLE = `import { CancelError, CancelablePromise, isCancelError, isCancPromise } from '@cancjs/promise';
@@ -112,6 +120,35 @@ if (isCancPromise(x)) {}`,
     `function isAbortError(err: any): boolean {
   return err.name === 'AbortError';
 }`,
+    `function isSupersededError(err: any): boolean {
+  return err.name === 'SupersededError';
+}`,
+
+    // Untracked class named TimeoutError
+    `class TimeoutError {}
+declare const x: unknown;
+if (x instanceof TimeoutError) {}`,
+
+    // Import from @cancjs/toolbox without TimeoutError
+    `import { debounce } from '@cancjs/toolbox';
+class TimeoutError {}
+declare const x: unknown;
+if (x instanceof TimeoutError) {}`,
+
+    // SupersededError name check without importing SupersededError (silent)
+    `import { debounce } from '@cancjs/toolbox';
+declare const err: { name: string };
+if (err.name === 'SupersededError') {}`,
+
+    // Node error name check without class or guard imported
+    `import { spawn } from '@cancjs/node';
+declare const e: { name: string };
+if (e.name === 'JsonParseError') {}`,
+
+    // User-defined NotImplementedError class
+    `class NotImplementedError {}
+declare const x: unknown;
+if (x instanceof NotImplementedError) {}`,
 
     // Silent twin: Pattern 4 in a try block without any cancelable
     `declare function run(): void;
@@ -636,6 +673,161 @@ if (!isAbortError(err)) {}`,
         },
       ],
     },
+
+    // Branded errors: TimeoutError instanceof with guard imported
+    {
+      code: `import { TimeoutError, isTimeoutError } from '@cancjs/toolbox';
+declare const x: unknown;
+if (x instanceof TimeoutError) {}`,
+      output: `import { TimeoutError, isTimeoutError } from '@cancjs/toolbox';
+declare const x: unknown;
+if (isTimeoutError(x)) {}`,
+      errors: [
+        {
+          messageId: 'instanceofBrandedError',
+          data: { className: 'TimeoutError', guard: 'isTimeoutError', value: 'x' },
+          line: 3,
+          column: 5,
+        },
+      ],
+    },
+
+    // Branded errors: TimeoutError instanceof without guard imported
+    {
+      code: `import { TimeoutError } from '@cancjs/toolbox';
+declare const x: unknown;
+if (x instanceof TimeoutError) {}`,
+      output: null,
+      errors: [
+        {
+          messageId: 'instanceofBrandedError',
+          data: { className: 'TimeoutError', guard: 'isTimeoutError', value: 'x' },
+          line: 3,
+          column: 5,
+        },
+      ],
+    },
+
+    // Branded errors: Name check for TimeoutError
+    {
+      code: `declare const errObj: { name: string };
+if (errObj.name === 'TimeoutError') {}`,
+      output: null,
+      errors: [
+        {
+          messageId: 'nameCheckBrandedError',
+          data: { className: 'TimeoutError', guard: 'isTimeoutError', value: 'errObj' },
+          line: 2,
+          column: 5,
+          suggestions: [
+            {
+              messageId: 'suggestUseGuard',
+              data: { guard: 'isTimeoutError', value: 'errObj' },
+              output: `declare const errObj: { name: string };
+if (isTimeoutError(errObj)) {}`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Branded errors: Switch statement on SupersededError with import
+    {
+      code: `import { SupersededError } from '@cancjs/toolbox';
+declare const errObj: { name: string };
+switch (errObj.name) {
+  case 'SupersededError':
+    break;
+}`,
+      output: null,
+      errors: [
+        {
+          messageId: 'nameCheckBrandedError',
+          data: { className: 'SupersededError', guard: 'isSupersededError', value: 'errObj' },
+          line: 4,
+          column: 3,
+        },
+      ],
+    },
+
+    // Branded errors: BreakError instanceof with guard imported
+    {
+      code: `import { BreakError, isBreakError } from '@cancjs/coroutine';
+declare const x: unknown;
+if (x instanceof BreakError) {}`,
+      output: `import { BreakError, isBreakError } from '@cancjs/coroutine';
+declare const x: unknown;
+if (isBreakError(x)) {}`,
+      errors: [
+        {
+          messageId: 'instanceofBrandedError',
+          data: { className: 'BreakError', guard: 'isBreakError', value: 'x' },
+          line: 3,
+          column: 5,
+        },
+      ],
+    },
+
+    // Branded errors: AbortError instanceof with guard imported
+    {
+      code: `import { AbortError, isAbortError } from '@cancjs/toolbox';
+declare const x: unknown;
+if (x instanceof AbortError) {}`,
+      output: `import { AbortError, isAbortError } from '@cancjs/toolbox';
+declare const x: unknown;
+if (isAbortError(x)) {}`,
+      errors: [
+        {
+          messageId: 'instanceofBrandedError',
+          data: { className: 'AbortError', guard: 'isAbortError', value: 'x' },
+          line: 3,
+          column: 5,
+        },
+      ],
+    },
+
+    // Node error: ProcessExitError instanceof with guard imported
+    {
+      code: `import { ProcessExitError, isProcessExitError } from '@cancjs/node';
+declare function run(): void;
+try { run(); } catch (e) { if (e instanceof ProcessExitError) {} }`,
+      output: `import { ProcessExitError, isProcessExitError } from '@cancjs/node';
+declare function run(): void;
+try { run(); } catch (e) { if (isProcessExitError(e)) {} }`,
+      errors: [
+        {
+          messageId: 'instanceofBrandedError',
+          data: { className: 'ProcessExitError', guard: 'isProcessExitError', value: 'e' },
+          line: 3,
+          column: 32,
+        },
+      ],
+    },
+
+    // Node error: JsonParseError name check with class imported
+    {
+      code: `import { JsonParseError } from '@cancjs/node';
+declare const e: { name: string };
+if (e.name === 'JsonParseError') {}`,
+      output: null,
+      errors: [
+        {
+          messageId: 'nameCheckBrandedError',
+          data: { className: 'JsonParseError', guard: 'isJsonParseError', value: 'e' },
+          line: 3,
+          column: 5,
+          suggestions: [
+            {
+              messageId: 'suggestUseGuard',
+              data: { guard: 'isJsonParseError', value: 'e' },
+              output: `import { JsonParseError } from '@cancjs/node';
+declare const e: { name: string };
+if (isJsonParseError(e)) {}`,
+            },
+          ],
+        },
+      ],
+    },
   ],
 };
 
@@ -734,10 +926,12 @@ describe('prefer-is-cancel-error typed corpus lane', () => {
       invalid14Path,
       invalid15Path,
       invalid16Path,
+      invalid18Path,
       valid04Path,
       valid05Path,
       valid06Path,
       valid12Path,
+      valid13Path,
     ];
 
     const results = await linter.lintFiles(targets);
