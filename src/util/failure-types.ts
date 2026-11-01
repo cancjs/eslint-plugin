@@ -6,7 +6,8 @@ import ts from 'typescript';
 import { refersTo } from './canc-imports.js';
 import { getCancServices, isCancelableType, isLazyType, symbolDeclaredInCancSource } from './canc-types.js';
 import { type CompiledMatchers, matchesName, matchesType } from './class-matcher.js';
-import { getCancSettings, type ResolvedCancSettings } from './settings.js';
+import { unwrapTypeOnly } from './executor.js';
+import { getCancSettings, nominalSettings, type ResolvedCancSettings } from './settings.js';
 
 type Context = TSESLint.RuleContext<string, readonly unknown[]>;
 
@@ -119,7 +120,7 @@ export function isCancelErrorThrow(node: TSESTree.Node | null | undefined, conte
   if (services?.program) {
     const checker = services.program.getTypeChecker();
     const type = services.getTypeAtLocation(node);
-    const settings = getCancSettings(context);
+    const settings = nominalSettings(getCancSettings(context));
     if (isCancelErrorType(type, checker, settings)) {
       return true;
     }
@@ -139,7 +140,8 @@ export function isUnlistedMarker(type: ts.Type, checker: ts.TypeChecker): boolea
 
 /** Whether a branch is a promise or thenable, which claims an open failure set of its own. */
 function isThenableType(type: ts.Type, checker: ts.TypeChecker): boolean {
-  return checker.getPropertyOfType(checker.getApparentType(type), 'then') !== undefined;
+  const sym = checker.getPropertyOfType(checker.getApparentType(type), 'then');
+  return sym !== undefined && checker.getTypeOfSymbol(sym).getCallSignatures().length > 0;
 }
 
 function isCancCarrierType(
@@ -221,7 +223,19 @@ function extractFromFailureType(failureType: ts.Type, checker: ts.TypeChecker): 
   const listed: ts.Type[] = [];
 
   for (const part of parts) {
-    if (isUnlistedMarker(part, checker)) {
+    if (part.isIntersection()) {
+      const nonMarkers = part.types.filter((c) => !isUnlistedMarker(c, checker));
+      if (nonMarkers.length < part.types.length) {
+        open = true;
+        for (const nm of nonMarkers) {
+          if (!isCancelErrorType(nm, checker)) {
+            listed.push(nm);
+          }
+        }
+      } else if (!isCancelErrorType(part, checker)) {
+        listed.push(part);
+      }
+    } else if (isUnlistedMarker(part, checker)) {
       open = true;
     } else if (!isCancelErrorType(part, checker)) {
       listed.push(part);
@@ -245,11 +259,12 @@ export function getFailureMembers(
   const resolvedSettings =
     settings ??
     (context ?
-      getCancSettings(context)
+      nominalSettings(getCancSettings(context))
     : ({
         sources: ['@cancjs/promise', '@cancjs/coroutine', '@cancjs/toolbox'],
         cancelableTypeNames: ['CancelablePromise'],
         lazyTypeNames: ['LazyPromise'],
+        structuralDetection: false,
       } as ResolvedCancSettings));
 
   if (type.isUnion()) {
@@ -629,11 +644,55 @@ export function formatTypeNames(types: ts.Type[], checker: ts.TypeChecker): stri
     .join(', ');
 }
 
-export function collectHandledCatchTypes(
-  catchBody: TSESTree.BlockStatement,
+const DISCRIMINANT_PROPERTIES = new Set(['kind', 'name']);
+
+/**
+ * Constituents of the binding's type that a `switch` on its `kind` or `name` names in a case: the property must
+ * have a string literal type equal to a case test.
+ */
+function switchCaseTypes(
+  node: TSESTree.SwitchStatement,
   bindingName: string,
-  context: Context,
+  checker: ts.TypeChecker,
+  nodeMap: NodeMap,
 ): ts.Type[] {
+  const discriminant = node.discriminant;
+  if (
+    discriminant.type !== AST_NODE_TYPES.MemberExpression ||
+    discriminant.computed ||
+    discriminant.property.type !== AST_NODE_TYPES.Identifier ||
+    !DISCRIMINANT_PROPERTIES.has(discriminant.property.name)
+  ) {
+    return [];
+  }
+  const object = unwrapTypeOnly(discriminant.object);
+  if (object.type !== AST_NODE_TYPES.Identifier || object.name !== bindingName) {
+    return [];
+  }
+  const tsObject = tsNodeFor(nodeMap, discriminant.object);
+  if (!tsObject) {
+    return [];
+  }
+  const labels = new Set<string>();
+  for (const c of node.cases) {
+    if (c.test?.type === AST_NODE_TYPES.Literal && typeof c.test.value === 'string') {
+      labels.add(c.test.value);
+    }
+  }
+  const objectType = checker.getTypeAtLocation(tsObject);
+  const constituents = objectType.isUnion() ? objectType.types : [objectType];
+  const propertyName = discriminant.property.name;
+  return constituents.filter((member) => {
+    const prop = member.getProperty(propertyName);
+    if (!prop) {
+      return false;
+    }
+    const propType = checker.getTypeOfSymbolAtLocation(prop, tsObject);
+    return propType.isStringLiteral() && labels.has(propType.value);
+  });
+}
+
+export function collectHandledCatchTypes(root: TSESTree.Node, bindingName: string, context: Context): ts.Type[] {
   const services = getCancServices(context);
   if (!services?.program) {
     return [];
@@ -644,7 +703,7 @@ export function collectHandledCatchTypes(
 
   function visit(node: TSESTree.Node): void {
     if (
-      node !== catchBody &&
+      node !== root &&
       (node.type === AST_NODE_TYPES.FunctionDeclaration ||
         node.type === AST_NODE_TYPES.FunctionExpression ||
         node.type === AST_NODE_TYPES.ArrowFunctionExpression)
@@ -652,7 +711,9 @@ export function collectHandledCatchTypes(
       return;
     }
 
-    if (node.type === AST_NODE_TYPES.BinaryExpression && node.operator === 'instanceof') {
+    if (node.type === AST_NODE_TYPES.SwitchStatement) {
+      handled.push(...switchCaseTypes(node, bindingName, checker, nodeMap));
+    } else if (node.type === AST_NODE_TYPES.BinaryExpression && node.operator === 'instanceof') {
       if (node.left.type === AST_NODE_TYPES.Identifier && node.left.name === bindingName) {
         const tsRight = tsNodeFor(nodeMap, node.right);
         if (tsRight) {
@@ -735,7 +796,7 @@ export function collectHandledCatchTypes(
     }
   }
 
-  visit(catchBody);
+  visit(root);
   return handled;
 }
 
@@ -760,7 +821,7 @@ export function analyzeCatchFailures(
   const checker = services.program.getTypeChecker();
   const nodeMap = services.esTreeNodeToTSNodeMap;
   const program = services.program;
-  const settings = getCancSettings(context);
+  const settings = nominalSettings(getCancSettings(context));
 
   let isAnyStepOpen = false;
   const allListedMap = new Map<string, ts.Type>();

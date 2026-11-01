@@ -2,7 +2,7 @@ import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 import { getCancServices, isCancelableType } from './canc-types.js';
 import { getFailureMembers, isWidened } from './failure-types.js';
-import { getCancSettings } from './settings.js';
+import { getCancSettings, nominalSettings } from './settings.js';
 
 /** Whether a cancelable source with a defined failure set loses members when seen as the target type. */
 export function isFailureWidened(
@@ -15,7 +15,7 @@ export function isFailureWidened(
     return false;
   }
   const checker = services.program.getTypeChecker();
-  const settings = getCancSettings(context);
+  const settings = nominalSettings(getCancSettings(context));
   const sourceType = services.getTypeAtLocation(sourceNode);
   if (!isCancelableType(sourceType, checker, settings, context)) {
     return false;

@@ -1,7 +1,7 @@
 import type { TSESLint } from '@typescript-eslint/utils';
 import { describe, expect, it } from 'vitest';
 
-import { getCancSettings } from '../src/util/settings.js';
+import { getCancSettings, nominalSettings } from '../src/util/settings.js';
 
 describe('settings', () => {
   it('default sources include all current packages and subpaths', () => {
@@ -212,5 +212,40 @@ describe('settings', () => {
     const settings = getCancSettings(mockContext);
 
     expect(settings.structuralDetection).toBe(true);
+  });
+
+  describe('nominalSettings', () => {
+    it('returns the same object when structuralDetection is false', () => {
+      const mockContext = {
+        settings: {},
+      } as unknown as TSESLint.RuleContext<string, unknown[]>;
+
+      const settings = getCancSettings(mockContext);
+      expect(settings.structuralDetection).toBe(false);
+
+      const nominal = nominalSettings(settings);
+      expect(nominal).toBe(settings);
+    });
+
+    it('returns a copy with structuralDetection false when true, memoized identically', () => {
+      const mockContext = {
+        settings: {
+          canc: {
+            structuralDetection: true,
+          },
+        },
+      } as unknown as TSESLint.RuleContext<string, unknown[]>;
+
+      const settings = getCancSettings(mockContext);
+      expect(settings.structuralDetection).toBe(true);
+
+      const nominal1 = nominalSettings(settings);
+      expect(nominal1).not.toBe(settings);
+      expect(nominal1.structuralDetection).toBe(false);
+      expect(nominal1.sources).toEqual(settings.sources);
+
+      const nominal2 = nominalSettings(settings);
+      expect(nominal2).toBe(nominal1);
+    });
   });
 });

@@ -12,6 +12,7 @@ import {
   refersTo,
 } from './canc-imports.js';
 import { getCancServices, isCancelableExpression, isCancelableType } from './canc-types.js';
+import { unwrapTypeOnly } from './executor.js';
 import type { ResolvedCancSettings } from './settings.js';
 
 export interface CatchSite {
@@ -348,17 +349,38 @@ function isThrowHelperRethrow(stmt: TSESTree.Statement, paramName: string, conte
 
 // Promise.reject(e) rejects the derived promise with the same error
 function isRejectRethrow(node: TSESTree.Node | null | undefined, paramName: string, context: Context): boolean {
-  return (
-    node?.type === AST_NODE_TYPES.CallExpression &&
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier &&
-    node.callee.property.name === 'reject' &&
-    (isGlobalPromiseIdent(node.callee.object, context) || isCancCtorIdent(node.callee.object, context)) &&
-    node.arguments.length === 1 &&
-    node.arguments[0].type === AST_NODE_TYPES.Identifier &&
-    node.arguments[0].name === paramName
-  );
+  if (!node) {
+    return false;
+  }
+  let inner = unwrapTypeOnly(node);
+  if (inner.type === AST_NODE_TYPES.AwaitExpression) {
+    inner = unwrapTypeOnly(inner.argument);
+  }
+  if (
+    inner.type !== AST_NODE_TYPES.CallExpression ||
+    inner.callee.type !== AST_NODE_TYPES.MemberExpression ||
+    inner.callee.computed ||
+    inner.callee.property.type !== AST_NODE_TYPES.Identifier ||
+    inner.callee.property.name !== 'reject' ||
+    inner.arguments.length !== 1
+  ) {
+    return false;
+  }
+  const obj = inner.callee.object;
+  const isPromiseObj =
+    isGlobalPromiseIdent(obj, context) ||
+    isCancCtorIdent(obj, context) ||
+    (obj.type === AST_NODE_TYPES.MemberExpression &&
+      !obj.computed &&
+      obj.property.type === AST_NODE_TYPES.Identifier &&
+      obj.property.name === 'Promise' &&
+      obj.object.type === AST_NODE_TYPES.Identifier &&
+      obj.object.name === 'globalThis');
+  if (!isPromiseObj) {
+    return false;
+  }
+  const arg = unwrapTypeOnly(inner.arguments[0]);
+  return arg.type === AST_NODE_TYPES.Identifier && arg.name === paramName;
 }
 
 function returnsRejection(stmt: TSESTree.ReturnStatement, paramName: string, context: Context): boolean {
@@ -386,6 +408,16 @@ function statementRethrowsParam(stmt: TSESTree.Statement, paramName: string, con
 }
 
 function isCancelCheck(node: TSESTree.Node, paramName: string, context: Context): boolean {
+  if (node.type === AST_NODE_TYPES.BinaryExpression && node.operator === 'instanceof') {
+    const left = unwrapTypeOnly(node.left);
+    if (
+      left.type === AST_NODE_TYPES.Identifier &&
+      left.name === paramName &&
+      refersTo(node.right, context, 'CancelError')
+    ) {
+      return true;
+    }
+  }
   if (node.type === AST_NODE_TYPES.CallExpression) {
     if (node.arguments.length === 0) {
       return false;
@@ -484,11 +516,14 @@ function checkCancelGuard(
 
 // (e) => isCancelError(e) ? Promise.reject(e) : x rethrows on the cancel arm
 function isRejectingConditional(body: TSESTree.Node, paramName: string, context: Context): boolean {
-  if (body.type === AST_NODE_TYPES.CallExpression) {
-    return isRejectRethrow(body, paramName, context);
+  if (isRejectRethrow(body, paramName, context)) {
+    return true;
   }
   if (body.type !== AST_NODE_TYPES.ConditionalExpression) {
     return false;
+  }
+  if (isRejectRethrow(body.consequent, paramName, context) && isRejectRethrow(body.alternate, paramName, context)) {
+    return true;
   }
   if (isCancelCheck(body.test, paramName, context)) {
     return isRejectRethrow(body.consequent, paramName, context);
@@ -559,10 +594,11 @@ function hasBoundaryCallInStatements(
       }
     }
     if (stmt.type === AST_NODE_TYPES.IfStatement) {
-      if (hasBoundaryCallInStatements([stmt.consequent], paramName, context, settings)) {
-        return true;
-      }
-      if (stmt.alternate && hasBoundaryCallInStatements([stmt.alternate], paramName, context, settings)) {
+      if (
+        stmt.alternate &&
+        hasBoundaryCallInStatements([stmt.consequent], paramName, context, settings) &&
+        hasBoundaryCallInStatements([stmt.alternate], paramName, context, settings)
+      ) {
         return true;
       }
     }
@@ -676,6 +712,67 @@ function statementsAllLogOrReturn(statements: TSESTree.Statement[]): boolean {
   return true;
 }
 
+function containsExitWithoutRethrow(node: TSESTree.Node, paramName: string, context: Context): boolean {
+  if (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  ) {
+    return false;
+  }
+  if (node.type === AST_NODE_TYPES.ReturnStatement) {
+    return !returnsRejection(node, paramName, context);
+  }
+  if (node.type === AST_NODE_TYPES.BreakStatement || node.type === AST_NODE_TYPES.ContinueStatement) {
+    return true;
+  }
+  if (node.type === AST_NODE_TYPES.BlockStatement) {
+    return node.body.some((s) => containsExitWithoutRethrow(s, paramName, context));
+  }
+  if (node.type === AST_NODE_TYPES.IfStatement) {
+    return (
+      containsExitWithoutRethrow(node.consequent, paramName, context) ||
+      (node.alternate ? containsExitWithoutRethrow(node.alternate, paramName, context) : false)
+    );
+  }
+  if (
+    node.type === AST_NODE_TYPES.WhileStatement ||
+    node.type === AST_NODE_TYPES.DoWhileStatement ||
+    node.type === AST_NODE_TYPES.ForStatement ||
+    node.type === AST_NODE_TYPES.ForInStatement ||
+    node.type === AST_NODE_TYPES.ForOfStatement
+  ) {
+    return containsExitWithoutRethrow(node.body, paramName, context);
+  }
+  if (node.type === AST_NODE_TYPES.SwitchStatement) {
+    return node.cases.some((c) => c.consequent.some((s) => containsExitWithoutRethrow(s, paramName, context)));
+  }
+  if (node.type === AST_NODE_TYPES.TryStatement) {
+    return (
+      containsExitWithoutRethrow(node.block, paramName, context) ||
+      (node.handler ? containsExitWithoutRethrow(node.handler.body, paramName, context) : false) ||
+      (node.finalizer ? containsExitWithoutRethrow(node.finalizer, paramName, context) : false)
+    );
+  }
+  return false;
+}
+
+function statementCanExitWithoutRethrow(stmt: TSESTree.Statement, paramName: string, context: Context): boolean {
+  if (stmt.type === AST_NODE_TYPES.ReturnStatement) {
+    return !returnsRejection(stmt, paramName, context);
+  }
+  if (stmt.type === AST_NODE_TYPES.BreakStatement || stmt.type === AST_NODE_TYPES.ContinueStatement) {
+    return true;
+  }
+  if (stmt.type === AST_NODE_TYPES.IfStatement) {
+    return (
+      containsExitWithoutRethrow(stmt.consequent, paramName, context) ||
+      (stmt.alternate ? containsExitWithoutRethrow(stmt.alternate, paramName, context) : false)
+    );
+  }
+  return false;
+}
+
 /**
  * Classify a catch clause or rejection callback handler for cancel compliance.
  */
@@ -739,17 +836,37 @@ export function analyzeHandler(
     return { compliant: false, via: null, wrapped, destructured, param };
   }
 
+  let canExitBeforeGuard = false;
   let guardSwallows = false;
   for (let i = 0; i < statements.length; i++) {
     const stmt = statements[i];
     if (stmt.type === AST_NODE_TYPES.IfStatement) {
       const guardRes = checkCancelGuard(stmt, param.name, statements.slice(i + 1), context);
       if (guardRes === 'rethrow') {
-        return { compliant: true, via: 'guard', wrapped: false, destructured: false, param };
+        if (!canExitBeforeGuard) {
+          return { compliant: true, via: 'guard', wrapped: false, destructured: false, param };
+        }
       }
       if (guardRes === 'swallow') {
+        const remaining = statements.slice(i + 1);
+        const consequentLogOrReturn =
+          stmt.consequent.type === AST_NODE_TYPES.BlockStatement ? statementsAllLogOrReturn(stmt.consequent.body)
+          : stmt.consequent.type === AST_NODE_TYPES.ReturnStatement ? true
+          : stmt.consequent.type === AST_NODE_TYPES.ExpressionStatement ? isLogExpression(stmt.consequent.expression)
+          : false;
+        if (
+          opts?.allowLogAndReturn &&
+          !canExitBeforeGuard &&
+          consequentLogOrReturn &&
+          statementsAllLogOrReturn(remaining)
+        ) {
+          return { compliant: true, via: 'logReturn', wrapped: false, destructured: false, param };
+        }
         guardSwallows = true;
       }
+    }
+    if (statementCanExitWithoutRethrow(stmt, param.name, context)) {
+      canExitBeforeGuard = true;
     }
   }
 

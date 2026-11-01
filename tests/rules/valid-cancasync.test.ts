@@ -48,6 +48,9 @@ describe('valid-cancasync', () => {
       `import { cancAsync } from '@cancjs/coroutine';
        const load = cancAsync(function* (): Generator<string, number, boolean> { return 1; });`,
       `async function plainAsync() {}`,
+      `import { cancAsync } from '@cancjs/coroutine';
+       declare function g(): number;
+       cancAsync(g);`,
       `function* plainGen(): any {}`,
       `import { cancAsync } from '@cancjs/coroutine';
        cancAsync(123 as any);`,
@@ -197,6 +200,9 @@ describe('valid-cancasync', () => {
       `import { cancAsync } from '@cancjs/coroutine';
        function fail(): never { throw new Error('x'); }
        cancAsync(fail);`,
+      `import { cancAsync } from '@cancjs/coroutine';
+       declare function g(): Generator<never, number, unknown>;
+       cancAsync(g);`,
     ],
     invalid: [
       {
@@ -214,6 +220,18 @@ describe('valid-cancasync', () => {
         code: `import { cancAsync } from '@cancjs/coroutine';
                function load(): string { return 'x'; }
                cancAsync(load);`,
+        errors: [
+          {
+            messageId: 'syncFunction' as const,
+            line: 3,
+            data: { driver: 'cancAsync', await: 'cancAwait' },
+          },
+        ],
+      },
+      {
+        code: `import { cancAsync } from '@cancjs/coroutine';
+               declare function g(): number;
+               cancAsync(g);`,
         errors: [
           {
             messageId: 'syncFunction' as const,

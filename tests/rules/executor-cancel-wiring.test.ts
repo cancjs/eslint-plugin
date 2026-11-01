@@ -95,6 +95,12 @@ declare function save(id: string): Promise<void>;
 new CancelablePromise((resolve, reject) => {
   save('a').then(resolve, reject);
 }, { shield: true });`,
+    `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+const opts = { shield: true } as const;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, opts);`,
   ],
   invalid: [
     {
@@ -182,6 +188,15 @@ declare const keep: boolean;
 new CancelablePromise((resolve, reject) => {
   save('a').then(resolve, reject);
 }, { shield: keep });`,
+      errors: [{ messageId: 'noCancelWiring' as const, line: 4, column: 23 }],
+    },
+    {
+      code: `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+declare const rest: Record<string, unknown>;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { shield: true, ...rest });`,
       errors: [{ messageId: 'noCancelWiring' as const, line: 4, column: 23 }],
     },
   ],

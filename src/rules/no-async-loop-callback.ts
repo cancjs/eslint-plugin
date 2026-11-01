@@ -4,6 +4,7 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { refersTo } from '../util/canc-imports.js';
 import { hasTypeServices, isCancelableReturnFunction } from '../util/canc-types.js';
 import createRule from '../util/create-rule.js';
+import { getCancSettings, nominalSettings } from '../util/settings.js';
 
 export type MessageIds = 'asyncLoopCallback' | 'convertToGenerator' | 'removeAsync';
 export type RuleOptions = [];
@@ -154,7 +155,10 @@ export default createRule<RuleOptions, MessageIds>({
         const { fn, reportNode, isIdentifier } = resolved;
 
         // Step 4 TYPE carve-out: callbacks returning CancelablePromise are valid
-        if (hasTypeServices(context) && isCancelableReturnFunction(fn, context)) {
+        if (
+          hasTypeServices(context) &&
+          isCancelableReturnFunction(fn, context, nominalSettings(getCancSettings(context)))
+        ) {
           return;
         }
 

@@ -94,7 +94,7 @@ export const run = cancAsync(function* () {
 });
 ```
 
-An exhaustive `switch` on a discriminant of the caught error without `default: throw e` is still reported. Add the default so errors outside the listed cases are rethrown.
+A `switch` on `kind` or `name` of the caught error counts its cases as handled when the binding is cast to the failure union (`(e as A | B).kind`). On an untyped binding add `default: throw e`.
 
 ## Options
 

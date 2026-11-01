@@ -186,11 +186,55 @@ async function run() {
 }`,
   },
   {
-    name: 'async function without a return annotation has no declared sink',
+    name: 'async function returning Promise.resolve is safe',
     code: `${HEAD}
-async function run() {
-  return load();
+async function f() {
+  return Promise.resolve(load());
 }`,
+  },
+  {
+    name: 'async function returning await load is safe for this rule',
+    code: `${HEAD}
+async function f() {
+  return await load();
+}`,
+  },
+  {
+    name: 'async function returning cast to Promise is safe for this rule',
+    code: `${HEAD}
+async function f() {
+  return load() as Promise<number>;
+}`,
+  },
+  {
+    name: 'callback returns are skipped',
+    code: `${HEAD}
+[1].map(async () => load());`,
+  },
+  {
+    name: 'callback into a generic parameter takes its type from the callback',
+    code: `${HEAD}
+declare function lib<T>(f: () => T): void;
+lib(() => load());`,
+  },
+  {
+    name: 'callback into an overloaded callee is not checked',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+declare function lib(f: () => CancelablePromise<number>): void;
+lib(() => load());`,
+  },
+  {
+    name: 'callback with its own cancelable return type keeps the capability',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+lib((): CancelablePromise<number> => load());`,
+  },
+  {
+    name: 'async callback into a plain promise parameter is not checked',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+lib(async () => load());`,
   },
   {
     name: 'floating statement is not a sink of this rule',
@@ -247,6 +291,39 @@ track(load());`,
 ];
 
 const invalid: InvalidTestCase<MessageIds, Options>[] = [
+  {
+    name: 'async function without a return annotation still erases',
+    code: `${HEAD}
+async function run() {
+  return load();
+}`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 5, column: 10 }],
+  },
+  {
+    name: 'concise async arrow erases return',
+    code: `${HEAD}
+const f = async () => load();`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 4, column: 23 }],
+  },
+  {
+    name: 'async method erases return',
+    code: `${HEAD}
+class C {
+  async m() {
+    return load();
+  }
+}`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 6, column: 12 }],
+  },
+  {
+    name: 'async generator erases return',
+    code: `${HEAD}
+async function* g() {
+  yield 1;
+  return load();
+}`,
+    errors: [{ messageId: 'erasedReturnAsync', line: 6, column: 10 }],
+  },
   {
     name: 'direct call argument into a Promise parameter',
     code: `${HEAD}
@@ -305,6 +382,20 @@ pending = load();`,
     code: `${HEAD}
 const all: Promise<number>[] = [load()];`,
     errors: [{ messageId: 'erasedAssignment', line: 4, column: 33 }],
+  },
+  {
+    name: 'callback return into a parameter typed with a plain promise return',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+lib(() => load());`,
+    errors: [{ messageId: 'erasedReturn', line: 5, column: 11 }],
+  },
+  {
+    name: 'map callback return into an annotated plain promise array',
+    code: `${HEAD}
+declare const xs: number[];
+export const r: Promise<number>[] = xs.map(() => load());`,
+    errors: [{ messageId: 'erasedAssignment', line: 5, column: 50 }],
   },
   {
     name: 'PromiseLike parameter is a sink too',

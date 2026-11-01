@@ -28,11 +28,11 @@ import {
   suppressTimeout,
 } from '@cancjs/toolbox';
 
-declare function prefetchAssets(): Promise<void>;
+declare function prefetchAssets(signal: AbortSignal): Promise<void>;
 
 function warmCache(): LazyPromise<void> {
-  return new LazyPromise((resolve, reject) => {
-  prefetchAssets().then(resolve, reject);
+  return new LazyPromise((resolve, reject, { signal }) => {
+  prefetchAssets(signal).then(resolve, reject);
   }); // returned: the caller decides when to start it
 }
 

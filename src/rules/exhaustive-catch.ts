@@ -12,6 +12,7 @@ import {
   resolveFactories,
 } from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
+import { unwrapTypeOnly } from '../util/executor.js';
 import { analyzeCatchSteps, type CatchStep, isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
 import { collectHandledCatchTypes } from '../util/failure-types.js';
 
@@ -75,20 +76,7 @@ function handlerRethrows(handler: TSESTree.CatchClause, context: Context): boole
   if (handler.param.type !== AST_NODE_TYPES.Identifier) {
     return true;
   }
-  const bindingName = handler.param.name;
-  let found = false;
-  function visit(node: TSESTree.Node): void {
-    if (found || isFunctionNode(node)) {
-      return;
-    }
-    if (isRethrowStatement(node as TSESTree.Statement, bindingName, context)) {
-      found = true;
-      return;
-    }
-    forEachChild(node, visit);
-  }
-  visit(handler.body);
-  return found;
+  return subtreeRethrows(handler.body, handler.param.name, context);
 }
 
 /**
@@ -103,7 +91,7 @@ function innerHandledTypes(handler: TSESTree.CatchClause, context: Context): ts.
   const body = handler.body.body;
   const rethrowAt = body.findIndex((s) => isRethrowStatement(s, bindingName, context));
   if (rethrowAt === -1) {
-    return collectHandledCatchTypes(handler.body, bindingName, context);
+    return keptGuardTypes(body, bindingName, context);
   }
   const handled: ts.Type[] = [];
   for (const stmt of body.slice(0, rethrowAt)) {
@@ -114,10 +102,99 @@ function innerHandledTypes(handler: TSESTree.CatchClause, context: Context): ts.
       endsWithExit(stmt.consequent)
     ) {
       // the collector walks any node; only the guard test names the kept types
-      handled.push(...collectHandledCatchTypes(stmt.test as unknown as TSESTree.BlockStatement, bindingName, context));
+      handled.push(...collectHandledCatchTypes(stmt.test, bindingName, context));
     }
   }
   return handled;
+}
+
+/**
+ * Guard types of the branches that keep the binding: the branch never rethrows it, and either exits or no later
+ * statement can rethrow it.
+ */
+function keptGuardTypes(body: TSESTree.Statement[], bindingName: string, context: Context): ts.Type[] {
+  const handled: ts.Type[] = [];
+  body.forEach((stmt, i) => {
+    const laterRethrow = body.slice(i + 1).some((s) => subtreeRethrows(s, bindingName, context));
+    const keep = (
+      test: TSESTree.Expression,
+      branch: TSESTree.Statement[],
+      guarded: boolean,
+      exits: (last: TSESTree.Statement) => boolean,
+    ): void => {
+      const last = branch.at(-1);
+      if (
+        guarded &&
+        !branch.some((s) => subtreeRethrows(s, bindingName, context)) &&
+        (!laterRethrow || (last !== undefined && exits(last)))
+      ) {
+        // the collector walks any node; only the guard test names the kept types
+        handled.push(...collectHandledCatchTypes(test, bindingName, context));
+      }
+    };
+    if (
+      stmt.type === AST_NODE_TYPES.IfStatement &&
+      !stmt.alternate &&
+      !laterRethrow &&
+      isNegatedGuard(stmt.test, bindingName, context) &&
+      subtreeRethrows(stmt.consequent, bindingName, context)
+    ) {
+      // `if (!guard) throw e;` keeps what the guard matches once nothing after it rethrows
+      handled.push(...collectHandledCatchTypes(stmt.test, bindingName, context));
+    } else if (stmt.type === AST_NODE_TYPES.IfStatement) {
+      let branch: TSESTree.Statement | null = stmt;
+      while (branch?.type === AST_NODE_TYPES.IfStatement) {
+        keep(branch.test, [branch.consequent], isRecognizedGuard(branch.test, bindingName, context), endsWithExit);
+        branch = branch.alternate;
+      }
+    } else if (stmt.type === AST_NODE_TYPES.SwitchStatement) {
+      const guarded = hasGuardCases(stmt, bindingName, context);
+      stmt.cases.forEach((c, at) => {
+        if (c.test) {
+          // a case without break falls through, so the following cases run as part of it
+          keep(c.test, fallThroughBody(stmt.cases.slice(at)), guarded, isReturn);
+        }
+      });
+    }
+  });
+  return handled;
+}
+
+/** Statements a switch case runs, through the following cases until one ends with a jump. */
+function fallThroughBody(cases: TSESTree.SwitchCase[]): TSESTree.Statement[] {
+  const run: TSESTree.Statement[] = [];
+  for (const c of cases) {
+    run.push(...c.consequent);
+    const last = c.consequent.at(-1);
+    if (
+      last &&
+      (last.type === AST_NODE_TYPES.BreakStatement || isReturn(last) || last.type === AST_NODE_TYPES.ThrowStatement)
+    ) {
+      break;
+    }
+  }
+  return run;
+}
+
+function isReturn(stmt: TSESTree.Statement): boolean {
+  return stmt.type === AST_NODE_TYPES.ReturnStatement;
+}
+
+/** Whether the binding is rethrown anywhere under the statement, outside nested functions. */
+function subtreeRethrows(stmt: TSESTree.Statement, bindingName: string, context: Context): boolean {
+  let found = false;
+  function visit(node: TSESTree.Node): void {
+    if (found || isFunctionNode(node)) {
+      return;
+    }
+    if (isRethrowStatement(node as TSESTree.Statement, bindingName, context)) {
+      found = true;
+      return;
+    }
+    forEachChild(node, visit);
+  }
+  visit(stmt);
+  return found;
 }
 
 function endsWithExit(stmt: TSESTree.Statement): boolean {
@@ -180,7 +257,8 @@ function collectYieldStepsInTry(
 
 function isRethrowStatement(stmt: TSESTree.Statement, bindingName: string, context: Context): boolean {
   if (stmt.type === AST_NODE_TYPES.ThrowStatement && stmt.argument) {
-    if (stmt.argument.type === AST_NODE_TYPES.Identifier && stmt.argument.name === bindingName) {
+    const arg = unwrapTypeOnly(stmt.argument);
+    if (arg.type === AST_NODE_TYPES.Identifier && arg.name === bindingName) {
       return true;
     }
   }
@@ -190,8 +268,9 @@ function isRethrowStatement(stmt: TSESTree.Statement, bindingName: string, conte
     : stmt.type === AST_NODE_TYPES.ReturnStatement ? stmt.argument
     : null;
 
-  const call = expr ? cancThrowCall(expr, context) : null;
-  const arg0 = call?.arguments[0];
+  const unwrapped = expr ? (unwrapTypeOnly(expr) as TSESTree.Expression) : null;
+  const call = unwrapped ? cancThrowCall(unwrapped, context) : null;
+  const arg0 = call?.arguments[0] ? unwrapTypeOnly(call.arguments[0]) : null;
   return arg0?.type === AST_NODE_TYPES.Identifier && arg0.name === bindingName;
 }
 
@@ -280,20 +359,6 @@ function isNegatedGuardRethrow(stmt: TSESTree.IfStatement, bindingName: string, 
   return isNegatedGuard(stmt.test, bindingName, context) && containsRethrow(stmt.consequent, bindingName, context);
 }
 
-/** Strips `as T`, `<T>`, `!` and `satisfies T` so a cast binding still reads as the binding. */
-function unwrapTypeOnly(expr: TSESTree.Expression): TSESTree.Expression {
-  let curr = expr;
-  while (
-    curr.type === AST_NODE_TYPES.TSAsExpression ||
-    curr.type === AST_NODE_TYPES.TSTypeAssertion ||
-    curr.type === AST_NODE_TYPES.TSNonNullExpression ||
-    curr.type === AST_NODE_TYPES.TSSatisfiesExpression
-  ) {
-    curr = curr.expression;
-  }
-  return curr;
-}
-
 function isBindingMember(expr: TSESTree.Node, bindingName: string): boolean {
   if (expr.type !== AST_NODE_TYPES.MemberExpression) {
     return false;
@@ -332,6 +397,17 @@ const LOOP_OR_SWITCH = new Set<string>([
   AST_NODE_TYPES.DoWhileStatement,
 ]);
 
+function isThrowingExpr(expr: TSESTree.Node, context: Context): boolean {
+  const unwrapped = unwrapTypeOnly(expr);
+  if (cancThrowCall(unwrapped as TSESTree.Expression, context) !== null) {
+    return true;
+  }
+  if (unwrapped.type === AST_NODE_TYPES.ConditionalExpression) {
+    return isThrowingExpr(unwrapped.consequent, context) && isThrowingExpr(unwrapped.alternate, context);
+  }
+  return false;
+}
+
 /** Whether the node can leave the catch body (return, or break/continue past it) without rethrowing. */
 function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Context, nested: boolean): boolean {
   if (isFunctionNode(node)) {
@@ -339,7 +415,7 @@ function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Co
   }
   if (node.type === AST_NODE_TYPES.ReturnStatement) {
     // `return yield* canc.throw(new Wrapped(e))` leaves by throwing, not by swallowing
-    return !node.argument || cancThrowCall(node.argument, context) === null;
+    return !node.argument || !isThrowingExpr(node.argument, context);
   }
   if (node.type === AST_NODE_TYPES.BreakStatement || node.type === AST_NODE_TYPES.ContinueStatement) {
     return node.label !== null || !nested;

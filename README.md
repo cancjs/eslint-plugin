@@ -14,7 +14,7 @@ The blessed idioms from the `@cancjs/*` docs are never flagged by the `recommend
 npm install --save-dev @cancjs/eslint-plugin
 ```
 
-Peer dependencies: `eslint` 9 or 10. Rules that read types also need `@typescript-eslint/parser` 8. The plugin loads `typescript` at runtime and needs `typescript`, which npm 7 and later install together with the parser. Node versions are as declared in `engines`.
+Peer dependencies: `eslint` 9 or 10. Rules that read types also need `@typescript-eslint/parser` 8. The plugin needs `typescript` at runtime; npm 7 and later install it together with the parser. Node versions are as declared in `engines`.
 
 ## Quick start
 
@@ -102,7 +102,7 @@ export default [
 
 By default a type counts as cancelable only when it is named in `cancelableTypeNames` and declared in one of `sources`. Turning on `structuralDetection` widens that to every type with `then` and `cancel`, including types from libraries you do not control. That catches wrapper types you did not list.
 
-The wider match applies to every rule that reads types. It also changes the advice. The fixes those rules suggest name canc APIs, such as `CancelablePromise.fail` and `cancAsync`, even when the foreign type has nothing to do with them. Leave the option off unless you have such wrappers and have checked the results.
+The wider match feeds the rules that ask whether a value is cancelable and whose advice holds for any such type: no-cancelability-erasure, no-cancellation-gap, no-await-cancelable-in-async and prefer-canc-combinators. Rules whose advice or fix assumes the canc API (no-throw-in-chain-callback, prefer-canceled-property, no-async-loop-callback, no-swallowed-cancel, prefer-is-cancel-error and the failure-type rules) keep matching canc types only.
 
 ## Interop
 
@@ -115,6 +115,10 @@ Packages that use the native-twin builds import from `@cancjs/eslint-plugin/nati
 ## Coroutine factories
 
 Rules that check coroutine helpers accept options that add your own factory functions or replace the built-in ones. The options are described on the rule pages, for example [exhaustive-catch](https://github.com/cancjs/eslint-plugin/blob/master/docs/rules/exhaustive-catch.md). The full list of rules follows.
+
+## Guidelines
+
+Plugin rules target user domain code (including `examples/` and application packages), not `@cancjs/*` core package internals (which use explicit `/* eslint-disable */` comments where implementing interop primitives like toolbox `createAbortSignal`).
 
 ## Rules
 

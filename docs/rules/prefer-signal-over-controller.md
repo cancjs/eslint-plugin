@@ -12,6 +12,8 @@ Prefer passing AbortSignal rather than whole AbortController.
 
 Accepting a whole `AbortController` parameter, or forwarding a controller instance to a downstream function, hands `abort()` capability to code that does not own the controller. Platform conventions pass `AbortSignal`, keeping `abort()` control with the creator of the controller.
 
+The primary purpose of this rule is to guide code toward reading cancellation state via `signal` and changing it via `cancel()`. Interop helpers like `createAbortSignal` from `@cancjs/toolbox` exist for non-canc interop code where external signal-based APIs require raw `abort()`, rather than higher-level `cancel()`.
+
 When TypeScript parser services are present, this rule inspects full type information to flag `AbortController` parameters and forwarded call arguments. In environments without parser services, a syntactic fallback flags call arguments initialized via local `new AbortController()` calls and parameters explicitly annotated with the `AbortController` type name. Operating without parser services means fewer reports will be produced because inferred types cannot be analyzed.
 
 ## Rule details
@@ -52,6 +54,8 @@ function pipeline(signal: AbortSignal) {
 ## When not to use it
 
 Turn this rule off in code that owns the controller on purpose, for example a function that must call `abort()` itself. Passing the whole controller is then the right design.
+
+Plugin rules target user domain code (including `examples/` and application packages), not `@cancjs/*` core package internals. If a user domain function still needs raw `AbortController` for an intentional design reason, disable the rule with an `/* eslint-disable */` comment.
 
 ## Options
 

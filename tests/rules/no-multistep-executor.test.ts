@@ -34,6 +34,15 @@ new CancelablePromise((resolve, reject) => {
 });`,
     },
     {
+      name: 'step consuming previous step parameter is a continuation',
+      code: `${IMPORT}
+declare function op(): Promise<string>;
+declare function op3(id: string): Promise<void>;
+new CancelablePromise((resolve, reject) => {
+  op().then((id) => op3(id).then(resolve), reject);
+});`,
+    },
+    {
       name: 'operation inside a handleCancel callback does not count',
       code: `${IMPORT}
 new CancelablePromise((resolve, reject, { handleCancel }) => {
@@ -178,6 +187,14 @@ new CancelablePromise((resolve, reject) => {
       errors: [{ messageId: 'multipleOperations', line: 3, column: 30, data: { count: 2 } }],
     },
     {
+      name: 'resolve with a cast second call result is a second start',
+      code: `${IMPORT}
+new CancelablePromise<number>((resolve, reject) => {
+  op().then(() => resolve(op2() as unknown as number), reject);
+});`,
+      errors: [{ messageId: 'multipleOperations' }],
+    },
+    {
       name: 'invoked nested function declaration counts',
       code: `${IMPORT}
 new CancelablePromise((resolve, reject) => {
@@ -234,15 +251,52 @@ new CancelablePromise((resolve, reject) => {
 });`,
       errors: [{ messageId: 'multipleOperations', line: 3, column: 29, data: { count: 2 } }],
     },
+    {
+      name: 'step with shadowed parameter does not consume the previous step parameter',
+      code: `${IMPORT}
+declare function op(): Promise<string>;
+declare function op3(ids: number[]): Promise<void>;
+new CancelablePromise((resolve, reject) => {
+  op().then((id) => op3([1].map((id) => id)).then(resolve), reject);
+});`,
+      errors: [{ messageId: 'multipleOperations', data: { count: 2 } }],
+    },
   ],
 };
 
 describe('no-multistep-executor (untyped)', () => {
-  ruleTester({ types: false }).run('no-multistep-executor', rule, testCases);
+  ruleTester({ types: false }).run('no-multistep-executor', rule, {
+    valid: testCases.valid,
+    invalid: [
+      ...testCases.invalid,
+      {
+        name: 'resolve with non-thenable call argument in untyped lane reports multiple operations',
+        code: `${IMPORT}
+declare function op(): Promise<number>;
+new CancelablePromise((resolve, reject) => {
+  op().then(() => resolve(Date.now()), reject);
+});`,
+        errors: [{ messageId: 'multipleOperations', data: { count: 2 } }],
+      },
+    ],
+  });
 });
 
 describe('no-multistep-executor (typed twin)', () => {
-  ruleTester({ types: true }).run('no-multistep-executor', rule, testCases);
+  ruleTester({ types: true }).run('no-multistep-executor', rule, {
+    valid: [
+      ...testCases.valid,
+      {
+        name: 'resolve with non-thenable call argument in typed lane is not a second operation',
+        code: `${IMPORT}
+declare function op(): Promise<number>;
+new CancelablePromise((resolve, reject) => {
+  op().then(() => resolve(Date.now()), reject);
+});`,
+      },
+    ],
+    invalid: testCases.invalid,
+  });
 });
 
 describe('no-multistep-executor options schema', () => {

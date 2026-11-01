@@ -29,7 +29,7 @@ const LEGACY_NOTE_TO_MESSAGE_ID: Record<string, string> = {
 
 const REQUIRED_MESSAGE_IDS: Record<string, string[]> = {
   'no-yield-await-in-loop': ['serializedSteps'],
-  'valid-cancasync': ['asyncFunction', 'asyncGenerator', 'anyReturnAnnotation'],
+  'valid-cancasync': ['asyncFunction', 'asyncGenerator', 'anyReturnAnnotation', 'syncFunction'],
   'no-unstarred-cancawait': ['missingStar', 'unusedCancAwait'],
   'prefer-cancawait': ['preferCancAwait'],
   'no-coroutine-dialect-mismatch': [

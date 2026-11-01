@@ -3,9 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { InvalidTestCase, ValidTestCase } from '@typescript-eslint/rule-tester';
+import { Linter, type Rule } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
-import type { ExecutorParamNamesOptions, MessageIds, RuleOptions } from '../../src/rules/executor-param-names.js';
+import type { MessageIds, RuleOptions } from '../../src/rules/executor-param-names.js';
 import rule from '../../src/rules/executor-param-names.js';
 import { corpusFiles, readMarkers } from '../helpers/corpus.js';
 import { ruleTester } from '../setup.js';
@@ -255,31 +256,23 @@ describe('executor-param-names direct valid fixtures', () => {
 });
 
 describe('executor-param-names schema validation', () => {
+  const verify = (options: unknown) =>
+    new Linter().verify('const x = 1;', [
+      {
+        plugins: { canc: { rules: { 'executor-param-names': rule as unknown as Rule.RuleModule } } },
+        rules: { 'canc/executor-param-names': ['error', options] },
+      },
+    ]);
+
   it('rejects non-string option properties', () => {
-    expect(() => {
-      ruleTester({ types: false }).run('executor-param-names-schema-type', rule, {
-        valid: [
-          {
-            code: 'new CancelablePromise((resolve, reject) => {});',
-            options: [{ resolve: 123 } as unknown as ExecutorParamNamesOptions],
-          },
-        ],
-        invalid: [],
-      });
-    }).toThrow();
+    expect(() => verify({ resolve: 123 })).toThrow(/Value 123 should be string/);
   });
 
   it('rejects additional unrecognized options', () => {
-    expect(() => {
-      ruleTester({ types: false }).run('executor-param-names-schema-extra', rule, {
-        valid: [
-          {
-            code: 'new CancelablePromise((resolve, reject) => {});',
-            options: [{ unknownOption: 'true' } as unknown as ExecutorParamNamesOptions],
-          },
-        ],
-        invalid: [],
-      });
-    }).toThrow();
+    expect(() => verify({ unknownOption: 'true' })).toThrow(/should NOT have additional properties/);
+  });
+
+  it('accepts valid options', () => {
+    expect(() => verify({ resolve: 'res' })).not.toThrow();
   });
 });

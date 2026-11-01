@@ -6,12 +6,6 @@
     "reason": "The try block calls run() without awaiting it, a real floating promise next to the marked wrong-layer check"
   },
   {
-    "file": "corpus/error-handling/invalid/06-prefer-is-cancel-error-instance-check.ts",
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "line": 34,
-    "reason": "The bare value.cancel() leaves its promise unconsumed; the documented form is void value.cancel()"
-  },
-  {
     "file": "corpus/error-handling/valid/06-prefer-is-cancel-error-isaborterror.ts",
     "ruleId": "@typescript-eslint/use-unknown-in-catch-callback-variable",
     "line": 36,

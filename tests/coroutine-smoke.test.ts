@@ -188,7 +188,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
   });
 
   it('matches markers on invalid phase fixtures under recommended + strict-only rules', async () => {
-    expect(invalidFiles.length).toBe(35);
+    expect(invalidFiles.length).toBe(36);
 
     const results = await eslintWithStrict.lintFiles(invalidFiles);
     for (const r of results) {
@@ -294,6 +294,7 @@ describe('coroutine, lazy and hygiene rules phase smoke over built artifacts', (
     const typeOnlyFiles = [
       'coroutine/invalid/12-no-cancellation-gap-coroutine.ts',
       'coroutine/invalid/13-no-cancellation-gap-chain.ts',
+      'coroutine/invalid/17-valid-cancasync-sync-function.ts',
       'hygiene/invalid/11-prefer-canceled-property.ts',
     ];
 

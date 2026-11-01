@@ -31,6 +31,6 @@ import {
 declare const value: unknown;
 
 if (value instanceof CancelablePromise) { // lint: prefer-is-cancel-error same hazard for promise instances
-  value.cancel();
+  void value.cancel();
 }
 

@@ -67,6 +67,34 @@ const q3OrCond = unionCatch(`if (e instanceof ErrorA || flag) {
 const q3NotOr = unionCatch(`if (!(e instanceof ErrorA || flag)) throw e;
     console.log('handled');`);
 
+const switchKindBoth = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+      case 'ErrorB':
+        console.log(2);
+        break;
+    }`);
+const switchKindFallthrough = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+      case 'ErrorB':
+        console.log('handled');
+        break;
+    }`);
+const switchKindOnlyA = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+    }`);
+const switchKindAny = unionCatch(`switch (e.kind) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+      case 'ErrorB':
+        console.log(2);
+        break;
+    }`).replace('catch (e)', 'catch (e: any)');
+
 function nsCatch(catchBody: string): string {
   return `import * as canc from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
@@ -133,6 +161,39 @@ const s3LogOnly = nestedCatch(
     }`,
 );
 
+const outerLogB = `if (e instanceof ErrorB) {
+      console.log('B');
+    }`;
+
+const s3IfElseRethrow = nestedCatch(
+  `if (inner instanceof ErrorA) {
+        console.log(inner);
+        throw inner;
+      } else {
+        throw inner;
+      }`,
+  outerLogB,
+);
+
+const s3SwitchRethrow = nestedCatch(
+  `switch (true) {
+        case inner instanceof ErrorA:
+          console.log(inner);
+          throw inner;
+        default:
+          throw inner;
+      }`,
+  outerLogB,
+);
+
+const s3LaterConditionalRethrow = nestedCatch(
+  `if (inner instanceof ErrorA) {
+        console.log(inner);
+      }
+      if (flag) throw inner;`,
+  outerLogB,
+).replace('export const run', 'declare const flag: boolean;\nexport const run');
+
 const typedTester = ruleTester({ types: true });
 const untypedTester = ruleTester({ types: false });
 
@@ -167,6 +228,36 @@ export const run = cancAsync(function* () {
     yield* cancAwait(getUnion());
   } catch (e) {
     if (!isErrorOf(e, ErrorA)) throw e;
+    console.log(e.kind);
+  }
+});`,
+      // Early negated isErrorOf guard rethrow with cast to never
+      `import { isErrorOf } from '@cancjs/promise';
+import { cancAsync, cancAwait, cancThrow } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (!isErrorOf(e, ErrorA)) return (yield* cancThrow(e)) as never;
+    console.log(e.kind);
+  }
+});`,
+      // Early negated isErrorOf guard rethrow with throw e as Error
+      `import { isErrorOf } from '@cancjs/promise';
+import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (!isErrorOf(e, ErrorA)) throw e as Error;
     console.log(e.kind);
   }
 });`,
@@ -230,6 +321,15 @@ export const run = cancAsync(function* () {
       return yield* canc.throw(new WrappedError(e));
     }
     throw e;`),
+      // Conditional return where both arms throw leaves by throwing
+      nsCatch(`if (flag) return flag ? yield* canc.cancThrow(new WrappedError(e)) : yield* canc.cancThrow(e);
+    throw e;`),
+      // Nested conditional return where all arms throw leaves by throwing
+      nsCatch(`if (flag) return flag ? yield* canc.cancThrow(new WrappedError(e)) : (flag2 ? yield* canc.cancThrow(e) : yield* canc.cancThrow(e));
+    throw e;`),
+      // Return with cast to never leaves by throwing
+      nsCatch(`if (flag) return (yield* canc.cancThrow(new WrappedError(e))) as never;
+    throw e;`),
       // Wrapped cancThrow return before the fallback
       `import { cancAsync, cancAwait, cancThrow } from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
@@ -246,7 +346,8 @@ export const run = cancAsync(function* () {
   }
 });`,
       // Wrapped cancGen.throw return before the fallback
-      `import { cancGenAsync, cancGen } from '@cancjs/coroutine/gen';
+      `import { cancGenAsync } from '@cancjs/coroutine/gen';
+import * as cancGen from '@cancjs/coroutine/gen';
 import type CancelablePromise from '@cancjs/promise';
 class ErrorA extends Error { readonly kind = 'ErrorA'; }
 class WrappedError extends Error {}
@@ -271,6 +372,29 @@ export const run = cancGenAsync(function* () {
       default:
         throw e;
     }`),
+      // Discriminant switch on a cast binding handles every listed case without a default
+      switchKindBoth,
+      switchKindFallthrough,
+      // Discriminant switch on literal name properties handles every listed case
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly name = 'ErrorA' as const; }
+class ErrorB extends Error { readonly name = 'ErrorB' as const; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    switch ((e as ErrorA | ErrorB).name) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+      case 'ErrorB':
+        console.log(2);
+        break;
+    }
+  }
+});`,
       // Negated compare on an angle-bracket cast binding rethrows the rest
       unionCatch(`if ((<ErrorA>e).kind !== 'ErrorA') throw e;
     console.log('A');`),
@@ -301,6 +425,14 @@ export const run = cancGenAsync(function* () {
         `if (e instanceof ErrorB) {
       console.log('B');
     }`,
+      ),
+      // Inner catch keeps ErrorA with an early return and rethrows the rest
+      nestedCatch(
+        `if (inner instanceof ErrorA) {
+        return 1;
+      }
+      throw inner;`,
+        outerLogB,
       ),
       // Valid corpus twins
       codeValid14,
@@ -434,6 +566,32 @@ export const run = cancGenAsync(function* () {
       },
     ],
     invalid: [
+      // Discriminant switch missing a case drops the unmatched failure
+      {
+        code: switchKindOnlyA,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: switchKindOnlyA.replace('    }\n  }\n});', '    }\n    throw e;\n  }\n});'),
+              },
+            ],
+          },
+        ],
+      },
+      // Discriminant switch on an untyped binding cannot name the cases it handles
+      {
+        code: switchKindAny,
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', line: 13, column: 5, data: { names: 'ErrorA, ErrorB' } }],
+      },
       // Default import under a non-canonical local name resolves through the canc symbol
       {
         code: `import type CP from '@cancjs/promise';
@@ -736,6 +894,82 @@ export const run = cancAsync(function* () {
             data: { names: 'ErrorA', handled: 'ErrorB' },
             suggestions: [
               { messageId: 'noRethrow', data: { names: 'ErrorA', handled: 'ErrorB' }, output: withThrow(s3LogOnly) },
+            ],
+          },
+        ],
+      },
+      // Inner guard branch that rethrows still passes ErrorA to the outer catch
+      {
+        code: s3IfElseRethrow,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 18,
+            column: 5,
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorA', handled: 'ErrorB' },
+                output: withThrow(s3IfElseRethrow),
+              },
+            ],
+          },
+        ],
+      },
+      // Inner switch case that rethrows still passes ErrorA to the outer catch
+      {
+        code: s3SwitchRethrow,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 19,
+            column: 5,
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorA', handled: 'ErrorB' },
+                output: withThrow(s3SwitchRethrow),
+              },
+            ],
+          },
+        ],
+      },
+      // A later conditional rethrow can still pass the logged ErrorA to the outer catch
+      {
+        code: s3LaterConditionalRethrow,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 11,
+            column: 7,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: s3LaterConditionalRethrow.replace(
+                  'if (flag) throw inner;\n    }',
+                  'if (flag) throw inner;\n      throw inner;\n  }',
+                ),
+              },
+            ],
+          },
+          {
+            messageId: 'noRethrow',
+            line: 17,
+            column: 5,
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorA', handled: 'ErrorB' },
+                output: withThrow(s3LaterConditionalRethrow),
+              },
             ],
           },
         ],

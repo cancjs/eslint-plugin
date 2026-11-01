@@ -1,4 +1,4 @@
-// Source: lazy.md > Executor rules applied to lazy executors > Incorrect (block 1, async lazy executor)
+// Source: lazy.md > Executor rules applied to lazy executors > Incorrect (block 1)
 import CancelablePromise, {
   CancelError,
   isCancelError,

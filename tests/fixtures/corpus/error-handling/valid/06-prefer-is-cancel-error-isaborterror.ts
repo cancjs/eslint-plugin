@@ -1,4 +1,4 @@
-// Source: error-handling.md > canc/prefer-is-cancel-error > Correct (block 3, raw AbortSignal context)
+// Source: error-handling.md > canc/prefer-is-cancel-error > Correct (block 3)
 import CancelablePromise, {
   CancelError,
   isCancelError,

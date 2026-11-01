@@ -123,6 +123,82 @@ ${firstStatement}`,
 
 const inlineValid: ValidTestCase<Options>[] = [
   {
+    name: 'specific error guard returns, then unconditional rethrow covers cancel',
+    code: `${HEAD}
+class HttpError extends Error {}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof HttpError) {
+      toast(e);
+      return;
+    }
+    throw e;
+  }
+});`,
+  },
+  {
+    name: 'boundary in both branches covers every exit',
+    code: `${HEAD}
+declare const a: boolean;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (a) {
+      suppressErrors(e, CancelError);
+    } else {
+      suppressErrors(e, CancelError);
+    }
+  }
+});`,
+  },
+  {
+    name: 'instanceof CancelError guard rethrows before other statements',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof CancelError) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'await Promise.reject of the param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch(async (e) => {
+  if (isCancelError(e)) return await Promise.reject(e);
+  toast(e);
+});`,
+  },
+  {
+    name: 'conditional where both arms reject with the param',
+    code: `${HEAD}
+declare const x: boolean;
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  return x ? Promise.reject(e) : Promise.reject(e);
+});`,
+  },
+  {
+    name: 'globalThis.Promise.reject of the param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (isCancelError(e)) return globalThis.Promise.reject(e);
+  toast(e);
+});`,
+  },
+  {
+    name: 'Promise.reject with a cast param on the cancel branch',
+    code: `${HEAD}
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  if (isCancelError(e)) return Promise.reject(e as Error);
+  toast(e);
+});`,
+  },
+  {
     name: 'rejection callback returning Promise.reject of the param on the cancel branch',
     code: `${HEAD}
 new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
@@ -312,6 +388,35 @@ cancAsync(function* () {
     options: [{ allowLogAndReturn: true }],
   },
   {
+    name: 'allowLogAndReturn accepts a guard that returns before log',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isCancelError(e)) return 1;
+    console.error(e);
+  }
+});`,
+    options: [{ allowLogAndReturn: true }],
+  },
+  {
+    name: 'allowLogAndReturn accepts a guard that logs and returns',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isCancelError(e)) {
+      console.log('canceled');
+      return;
+    }
+    console.error(e);
+  }
+});`,
+    options: [{ allowLogAndReturn: true }],
+  },
+  {
     name: 'allowEmptyCatch accepts an empty catch',
     code: `${HEAD}
 cancAsync(function* () {
@@ -389,7 +494,46 @@ cancAsync(function* () {
   }
 });`;
 
+const boundaryOneBranch = `${HEAD}
+declare const rare: boolean;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (rare) {
+      suppressErrors(e, CancelError);
+    }
+    toast(e);
+    return 1;
+  }
+});`;
+
 const inlineInvalid: InvalidTestCase<MessageIds, Options>[] = [
+  {
+    name: 'exit before guard leaves cancel swallowed',
+    code: `${HEAD}
+declare const x: boolean;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (x) return 1;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel' }],
+  },
+  {
+    name: 'boundary in only one branch leaves other branch unguarded',
+    code: boundaryOneBranch,
+    errors: [
+      {
+        messageId: 'swallowedCancel',
+        suggestions: suggested(boundaryOneBranch, '    if (rare) {'),
+      },
+    ],
+  },
   {
     name: 'Promise.reject of a new error on the cancel branch still swallows',
     code: `${HEAD}

@@ -128,6 +128,12 @@ describe('no-failure-widening (typed lane)', () => {
        class ErrorA extends Error {}
        declare const p: CancelablePromise<string, ErrorA>;
        export const c = p as CancelablePromise<string, ErrorA> | string;`,
+      // Target union with a non-callable then branch does not treat it as thenable (silent)
+      `import type CancelablePromise from '@cancjs/promise';
+       class E1 extends Error {}
+       class E2 extends Error {}
+       declare const r: CancelablePromise<string, E1 | E2>;
+       export const res = r as CancelablePromise<string, E1 | E2> | { then: number };`,
       `import type { CancelablePromise } from '@cancjs/promise';
        class ErrorA extends Error {}
        declare const p: CancelablePromise<string, ErrorA>;
@@ -228,6 +234,16 @@ export const widened: CP<string, ErrorA> = p as any;`,
             data: { position: 'cast' },
           },
         ],
+      },
+
+      // Marker in intersection keeps members beside it (dropping E1 reports widening)
+      {
+        code: `import type CancelablePromise from '@cancjs/promise';
+class E1 extends Error {}
+declare const r: CancelablePromise<string, E1 & { readonly _cancUnlisted: true }>;
+export const res = r as CancelablePromise<string, never>;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'cast' } }],
       },
 
       // 4. Cast with withFailure in scope produces suggestion

@@ -1,4 +1,4 @@
-// Source: hygiene.md > canc/prefer-signal-over-controller > Incorrect (block 2, controller forwarded downstream)
+// Source: hygiene.md > canc/prefer-signal-over-controller > Incorrect (block 2)
 import CancelablePromise, {
   CancelError,
   isCancelError,

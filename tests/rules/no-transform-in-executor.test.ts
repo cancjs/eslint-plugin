@@ -134,6 +134,13 @@ new CancelablePromise((resolve, reject) => {
 });`,
     },
     {
+      name: 'resolve with a sparse array and cast in a then callback is valid',
+      code: `${IMPORT}
+new CancelablePromise((resolve, reject) => {
+  op().then(() => resolve([1, , 2] as never), reject);
+});`,
+    },
+    {
       name: 'untracked constructor is ignored',
       code: `new Promise((resolve, reject) => {
   fetchItems().then((data) => resolve(data.map(format)), reject);

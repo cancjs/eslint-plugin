@@ -31,10 +31,10 @@ import {
 interface Session {
   id: string;
 }
-declare function connectAnalytics(): Promise<Session>;
+declare function connectAnalytics(signal: AbortSignal): Promise<Session>;
 
-const session = new LazyPromise<Session>((resolve, reject) => {
-  connectAnalytics().then(resolve, reject);
+const session = new LazyPromise<Session>((resolve, reject, { signal }) => {
+  connectAnalytics(signal).then(resolve, reject);
 });
 
 // Consumed later; executor runs on first await.

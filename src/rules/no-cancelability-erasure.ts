@@ -5,9 +5,11 @@ import { AST_NODE_TYPES, TSESLint as ESLintScope } from '@typescript-eslint/util
 import { getAdoptedOperand, getAdoptionForm, isGlobalPromiseIdent } from '../util/adoption.js';
 import {
   getCancServices,
+  isCallbackPlainPromiseReturnSink,
   isCancDeclaredCallee,
   isCancelableExpression,
   isLazyExpression,
+  isPlainPromiseArrayAnnotation,
   isPlainPromiseContextualSink,
   isPlainPromiseReturnSink,
   sinkMatchesSomeSpecifier,
@@ -219,16 +221,54 @@ export default createRule<[Options], MessageIds>({
       }
     }
 
+    // a map callback whose result initializes a variable annotated as a plain promise array
+    function isMapIntoPlainArray(fn: TSESTree.FunctionLike): boolean {
+      const call = fn.parent;
+      if (
+        !checkWidening ||
+        call.type !== AST_NODE_TYPES.CallExpression ||
+        call.arguments[0] !== fn ||
+        call.callee.type !== AST_NODE_TYPES.MemberExpression ||
+        call.callee.computed ||
+        call.callee.property.type !== AST_NODE_TYPES.Identifier ||
+        call.callee.property.name !== 'map'
+      ) {
+        return false;
+      }
+      const declarator = call.parent;
+      return (
+        declarator.type === AST_NODE_TYPES.VariableDeclarator &&
+        declarator.init === call &&
+        isPlainPromiseArrayAnnotation(declarator, context)
+      );
+    }
+
+    // un-annotated callbacks: a concrete callee parameter or a map into a plain array
+    function callbackMessageId(fn: TSESTree.FunctionLike): MessageIds | null {
+      if (fn.async) {
+        return null;
+      }
+      if (isCallbackPlainPromiseReturnSink(fn, context)) {
+        return 'erasedReturn';
+      }
+      return isMapIntoPlainArray(fn) ? 'erasedAssignment' : null;
+    }
+
     function checkReturn(fn: TSESTree.FunctionLike, source: TSESTree.Expression): void {
-      // callbacks get their return type from the callee, which already adopts what they return
-      if (!fn.returnType && isCallLike(fn.parent) && fn.parent.arguments.includes(fn as TSESTree.Expression)) {
-        return;
-      }
+      const isCallback =
+        !fn.returnType && isCallLike(fn.parent) && fn.parent.arguments.includes(fn as TSESTree.Expression);
       const operand = erasedOperand(source);
-      if (!operand || sinkMatchesSomeSpecifier(source, safeSinks, context)) {
+      if (!operand || sinkMatchesSomeSpecifier(source, safeSinks, context) || !isCancelableOperand(operand)) {
         return;
       }
-      if (isCancelableOperand(operand) && isPlainPromiseReturnSink(fn, context)) {
+      if (isCallback) {
+        const messageId = callbackMessageId(fn);
+        if (messageId) {
+          context.report({ node: source, messageId });
+        }
+        return;
+      }
+      if (fn.async || isPlainPromiseReturnSink(fn, context)) {
         context.report({ node: source, messageId: fn.async ? 'erasedReturnAsync' : 'erasedReturn' });
       }
     }

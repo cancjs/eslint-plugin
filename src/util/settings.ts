@@ -94,3 +94,20 @@ export function getCancSettings(context: TSESLint.RuleContext<string, readonly u
       : DEFAULT_SETTINGS.boundaryFunctions,
   };
 }
+
+const nominalSettingsCache = new WeakMap<ResolvedCancSettings, ResolvedCancSettings>();
+
+export function nominalSettings(settings: ResolvedCancSettings): ResolvedCancSettings {
+  if (!settings.structuralDetection) {
+    return settings;
+  }
+  let cached = nominalSettingsCache.get(settings);
+  if (!cached) {
+    cached = {
+      ...settings,
+      structuralDetection: false,
+    };
+    nominalSettingsCache.set(settings, cached);
+  }
+  return cached;
+}

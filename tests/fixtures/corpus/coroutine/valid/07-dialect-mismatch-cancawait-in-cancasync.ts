@@ -1,4 +1,4 @@
-// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Correct (block 2, cancAwait in cancAsync)
+// Source: coroutine.md > canc/no-coroutine-dialect-mismatch > Correct (block 2)
 import CancelablePromise, {
   CancelError,
   isCancelError,

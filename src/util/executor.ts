@@ -422,7 +422,7 @@ export function isLiteralOnly(node: TSESTree.Node): boolean {
       return inner.operator !== 'delete' && isLiteralOnly(inner.argument);
     case AST_NODE_TYPES.ArrayExpression:
       return inner.elements.every(
-        (element) => element !== null && element.type !== AST_NODE_TYPES.SpreadElement && isLiteralOnly(element),
+        (element) => element === null || (element.type !== AST_NODE_TYPES.SpreadElement && isLiteralOnly(element)),
       );
     case AST_NODE_TYPES.ObjectExpression:
       return inner.properties.every(
@@ -737,11 +737,15 @@ export function analyzeExecutor(node: TSESTree.NewExpression, context: Context):
     }
     if (isResolveCall(inner, resolveName)) {
       const arg = inner.arguments.length > 0 ? inner.arguments[0] : undefined;
-      if (arg?.type === AST_NODE_TYPES.CallExpression) {
-        addOperation(arg);
+      const innerArg = arg ? unwrapTypeOnly(arg) : undefined;
+      if (innerArg?.type === AST_NODE_TYPES.CallExpression) {
+        addOperation(innerArg);
       }
-      if (arg?.type === AST_NODE_TYPES.AwaitExpression && arg.argument.type === AST_NODE_TYPES.CallExpression) {
-        addOperation(arg.argument);
+      if (
+        innerArg?.type === AST_NODE_TYPES.AwaitExpression &&
+        innerArg.argument.type === AST_NODE_TYPES.CallExpression
+      ) {
+        addOperation(innerArg.argument);
       }
       if (argIsTransform(arg)) {
         transformsBeforeResolve = true;

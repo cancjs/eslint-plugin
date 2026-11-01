@@ -381,13 +381,13 @@ export function isPlainPromiseSinkExpression(
 export function isCancelableOrLazyExpression(
   node: TSESTree.Node,
   context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings = getCancSettings(context),
 ): boolean {
   const services = getCancServices(context);
   if (!services?.program) {
     return false;
   }
   const checker = services.program.getTypeChecker();
-  const settings = getCancSettings(context);
   const type = services.getTypeAtLocation(node);
   if (isCancelableType(type, checker, settings, context) || isLazyType(type, checker, settings, context)) {
     return true;
@@ -517,13 +517,13 @@ export function hasTypeServices(context: TSESLint.RuleContext<string, readonly u
 export function isCancelablePattern(
   pattern: TSESTree.Node,
   context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings = getCancSettings(context),
 ): boolean {
   const services = getCancServices(context);
   if (!services?.program) {
     return false;
   }
   const checker = services.program.getTypeChecker();
-  const settings = getCancSettings(context);
   const type = services.getTypeAtLocation(pattern);
   return isCancelableType(type, checker, settings, context);
 }
@@ -566,10 +566,13 @@ export function isThenableExpression(
   }
   const checker = services.program.getTypeChecker();
   const type = services.getTypeAtLocation(node);
+  if (isTypeAnyType(type) || isTypeUnknownType(type)) {
+    return true;
+  }
   return isThenableType(type, checker);
 }
 
-const NON_PRIMITIVE_INTRINSICS = new Set(['any', 'unknown', 'never', 'object', 'error']);
+const NON_PRIMITIVE_INTRINSICS = new Set(['any', 'unknown', 'never', 'object', 'error', 'void', 'undefined']);
 
 function isPrimitiveType(type: ts.Type): boolean {
   if (type.isUnion()) {
@@ -582,7 +585,7 @@ function isPrimitiveType(type: ts.Type): boolean {
 }
 
 /**
- * True when the static type of `node` is a primitive (boolean, string, number, bigint, symbol, void, null, undefined
+ * True when the static type of `node` is a primitive (boolean, string, number, bigint, symbol, null
  * or a literal of one), so the value cannot carry an object such as a signal. False without type information.
  */
 export function isPrimitiveExpression(
@@ -602,13 +605,13 @@ export function isPrimitiveExpression(
 export function isCancelableReturnFunction(
   fnNode: TSESTree.Node,
   context: TSESLint.RuleContext<string, readonly unknown[]>,
+  settings: ResolvedCancSettings = getCancSettings(context),
 ): boolean {
   const services = getCancServices(context);
   if (!services?.program) {
     return false;
   }
   const checker = services.program.getTypeChecker();
-  const settings = getCancSettings(context);
 
   if (fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression && fnNode.body.type !== AST_NODE_TYPES.BlockStatement) {
     if (isCancelableExpression(fnNode.body, context, settings)) {
@@ -787,4 +790,76 @@ export function hasPlainPromiseMember(
   const checker = services.program.getTypeChecker();
   const settings = getCancSettings(context);
   return type.types.some((part) => typeIsPlainPromiseSink(part, checker, settings));
+}
+
+// Mirrors ts.SymbolFlags.TypeParameter, same reason as the alias flag above
+const SYMBOL_FLAG_TYPE_PARAMETER = 262144;
+
+function mentionsTypeParameter(node: ts.Node, checker: ts.TypeChecker): boolean {
+  const symbol = checker.getSymbolAtLocation(node);
+  if (symbol && symbol.flags & SYMBOL_FLAG_TYPE_PARAMETER) {
+    return true;
+  }
+  return Boolean(node.forEachChild((child) => mentionsTypeParameter(child, checker) || undefined));
+}
+
+/**
+ * True when an inline callback passed as a call or `new` argument lands in a parameter whose declared
+ * function type returns a plain promise sink. Only concrete parameter types count: the callee must not
+ * be overloaded (one declaration and one signature) and the parameter type must not mention a type
+ * parameter, since there the callback itself decides the type. False without type information.
+ */
+export function isCallbackPlainPromiseReturnSink(
+  fnNode: TSESTree.FunctionLike,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const call = fnNode.parent;
+  if (call.type !== AST_NODE_TYPES.CallExpression && call.type !== AST_NODE_TYPES.NewExpression) {
+    return false;
+  }
+  const index = call.arguments.indexOf(fnNode as TSESTree.Expression);
+  const services = getCancServices(context);
+  if (index < 0 || !services?.program) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const tsCall = services.esTreeNodeToTSNodeMap.get(call);
+  const calleeSymbol = checker.getSymbolAtLocation(tsCall.expression);
+  const calleeType = checker.getTypeAtLocation(tsCall.expression);
+  const calleeSignatures =
+    call.type === AST_NODE_TYPES.NewExpression ? calleeType.getConstructSignatures() : calleeType.getCallSignatures();
+  if (calleeSymbol?.declarations?.length !== 1 || calleeSignatures.length !== 1) {
+    return false;
+  }
+  const declaration = checker.getResolvedSignature(tsCall)?.getDeclaration();
+  if (!declaration || index >= declaration.parameters.length) {
+    return false;
+  }
+  const param = declaration.parameters[index];
+  if (!param.type || param.dotDotDotToken || mentionsTypeParameter(param.type, checker)) {
+    return false;
+  }
+  const settings = getCancSettings(context);
+  const callSignatures = checker.getTypeFromTypeNode(param.type).getCallSignatures();
+  return (
+    callSignatures.length > 0 &&
+    callSignatures.every((sig) => typeIsPlainPromiseSink(sig.getReturnType(), checker, settings))
+  );
+}
+
+/**
+ * True when `declarator` is annotated with an array or tuple type whose elements are plain promise
+ * sinks. False without type information.
+ */
+export function isPlainPromiseArrayAnnotation(
+  declarator: TSESTree.VariableDeclarator,
+  context: TSESLint.RuleContext<string, readonly unknown[]>,
+): boolean {
+  const services = getCancServices(context);
+  if (!services?.program || !declarator.id.typeAnnotation) {
+    return false;
+  }
+  const checker = services.program.getTypeChecker();
+  const elementType = services.getTypeAtLocation(declarator.id).getNumberIndexType();
+  return elementType !== undefined && typeIsPlainPromiseSink(elementType, checker, getCancSettings(context));
 }
