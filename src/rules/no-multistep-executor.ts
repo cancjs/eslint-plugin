@@ -106,7 +106,7 @@ function isResolveFirstArgument(call: TSESTree.CallExpression, resolveName: stri
   }
   let curr: TSESTree.Node = call;
   while (curr.parent) {
-    const parent = curr.parent;
+    const parent: TSESTree.Node = curr.parent;
     if (
       parent.type === AST_NODE_TYPES.TSAsExpression ||
       parent.type === AST_NODE_TYPES.TSTypeAssertion ||
