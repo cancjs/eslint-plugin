@@ -67,6 +67,28 @@ const q3OrCond = unionCatch(`if (e instanceof ErrorA || flag) {
 const q3NotOr = unionCatch(`if (!(e instanceof ErrorA || flag)) throw e;
     console.log('handled');`);
 
+const switchKindBoth = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+      case 'ErrorB':
+        console.log(2);
+        break;
+    }`);
+const switchKindOnlyA = unionCatch(`switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+    }`);
+const switchKindAny = unionCatch(`switch (e.kind) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+      case 'ErrorB':
+        console.log(2);
+        break;
+    }`).replace('catch (e)', 'catch (e: any)');
+
 function nsCatch(catchBody: string): string {
   return `import * as canc from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
@@ -304,6 +326,28 @@ export const run = cancGenAsync(function* () {
       default:
         throw e;
     }`),
+      // Discriminant switch on a cast binding handles every listed case without a default
+      switchKindBoth,
+      // Discriminant switch on literal name properties handles every listed case
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly name = 'ErrorA' as const; }
+class ErrorB extends Error { readonly name = 'ErrorB' as const; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    switch ((e as ErrorA | ErrorB).name) {
+      case 'ErrorA':
+        console.log(1);
+        break;
+      case 'ErrorB':
+        console.log(2);
+        break;
+    }
+  }
+});`,
       // Negated compare on an angle-bracket cast binding rethrows the rest
       unionCatch(`if ((<ErrorA>e).kind !== 'ErrorA') throw e;
     console.log('A');`),
@@ -475,6 +519,32 @@ export const run = cancGenAsync(function* () {
       },
     ],
     invalid: [
+      // Discriminant switch missing a case drops the unmatched failure
+      {
+        code: switchKindOnlyA,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: switchKindOnlyA.replace('    }\n  }\n});', '    }\n    throw e;\n  }\n});'),
+              },
+            ],
+          },
+        ],
+      },
+      // Discriminant switch on an untyped binding cannot name the cases it handles
+      {
+        code: switchKindAny,
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', line: 13, column: 5, data: { names: 'ErrorA, ErrorB' } }],
+      },
       // Default import under a non-canonical local name resolves through the canc symbol
       {
         code: `import type CP from '@cancjs/promise';
