@@ -133,6 +133,39 @@ const s3LogOnly = nestedCatch(
     }`,
 );
 
+const outerLogB = `if (e instanceof ErrorB) {
+      console.log('B');
+    }`;
+
+const s3IfElseRethrow = nestedCatch(
+  `if (inner instanceof ErrorA) {
+        console.log(inner);
+        throw inner;
+      } else {
+        throw inner;
+      }`,
+  outerLogB,
+);
+
+const s3SwitchRethrow = nestedCatch(
+  `switch (true) {
+        case inner instanceof ErrorA:
+          console.log(inner);
+          throw inner;
+        default:
+          throw inner;
+      }`,
+  outerLogB,
+);
+
+const s3LaterConditionalRethrow = nestedCatch(
+  `if (inner instanceof ErrorA) {
+        console.log(inner);
+      }
+      if (flag) throw inner;`,
+  outerLogB,
+).replace('export const run', 'declare const flag: boolean;\nexport const run');
+
 const typedTester = ruleTester({ types: true });
 const untypedTester = ruleTester({ types: false });
 
@@ -301,6 +334,14 @@ export const run = cancGenAsync(function* () {
         `if (e instanceof ErrorB) {
       console.log('B');
     }`,
+      ),
+      // Inner catch keeps ErrorA with an early return and rethrows the rest
+      nestedCatch(
+        `if (inner instanceof ErrorA) {
+        return 1;
+      }
+      throw inner;`,
+        outerLogB,
       ),
       // Valid corpus twins
       codeValid14,
@@ -736,6 +777,82 @@ export const run = cancAsync(function* () {
             data: { names: 'ErrorA', handled: 'ErrorB' },
             suggestions: [
               { messageId: 'noRethrow', data: { names: 'ErrorA', handled: 'ErrorB' }, output: withThrow(s3LogOnly) },
+            ],
+          },
+        ],
+      },
+      // Inner guard branch that rethrows still passes ErrorA to the outer catch
+      {
+        code: s3IfElseRethrow,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 18,
+            column: 5,
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorA', handled: 'ErrorB' },
+                output: withThrow(s3IfElseRethrow),
+              },
+            ],
+          },
+        ],
+      },
+      // Inner switch case that rethrows still passes ErrorA to the outer catch
+      {
+        code: s3SwitchRethrow,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 19,
+            column: 5,
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorA', handled: 'ErrorB' },
+                output: withThrow(s3SwitchRethrow),
+              },
+            ],
+          },
+        ],
+      },
+      // A later conditional rethrow can still pass the logged ErrorA to the outer catch
+      {
+        code: s3LaterConditionalRethrow,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 11,
+            column: 7,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: s3LaterConditionalRethrow.replace(
+                  'if (flag) throw inner;\n    }',
+                  'if (flag) throw inner;\n      throw inner;\n  }',
+                ),
+              },
+            ],
+          },
+          {
+            messageId: 'noRethrow',
+            line: 17,
+            column: 5,
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorA', handled: 'ErrorB' },
+                output: withThrow(s3LaterConditionalRethrow),
+              },
             ],
           },
         ],
