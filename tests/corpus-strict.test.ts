@@ -80,10 +80,7 @@ const TYPED_RULES = new Set([
 ]);
 
 function namesOnlyIdleRules(ruleIds: string[], typed: boolean): boolean {
-  return (
-    ruleIds.length > 0 &&
-    ruleIds.every((id) => !enabledRuleIds.has(id) || (!typed && TYPED_RULES.has(id)))
-  );
+  return ruleIds.length > 0 && ruleIds.every((id) => !enabledRuleIds.has(id) || (!typed && TYPED_RULES.has(id)));
 }
 
 function isForwardReferencedDisableComment(message: string, typed: boolean): boolean {
@@ -91,7 +88,13 @@ function isForwardReferencedDisableComment(message: string, typed: boolean): boo
     return true;
   }
   const unused = /^Unused eslint-disable directive \(no problems were reported from ([^)]+)\)\.$/.exec(message);
-  return unused !== null && namesOnlyIdleRules([...unused[1].matchAll(/'([^']+)'/g)].map((m) => m[1]), typed);
+  return (
+    unused !== null &&
+    namesOnlyIdleRules(
+      [...unused[1].matchAll(/'([^']+)'/g)].map((m) => m[1]),
+      typed,
+    )
+  );
 }
 
 interface Diagnostic {
@@ -132,9 +135,7 @@ function verifyDiagnosticsAgainstAllowlist(diagnostics: Diagnostic[]): void {
   const unexpected: Diagnostic[] = [];
 
   for (const d of diagnostics) {
-    const matchIndex = STRICT_ALLOWLIST.findIndex(
-      (entry) => entry.file === d.file && entry.ruleId === d.ruleId,
-    );
+    const matchIndex = STRICT_ALLOWLIST.findIndex((entry) => entry.file === d.file && entry.ruleId === d.ruleId);
     if (matchIndex === -1) {
       unexpected.push(d);
     } else {
