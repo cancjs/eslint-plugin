@@ -1,12 +1,14 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseAndGenerateServices } from '@typescript-eslint/typescript-estree';
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import ts from 'typescript';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  collectHandledCatchTypes,
   getFailureMembers,
   getProgramFailureSymbols,
   isCancelErrorCtorNode,
@@ -387,6 +389,121 @@ export declare function typed(): CancelablePromise<void, ProbeError>;
 
       expect(isUnlistedMarker(unlisted, checker)).toBe(true);
       expect(isUnlistedMarker(plain, checker)).toBe(false);
+    });
+  });
+
+  describe('collectHandledCatchTypes discriminant switch', () => {
+    function handledNames(catchBody: string, errorClasses: string, catchParam = 'e'): string[] {
+      const code = `${errorClasses}
+export function probe(): void {
+  try {
+    throw new Error('x');
+  } catch (${catchParam}) {
+    ${catchBody}
+  }
+}
+`;
+      const { program: probeProgram, dir } = createVirtualProgram({ 'switch-probe.ts': code });
+      const filePath = path.resolve(dir, 'src', 'switch-probe.ts');
+      const { ast, services } = parseAndGenerateServices(code, {
+        filePath,
+        programs: [probeProgram],
+        range: true,
+        loc: true,
+      });
+      let handler: TSESTree.CatchClause | undefined;
+      const fn = ast.body.find((n) => n.type === AST_NODE_TYPES.ExportNamedDeclaration);
+      const decl = fn?.type === AST_NODE_TYPES.ExportNamedDeclaration ? fn.declaration : null;
+      if (decl?.type === AST_NODE_TYPES.FunctionDeclaration) {
+        const tryStmt = decl.body.body[0];
+        if (tryStmt.type === AST_NODE_TYPES.TryStatement) {
+          handler = tryStmt.handler ?? undefined;
+        }
+      }
+      if (!handler) {
+        throw new Error('probe has no catch clause');
+      }
+      const context = {
+        sourceCode: { ast, parserServices: services },
+        settings: {},
+      } as unknown as TSESLint.RuleContext<string, readonly unknown[]>;
+      const types = collectHandledCatchTypes(handler.body, 'e', context);
+      return types.map((t) => t.getSymbol()?.name ?? '?');
+    }
+
+    const kindClasses = `class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }`;
+
+    it('counts each case whose literal matches a kind property of the cast union', () => {
+      const names = handledNames(
+        `switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorA':
+        break;
+      case 'ErrorB':
+        break;
+    }`,
+        kindClasses,
+      );
+      expect(names).toEqual(['ErrorA', 'ErrorB']);
+    });
+
+    it('counts only the constituents a case names', () => {
+      const names = handledNames(
+        `switch ((e as ErrorA | ErrorB).kind) {
+      case 'ErrorB':
+        break;
+      case 'Other':
+        break;
+    }`,
+        kindClasses,
+      );
+      expect(names).toEqual(['ErrorB']);
+    });
+
+    it('reads a literal name property', () => {
+      const names = handledNames(
+        `switch ((e as ErrorA | ErrorB).name) {
+      case 'ErrorA':
+        break;
+    }`,
+        `class ErrorA extends Error { readonly name = 'ErrorA' as const; }
+class ErrorB extends Error { readonly name = 'ErrorB' as const; }`,
+      );
+      expect(names).toEqual(['ErrorA']);
+    });
+
+    it('does not match case literals against class names without a literal property', () => {
+      const names = handledNames(
+        `switch ((e as ErrorA | ErrorB).name) {
+      case 'ErrorA':
+        break;
+    }`,
+        `class ErrorA extends Error {}
+class ErrorB extends Error {}`,
+      );
+      expect(names).toEqual([]);
+    });
+
+    it('ignores an untyped binding and a computed member', () => {
+      expect(
+        handledNames(
+          `switch (e.kind) {
+      case 'ErrorA':
+        break;
+    }`,
+          kindClasses,
+          'e: any',
+        ),
+      ).toEqual([]);
+      expect(
+        handledNames(
+          `switch ((e as ErrorA | ErrorB)['kind']) {
+      case 'ErrorA':
+        break;
+    }`,
+          kindClasses,
+        ),
+      ).toEqual([]);
     });
   });
 

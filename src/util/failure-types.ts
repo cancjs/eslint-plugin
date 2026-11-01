@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { refersTo } from './canc-imports.js';
 import { getCancServices, isCancelableType, isLazyType, symbolDeclaredInCancSource } from './canc-types.js';
 import { type CompiledMatchers, matchesName, matchesType } from './class-matcher.js';
+import { unwrapTypeOnly } from './executor.js';
 import { getCancSettings, nominalSettings, type ResolvedCancSettings } from './settings.js';
 
 type Context = TSESLint.RuleContext<string, readonly unknown[]>;
@@ -643,6 +644,54 @@ export function formatTypeNames(types: ts.Type[], checker: ts.TypeChecker): stri
     .join(', ');
 }
 
+const DISCRIMINANT_PROPERTIES = new Set(['kind', 'name']);
+
+/**
+ * Constituents of the binding's type that a `switch` on its `kind` or `name` names in a case: the property must
+ * have a string literal type equal to a case test.
+ */
+function switchCaseTypes(
+  node: TSESTree.SwitchStatement,
+  bindingName: string,
+  checker: ts.TypeChecker,
+  nodeMap: NodeMap,
+): ts.Type[] {
+  const discriminant = node.discriminant;
+  if (
+    discriminant.type !== AST_NODE_TYPES.MemberExpression ||
+    discriminant.computed ||
+    discriminant.property.type !== AST_NODE_TYPES.Identifier ||
+    !DISCRIMINANT_PROPERTIES.has(discriminant.property.name)
+  ) {
+    return [];
+  }
+  const object = unwrapTypeOnly(discriminant.object);
+  if (object.type !== AST_NODE_TYPES.Identifier || object.name !== bindingName) {
+    return [];
+  }
+  const tsObject = tsNodeFor(nodeMap, discriminant.object);
+  if (!tsObject) {
+    return [];
+  }
+  const labels = new Set<string>();
+  for (const c of node.cases) {
+    if (c.test?.type === AST_NODE_TYPES.Literal && typeof c.test.value === 'string') {
+      labels.add(c.test.value);
+    }
+  }
+  const objectType = checker.getTypeAtLocation(tsObject);
+  const constituents = objectType.isUnion() ? objectType.types : [objectType];
+  const propertyName = discriminant.property.name;
+  return constituents.filter((member) => {
+    const prop = member.getProperty(propertyName);
+    if (!prop) {
+      return false;
+    }
+    const propType = checker.getTypeOfSymbolAtLocation(prop, tsObject);
+    return propType.isStringLiteral() && labels.has(propType.value);
+  });
+}
+
 export function collectHandledCatchTypes(
   catchBody: TSESTree.BlockStatement,
   bindingName: string,
@@ -666,7 +715,9 @@ export function collectHandledCatchTypes(
       return;
     }
 
-    if (node.type === AST_NODE_TYPES.BinaryExpression && node.operator === 'instanceof') {
+    if (node.type === AST_NODE_TYPES.SwitchStatement) {
+      handled.push(...switchCaseTypes(node, bindingName, checker, nodeMap));
+    } else if (node.type === AST_NODE_TYPES.BinaryExpression && node.operator === 'instanceof') {
       if (node.left.type === AST_NODE_TYPES.Identifier && node.left.name === bindingName) {
         const tsRight = tsNodeFor(nodeMap, node.right);
         if (tsRight) {
