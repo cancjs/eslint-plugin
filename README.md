@@ -116,6 +116,10 @@ Packages that use the native-twin builds import from `@cancjs/eslint-plugin/nati
 
 Rules that check coroutine helpers accept options that add your own factory functions or replace the built-in ones. The options are described on the rule pages, for example [exhaustive-catch](https://github.com/cancjs/eslint-plugin/blob/master/docs/rules/exhaustive-catch.md). The full list of rules follows.
 
+## Guidelines
+
+Plugin rules target user domain code (including `examples/` and application packages), not `@cancjs/*` core package internals (which use explicit `/* eslint-disable */` comments where implementing interop primitives like toolbox `createAbortSignal`).
+
 ## Rules
 
 <!-- begin auto-generated rules list -->
