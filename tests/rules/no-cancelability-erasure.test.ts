@@ -212,6 +212,31 @@ async function f() {
 [1].map(async () => load());`,
   },
   {
+    name: 'callback into a generic parameter takes its type from the callback',
+    code: `${HEAD}
+declare function lib<T>(f: () => T): void;
+lib(() => load());`,
+  },
+  {
+    name: 'callback into an overloaded callee is not checked',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+declare function lib(f: () => CancelablePromise<number>): void;
+lib(() => load());`,
+  },
+  {
+    name: 'callback with its own cancelable return type keeps the capability',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+lib((): CancelablePromise<number> => load());`,
+  },
+  {
+    name: 'async callback into a plain promise parameter is not checked',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+lib(async () => load());`,
+  },
+  {
     name: 'floating statement is not a sink of this rule',
     code: `${HEAD}
 load();`,
@@ -357,6 +382,20 @@ pending = load();`,
     code: `${HEAD}
 const all: Promise<number>[] = [load()];`,
     errors: [{ messageId: 'erasedAssignment', line: 4, column: 33 }],
+  },
+  {
+    name: 'callback return into a parameter typed with a plain promise return',
+    code: `${HEAD}
+declare function lib(f: () => Promise<number>): void;
+lib(() => load());`,
+    errors: [{ messageId: 'erasedReturn', line: 5, column: 11 }],
+  },
+  {
+    name: 'map callback return into an annotated plain promise array',
+    code: `${HEAD}
+declare const xs: number[];
+export const r: Promise<number>[] = xs.map(() => load());`,
+    errors: [{ messageId: 'erasedAssignment', line: 5, column: 50 }],
   },
   {
     name: 'PromiseLike parameter is a sink too',
