@@ -12,6 +12,7 @@ import {
   resolveFactories,
 } from '../util/coroutine-factories.js';
 import createRule from '../util/create-rule.js';
+import { unwrapTypeOnly } from '../util/executor.js';
 import { analyzeCatchSteps, type CatchStep, isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
 import { collectHandledCatchTypes } from '../util/failure-types.js';
 
@@ -101,7 +102,7 @@ function innerHandledTypes(handler: TSESTree.CatchClause, context: Context): ts.
       endsWithExit(stmt.consequent)
     ) {
       // the collector walks any node; only the guard test names the kept types
-      handled.push(...collectHandledCatchTypes(stmt.test as unknown as TSESTree.BlockStatement, bindingName, context));
+      handled.push(...collectHandledCatchTypes(stmt.test, bindingName, context));
     }
   }
   return handled;
@@ -128,7 +129,7 @@ function keptGuardTypes(body: TSESTree.Statement[], bindingName: string, context
         (!laterRethrow || (last !== undefined && exits(last)))
       ) {
         // the collector walks any node; only the guard test names the kept types
-        handled.push(...collectHandledCatchTypes(test as unknown as TSESTree.BlockStatement, bindingName, context));
+        handled.push(...collectHandledCatchTypes(test, bindingName, context));
       }
     };
     if (
@@ -139,7 +140,7 @@ function keptGuardTypes(body: TSESTree.Statement[], bindingName: string, context
       subtreeRethrows(stmt.consequent, bindingName, context)
     ) {
       // `if (!guard) throw e;` keeps what the guard matches once nothing after it rethrows
-      handled.push(...collectHandledCatchTypes(stmt.test as unknown as TSESTree.BlockStatement, bindingName, context));
+      handled.push(...collectHandledCatchTypes(stmt.test, bindingName, context));
     } else if (stmt.type === AST_NODE_TYPES.IfStatement) {
       let branch: TSESTree.Statement | null = stmt;
       while (branch?.type === AST_NODE_TYPES.IfStatement) {
@@ -256,7 +257,8 @@ function collectYieldStepsInTry(
 
 function isRethrowStatement(stmt: TSESTree.Statement, bindingName: string, context: Context): boolean {
   if (stmt.type === AST_NODE_TYPES.ThrowStatement && stmt.argument) {
-    if (stmt.argument.type === AST_NODE_TYPES.Identifier && stmt.argument.name === bindingName) {
+    const arg = unwrapTypeOnly(stmt.argument);
+    if (arg.type === AST_NODE_TYPES.Identifier && arg.name === bindingName) {
       return true;
     }
   }
@@ -266,8 +268,9 @@ function isRethrowStatement(stmt: TSESTree.Statement, bindingName: string, conte
     : stmt.type === AST_NODE_TYPES.ReturnStatement ? stmt.argument
     : null;
 
-  const call = expr ? cancThrowCall(expr, context) : null;
-  const arg0 = call?.arguments[0];
+  const unwrapped = expr ? (unwrapTypeOnly(expr) as TSESTree.Expression) : null;
+  const call = unwrapped ? cancThrowCall(unwrapped, context) : null;
+  const arg0 = call?.arguments[0] ? unwrapTypeOnly(call.arguments[0]) : null;
   return arg0?.type === AST_NODE_TYPES.Identifier && arg0.name === bindingName;
 }
 
@@ -356,20 +359,6 @@ function isNegatedGuardRethrow(stmt: TSESTree.IfStatement, bindingName: string, 
   return isNegatedGuard(stmt.test, bindingName, context) && containsRethrow(stmt.consequent, bindingName, context);
 }
 
-/** Strips `as T`, `<T>`, `!` and `satisfies T` so a cast binding still reads as the binding. */
-function unwrapTypeOnly(expr: TSESTree.Expression): TSESTree.Expression {
-  let curr = expr;
-  while (
-    curr.type === AST_NODE_TYPES.TSAsExpression ||
-    curr.type === AST_NODE_TYPES.TSTypeAssertion ||
-    curr.type === AST_NODE_TYPES.TSNonNullExpression ||
-    curr.type === AST_NODE_TYPES.TSSatisfiesExpression
-  ) {
-    curr = curr.expression;
-  }
-  return curr;
-}
-
 function isBindingMember(expr: TSESTree.Node, bindingName: string): boolean {
   if (expr.type !== AST_NODE_TYPES.MemberExpression) {
     return false;
@@ -408,6 +397,17 @@ const LOOP_OR_SWITCH = new Set<string>([
   AST_NODE_TYPES.DoWhileStatement,
 ]);
 
+function isThrowingExpr(expr: TSESTree.Node, context: Context): boolean {
+  const unwrapped = unwrapTypeOnly(expr);
+  if (cancThrowCall(unwrapped as TSESTree.Expression, context) !== null) {
+    return true;
+  }
+  if (unwrapped.type === AST_NODE_TYPES.ConditionalExpression) {
+    return isThrowingExpr(unwrapped.consequent, context) && isThrowingExpr(unwrapped.alternate, context);
+  }
+  return false;
+}
+
 /** Whether the node can leave the catch body (return, or break/continue past it) without rethrowing. */
 function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Context, nested: boolean): boolean {
   if (isFunctionNode(node)) {
@@ -415,7 +415,7 @@ function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Co
   }
   if (node.type === AST_NODE_TYPES.ReturnStatement) {
     // `return yield* canc.throw(new Wrapped(e))` leaves by throwing, not by swallowing
-    return !node.argument || cancThrowCall(node.argument, context) === null;
+    return !node.argument || !isThrowingExpr(node.argument, context);
   }
   if (node.type === AST_NODE_TYPES.BreakStatement || node.type === AST_NODE_TYPES.ContinueStatement) {
     return node.label !== null || !nested;

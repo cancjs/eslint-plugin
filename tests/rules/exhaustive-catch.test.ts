@@ -225,6 +225,36 @@ export const run = cancAsync(function* () {
     console.log(e.kind);
   }
 });`,
+      // Early negated isErrorOf guard rethrow with cast to never
+      `import { isErrorOf } from '@cancjs/promise';
+import { cancAsync, cancAwait, cancThrow } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (!isErrorOf(e, ErrorA)) return (yield* cancThrow(e)) as never;
+    console.log(e.kind);
+  }
+});`,
+      // Early negated isErrorOf guard rethrow with throw e as Error
+      `import { isErrorOf } from '@cancjs/promise';
+import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getUnion());
+  } catch (e) {
+    if (!isErrorOf(e, ErrorA)) throw e as Error;
+    console.log(e.kind);
+  }
+});`,
       // Switch default rethrows the rest
       `import { cancAsync, cancAwait } from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
@@ -285,6 +315,15 @@ export const run = cancAsync(function* () {
       return yield* canc.throw(new WrappedError(e));
     }
     throw e;`),
+      // Conditional return where both arms throw leaves by throwing
+      nsCatch(`if (flag) return flag ? yield* canc.cancThrow(new WrappedError(e)) : yield* canc.cancThrow(e);
+    throw e;`),
+      // Nested conditional return where all arms throw leaves by throwing
+      nsCatch(`if (flag) return flag ? yield* canc.cancThrow(new WrappedError(e)) : (flag2 ? yield* canc.cancThrow(e) : yield* canc.cancThrow(e));
+    throw e;`),
+      // Return with cast to never leaves by throwing
+      nsCatch(`if (flag) return (yield* canc.cancThrow(new WrappedError(e))) as never;
+    throw e;`),
       // Wrapped cancThrow return before the fallback
       `import { cancAsync, cancAwait, cancThrow } from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
@@ -301,7 +340,8 @@ export const run = cancAsync(function* () {
   }
 });`,
       // Wrapped cancGen.throw return before the fallback
-      `import { cancGenAsync, cancGen } from '@cancjs/coroutine/gen';
+      `import { cancGenAsync } from '@cancjs/coroutine/gen';
+import * as cancGen from '@cancjs/coroutine/gen';
 import type CancelablePromise from '@cancjs/promise';
 class ErrorA extends Error { readonly kind = 'ErrorA'; }
 class WrappedError extends Error {}

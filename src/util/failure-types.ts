@@ -692,11 +692,7 @@ function switchCaseTypes(
   });
 }
 
-export function collectHandledCatchTypes(
-  catchBody: TSESTree.BlockStatement,
-  bindingName: string,
-  context: Context,
-): ts.Type[] {
+export function collectHandledCatchTypes(root: TSESTree.Node, bindingName: string, context: Context): ts.Type[] {
   const services = getCancServices(context);
   if (!services?.program) {
     return [];
@@ -707,7 +703,7 @@ export function collectHandledCatchTypes(
 
   function visit(node: TSESTree.Node): void {
     if (
-      node !== catchBody &&
+      node !== root &&
       (node.type === AST_NODE_TYPES.FunctionDeclaration ||
         node.type === AST_NODE_TYPES.FunctionExpression ||
         node.type === AST_NODE_TYPES.ArrowFunctionExpression)
@@ -800,7 +796,7 @@ export function collectHandledCatchTypes(
     }
   }
 
-  visit(catchBody);
+  visit(root);
   return handled;
 }
 
