@@ -1,4 +1,4 @@
-// Packs the repository itself and installs the tarball into the ESLint 9 lane, then leaves the probe
+// Packs the repository itself and installs the tarball into the ESLint 9 lane.
 // scripts in tests/integration/lane9/tmp-pack so any Node version can run them without vitest.
 // Usage: node scripts/pack-install.mjs (run npm run build and npm run test:integration:setup first)
 import { execSync } from 'node:child_process';
