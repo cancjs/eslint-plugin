@@ -299,14 +299,15 @@ function exportedNameOf(id: TSESTree.Identifier, context: Context, source: strin
             }
             if (declarator.id.type === AST_NODE_TYPES.ObjectPattern) {
               for (const prop of declarator.id.properties) {
-                if (
-                  prop.type === AST_NODE_TYPES.Property &&
-                  prop.value.type === AST_NODE_TYPES.Identifier &&
-                  prop.value.name === id.name
-                ) {
+                if (prop.type !== AST_NODE_TYPES.Property) {
+                  continue;
+                }
+                const target = prop.value.type === AST_NODE_TYPES.AssignmentPattern ? prop.value.left : prop.value;
+                if (target.type === AST_NODE_TYPES.Identifier && target.name === id.name) {
                   return (
                     !prop.computed && prop.key.type === AST_NODE_TYPES.Identifier ? prop.key.name
-                    : prop.key.type === AST_NODE_TYPES.Literal && typeof prop.key.value === 'string' ? prop.key.value
+                    : !prop.computed && prop.key.type === AST_NODE_TYPES.Literal && typeof prop.key.value === 'string' ?
+                      prop.key.value
                     : undefined
                   );
                 }
