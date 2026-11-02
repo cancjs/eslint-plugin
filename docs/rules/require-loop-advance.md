@@ -18,8 +18,10 @@ Moving the advance statement to the very beginning of the loop body ensures that
 
 This rule flags:
 
-1. `for...of` loops over a single-argument `cancForAwait` call or handle variable that never advance the iterator.
+1. `for...of` loops over a single-argument `cancForAwait` call or handle variable that can finish an iteration without advancing (no advance statement, or an advance only inside a non-exhaustive `if` or `switch` path).
 2. `continue` statements that can execute before the iterator is advanced.
+
+An exhaustive `if` / `else` or `switch` with `default` where every non-exiting branch advances (or exits via `break`, `return`, or `throw`) is accepted.
 
 ### Incorrect
 
@@ -42,6 +44,20 @@ const processItems = cancAsync(function* (source: AsyncIterable<Item>) {
     if (item.skip) continue;
     yield* cancAwait(save(item));
     yield* loop.next();
+  }
+});
+```
+
+```ts
+import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
+
+const processItems = cancAsync(function* (source: AsyncIterable<Item>) {
+  const loop = yield* cancForAwait(source);
+  for (const item of loop) {
+    if (item.shouldAdvance) {
+      yield* loop.next();
+    }
+    yield* cancAwait(save(item));
   }
 });
 ```
