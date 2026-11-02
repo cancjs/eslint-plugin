@@ -44,7 +44,7 @@ class ErrorB extends Error { readonly kind = 'ErrorB'; }
 declare function getUnion(): CancelablePromise<string, ErrorA | ErrorB>;
 declare function log(e: unknown): boolean;
 declare const flag: boolean;
-declare const mode: string;
+declare const mode: string; declare const otherFlag: number;
 export const run = cancAsync(function* () {
   try {
     yield* cancAwait(getUnion());
@@ -610,6 +610,22 @@ export const run = cancAsync(function* () {
     }`),
         options: [{ requireUnlistedFallback: false }],
       },
+      // Guarded switch on error discriminant before trailing rethrow
+      unionCatch("switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; } throw e;"),
+      // Guarded switch(true) before trailing rethrow
+      unionCatch("switch (true) { case e instanceof ErrorA: return 'a'; } throw e;"),
+      // Open-set step reachable fallback for unlisted errors
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+declare function getOpen(): CancelablePromise<string, ErrorA | { readonly _cancUnlisted: true }>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getOpen());
+  } catch (e) {
+    switch ((e as ErrorA).kind) { case 'ErrorA': return 'a'; } throw e;
+  }
+});`,
     ],
     invalid: [
       // Discriminant switch missing a case drops the unmatched failure
@@ -1272,6 +1288,45 @@ cancAsync(function* () {
             messageId: 'unhandledFailure',
             line: 8,
             data: { names: 'ErrorA & { readonly meta: string; }' },
+          },
+        ],
+      },
+      // Guarded switch with default return swallows unhandled failure
+      {
+        code: unionCatch(
+          "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; default: return 'other'; } throw e;",
+        ),
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: withThrow(
+                  unionCatch(
+                    "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; default: return 'other'; } throw e;",
+                  ),
+                ),
+              },
+            ],
+          },
+        ],
+      },
+      // Unguarded switch before throw e can exit for any error
+      {
+        code: unionCatch("switch (otherFlag) { case 1: return 'a'; } throw e;"),
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorA, ErrorB' },
           },
         ],
       },

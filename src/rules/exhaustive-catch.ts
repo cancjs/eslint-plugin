@@ -433,6 +433,14 @@ function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Co
     // an exit under a guard leaves only for the errors the guard matches
     return node.alternate ? hasSwallowingExit(node.alternate, bindingName, context, nested) : false;
   }
+  if (node.type === AST_NODE_TYPES.SwitchStatement && hasGuardCases(node, bindingName, context)) {
+    const defaultCase = node.cases.find((c) => c.test === null);
+    if (!defaultCase) {
+      return false;
+    }
+    const defaultAt = node.cases.indexOf(defaultCase);
+    return fallThroughBody(node.cases.slice(defaultAt)).some((s) => hasSwallowingExit(s, bindingName, context, true));
+  }
   const childNested = nested || LOOP_OR_SWITCH.has(node.type);
   let found = false;
   forEachChild(node, (child) => {
