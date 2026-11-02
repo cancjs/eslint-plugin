@@ -208,6 +208,11 @@ const s3LaterConditionalRethrow = nestedCatch(
   outerLogB,
 ).replace('export const run', 'declare const flag: boolean;\nexport const run');
 
+const s3ConditionalRethrow = nestedCatch(
+  "if (inner instanceof ErrorA) { if (Math.random() > 0.5) throw inner; return 'a'; } throw inner;",
+  'if (e instanceof ErrorB) { console.log(e); }',
+);
+
 const typedTester = ruleTester({ types: true });
 const untypedTester = ruleTester({ types: false });
 
@@ -447,6 +452,16 @@ export const run = cancAsync(function* () {
       }
       throw inner;`,
         outerLogB,
+      ),
+      // Inner if and else if chain handles both errors before trailing rethrow
+      nestedCatch(
+        "if (inner instanceof ErrorA) { return 'a'; } else if (inner instanceof ErrorB) { return 'b'; } throw inner;",
+        'console.log(e);',
+      ),
+      // Inner switch handles both errors before trailing rethrow
+      nestedCatch(
+        "switch (true) { case inner instanceof ErrorA: return 'a'; case inner instanceof ErrorB: return 'b'; } throw inner;",
+        'console.log(e);',
       ),
       // Valid corpus twins
       codeValid14,
@@ -990,6 +1005,26 @@ export const run = cancAsync(function* () {
                 messageId: 'noRethrow',
                 data: { names: 'ErrorA', handled: 'ErrorB' },
                 output: withThrow(s3LaterConditionalRethrow),
+              },
+            ],
+          },
+        ],
+      },
+      // Inner guard branch with conditional rethrow passes ErrorA to outer catch
+      {
+        code: s3ConditionalRethrow,
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorA', handled: 'ErrorB' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorA', handled: 'ErrorB' },
+                output: withThrow(s3ConditionalRethrow),
               },
             ],
           },

@@ -93,29 +93,22 @@ function innerHandledTypes(handler: TSESTree.CatchClause, context: Context): ts.
   if (rethrowAt === -1) {
     return keptGuardTypes(body, bindingName, context);
   }
-  const handled: ts.Type[] = [];
-  for (const stmt of body.slice(0, rethrowAt)) {
-    if (
-      stmt.type === AST_NODE_TYPES.IfStatement &&
-      !stmt.alternate &&
-      isRecognizedGuard(stmt.test, bindingName, context) &&
-      endsWithExit(stmt.consequent)
-    ) {
-      // the collector walks any node; only the guard test names the kept types
-      handled.push(...collectHandledCatchTypes(stmt.test, bindingName, context));
-    }
-  }
-  return handled;
+  return keptGuardTypes(body.slice(0, rethrowAt), bindingName, context, true);
 }
 
 /**
  * Guard types of the branches that keep the binding: the branch never rethrows it, and either exits or no later
  * statement can rethrow it.
  */
-function keptGuardTypes(body: TSESTree.Statement[], bindingName: string, context: Context): ts.Type[] {
+function keptGuardTypes(
+  body: TSESTree.Statement[],
+  bindingName: string,
+  context: Context,
+  trailingRethrow = false,
+): ts.Type[] {
   const handled: ts.Type[] = [];
   body.forEach((stmt, i) => {
-    const laterRethrow = body.slice(i + 1).some((s) => subtreeRethrows(s, bindingName, context));
+    const laterRethrow = trailingRethrow || body.slice(i + 1).some((s) => subtreeRethrows(s, bindingName, context));
     const keep = (
       test: TSESTree.Expression,
       branch: TSESTree.Statement[],
