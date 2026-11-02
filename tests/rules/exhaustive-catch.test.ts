@@ -463,6 +463,16 @@ export const run = cancAsync(function* () {
         "switch (true) { case inner instanceof ErrorA: return 'a'; case inner instanceof ErrorB: return 'b'; } throw inner;",
         'console.log(e);',
       ),
+      // Inner discriminant switch handles both errors without rethrow
+      nestedCatch(
+        "switch ((inner as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; case 'ErrorB': return 'b'; }",
+        'console.log(e);',
+      ),
+      // Inner discriminant switch fall-through to return before trailing rethrow handles both
+      nestedCatch(
+        "switch ((inner as ErrorA | ErrorB).kind) { case 'ErrorA': case 'ErrorB': return 'ok'; } throw inner;",
+        'console.log(e);',
+      ),
       // Valid corpus twins
       codeValid14,
       codeValid15,
@@ -1054,6 +1064,24 @@ export const run = cancAsync(function* () {
             data: { names: 'ErrorA' },
           },
         ],
+      },
+      // Nested discriminant switch with fall-through to rethrow
+      {
+        code: nestedCatch(
+          "switch ((inner as ErrorA | ErrorB).kind) { case 'ErrorA': case 'ErrorB': throw inner; }",
+          'console.log(e);',
+        ),
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
+      },
+      // Nested switch(true) with fall-through to rethrow
+      {
+        code: nestedCatch(
+          'switch (true) { case inner instanceof ErrorA: case inner instanceof ErrorB: throw inner; }',
+          'console.log(e);',
+        ),
+        output: null,
+        errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
       },
     ],
   });

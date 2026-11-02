@@ -14,7 +14,7 @@ import {
 import createRule from '../util/create-rule.js';
 import { unwrapTypeOnly } from '../util/executor.js';
 import { analyzeCatchSteps, type CatchStep, isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
-import { collectHandledCatchTypes } from '../util/failure-types.js';
+import { collectHandledCatchTypes, collectHandledSwitchLabels } from '../util/failure-types.js';
 
 export type MessageIds = 'unhandledFailure' | 'noRethrow' | 'missingUnlistedFallback';
 
@@ -141,13 +141,29 @@ function keptGuardTypes(
         branch = branch.alternate;
       }
     } else if (stmt.type === AST_NODE_TYPES.SwitchStatement) {
-      const guarded = hasGuardCases(stmt, bindingName, context);
-      stmt.cases.forEach((c, at) => {
-        if (c.test) {
-          // a case without break falls through, so the following cases run as part of it
-          keep(c.test, fallThroughBody(stmt.cases.slice(at)), guarded, isReturn);
-        }
-      });
+      if (isBindingMember(stmt.discriminant, bindingName)) {
+        const keptLabels = new Set<string>();
+        stmt.cases.forEach((c, at) => {
+          if (c.test?.type === AST_NODE_TYPES.Literal && typeof c.test.value === 'string') {
+            const branch = fallThroughBody(stmt.cases.slice(at));
+            const last = branch.at(-1);
+            if (
+              !branch.some((s) => subtreeRethrows(s, bindingName, context)) &&
+              (!laterRethrow || (last !== undefined && isReturn(last)))
+            ) {
+              keptLabels.add(c.test.value);
+            }
+          }
+        });
+        handled.push(...collectHandledSwitchLabels(stmt, bindingName, keptLabels, context));
+      } else {
+        const guarded = hasGuardCases(stmt, bindingName, context);
+        stmt.cases.forEach((c, at) => {
+          if (c.test) {
+            keep(c.test, fallThroughBody(stmt.cases.slice(at)), guarded, isReturn);
+          }
+        });
+      }
     }
   });
   return handled;
