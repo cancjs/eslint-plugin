@@ -131,6 +131,65 @@ describe('require-loop-advance', () => {
            }
          }
        });`,
+
+      // 10. Inline valid: exhaustive if/else with continue afterwards
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           if (x > 0) {
+             yield* loop.next();
+           } else {
+             yield* loop.next();
+           }
+           if (x === 1) continue;
+         }
+       });`,
+
+      // 11. Inline valid: advance in branch, other branch exits
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           if (x > 0) {
+             yield* loop.next();
+           } else {
+             return;
+           }
+         }
+       });`,
+
+      // 12. Inline valid: exhaustive switch where every branch advances
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           switch (x) {
+             case 1:
+               yield* loop.next();
+               break;
+             default:
+               yield* loop.next();
+               break;
+           }
+         }
+       });`,
+
+      // 13. Inline valid: labeled block with advance before break
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           lbl: {
+             yield* loop.next();
+             if (x === 0) break lbl;
+           }
+         }
+       });`,
     ],
 
     invalid: [
@@ -171,7 +230,7 @@ describe('require-loop-advance', () => {
       {
         code: codeInvalid20,
         errors: markers20.map((m) => ({
-          messageId: 'continueBeforeAdvance' as const,
+          messageId: 'missingAdvance' as const,
           line: m.line,
           suggestions: [],
         })),
@@ -274,7 +333,7 @@ const run = cancAsync(function* (source: AsyncIterable<number>) {
         ],
       },
 
-      // 7. Inline invalid: advance only inside if + continue elsewhere
+      // 7. Inline invalid: advance only inside if + continue elsewhere (cannot fall through)
       {
         code: `import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
 declare function save(x: number): Promise<void>;
@@ -283,14 +342,141 @@ const run = cancAsync(function* (source: AsyncIterable<number>) {
   for (const x of loop) {
     if (x > 10) {
       yield* loop.next();
+    } else {
+      if (x === 0) continue;
+      return;
     }
-    if (x === 0) continue;
     yield* cancAwait(save(x));
   }
 });`,
         errors: [
           {
             messageId: 'continueBeforeAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [],
+          },
+        ],
+      },
+
+      // 7a: branch-only advance without continue
+      {
+        code: `import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
+declare function save(x: number): Promise<void>;
+const run = cancAsync(function* (source: AsyncIterable<number>) {
+  const loop = yield* cancForAwait(source);
+  for (const x of loop) {
+    if (x > 0) {
+      yield* loop.next();
+    }
+    yield* cancAwait(save(x));
+  }
+});`,
+        errors: [
+          {
+            messageId: 'missingAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [],
+          },
+        ],
+      },
+
+      // 7b: switch without advance on every branch
+      {
+        code: `import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
+declare function save(x: number): Promise<void>;
+const run = cancAsync(function* (source: AsyncIterable<number>) {
+  const loop = yield* cancForAwait(source);
+  for (const x of loop) {
+    switch (x) {
+      case 1:
+        yield* cancAwait(save(x));
+        break;
+      default:
+        yield* loop.next();
+        break;
+    }
+  }
+});`,
+        errors: [
+          {
+            messageId: 'missingAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [],
+          },
+        ],
+      },
+
+      // 7c: switch without default case
+      {
+        code: `import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
+declare function save(x: number): Promise<void>;
+const run = cancAsync(function* (source: AsyncIterable<number>) {
+  const loop = yield* cancForAwait(source);
+  for (const x of loop) {
+    switch (x) {
+      case 1:
+        yield* loop.next();
+        break;
+    }
+  }
+});`,
+        errors: [
+          {
+            messageId: 'missingAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [],
+          },
+        ],
+      },
+
+      // 7d: switch case block with break
+      {
+        code: `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+declare const source: AsyncIterable<number>;
+const run = cancAsync(function* () {
+  const loop = yield* cancForAwait(source);
+  for (const x of loop) {
+    switch (x) {
+      case 1: {
+        break;
+      }
+      default:
+        yield* loop.next();
+        break;
+    }
+  }
+});`,
+        errors: [
+          {
+            messageId: 'missingAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [],
+          },
+        ],
+      },
+
+      // 7e: switch case if with break
+      {
+        code: `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+declare const source: AsyncIterable<number>;
+declare const foo: boolean;
+const run = cancAsync(function* () {
+  const loop = yield* cancForAwait(source);
+  for (const x of loop) {
+    switch (x) {
+      case 1:
+        if (foo) break;
+        yield* loop.next();
+        break;
+      default:
+        yield* loop.next();
+        break;
+    }
+  }
+});`,
+        errors: [
+          {
+            messageId: 'missingAdvance',
             data: { advance: 'loop.next()' },
             suggestions: [],
           },
@@ -527,7 +713,7 @@ const run = cancAsync(function* () {
       {
         code: codeInvalid20,
         errors: markers20.map((m) => ({
-          messageId: 'continueBeforeAdvance' as const,
+          messageId: 'missingAdvance' as const,
           line: m.line,
           suggestions: [],
         })),

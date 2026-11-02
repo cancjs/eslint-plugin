@@ -20,7 +20,14 @@ function unwrapParentheses(node: TSESTree.Expression): TSESTree.Expression {
   return curr;
 }
 
-function isLoopNode(node: TSESTree.Node): boolean {
+type LoopNode =
+  | TSESTree.ForOfStatement
+  | TSESTree.ForInStatement
+  | TSESTree.ForStatement
+  | TSESTree.WhileStatement
+  | TSESTree.DoWhileStatement;
+
+function isLoopNode(node: TSESTree.Node): node is LoopNode {
   return (
     node.type === AST_NODE_TYPES.ForOfStatement ||
     node.type === AST_NODE_TYPES.ForInStatement ||
@@ -67,7 +74,7 @@ export default createRule<RuleOptions, MessageIds>({
     schema: [],
     messages: {
       missingAdvance:
-        "This loop over a cancForAwait handle never advances it. Call 'yield* {{advance}}' as the first statement of the body, or the next iteration throws.",
+        "This loop over a cancForAwait handle can finish an iteration without advancing it. Call 'yield* {{advance}}' as the first statement of the body, or the next iteration throws.",
       continueBeforeAdvance:
         "A 'continue' here skips the advance and the next iteration throws. Move 'yield* {{advance}}' to the top of the loop body.",
       suggestAdvanceFirst: 'Advance at the top of the loop body.',
@@ -188,10 +195,217 @@ export default createRule<RuleOptions, MessageIds>({
         }
         walkForAdvances(node.body);
 
+        const loopLabels = getLoopLabels(node);
+
+        type BreakTarget = { type: 'switch'; switchLabels: ReadonlySet<string> } | { type: 'label'; name: string };
+
+        function canBreakToTargetUnadvanced(curr: TSESTree.Node, target: BreakTarget): boolean {
+          if (
+            curr.type === AST_NODE_TYPES.FunctionDeclaration ||
+            curr.type === AST_NODE_TYPES.FunctionExpression ||
+            curr.type === AST_NODE_TYPES.ArrowFunctionExpression
+          ) {
+            return false;
+          }
+
+          if (curr.type === AST_NODE_TYPES.BreakStatement) {
+            if (target.type === 'switch') {
+              return curr.label === null || (curr.label ? target.switchLabels.has(curr.label.name) : false);
+            }
+            return curr.label !== null && curr.label.name === target.name;
+          }
+
+          if (target.type === 'switch' && (isLoopNode(curr) || curr.type === AST_NODE_TYPES.SwitchStatement)) {
+            return false;
+          }
+
+          if (curr.type === AST_NODE_TYPES.BlockStatement) {
+            for (const s of curr.body) {
+              if (canBreakToTargetUnadvanced(s, target)) {
+                return true;
+              }
+              if (!canFallThroughUnadvanced(s, target.type === 'switch', false, new Set())) {
+                return false;
+              }
+            }
+            return false;
+          }
+
+          if (curr.type === AST_NODE_TYPES.IfStatement) {
+            if (canBreakToTargetUnadvanced(curr.consequent, target)) {
+              return true;
+            }
+            if (curr.alternate && canBreakToTargetUnadvanced(curr.alternate, target)) {
+              return true;
+            }
+            return false;
+          }
+
+          if (curr.type === AST_NODE_TYPES.TryStatement) {
+            if (
+              curr.finalizer &&
+              !canFallThroughUnadvanced(curr.finalizer, target.type === 'switch', false, new Set())
+            ) {
+              return false;
+            }
+            if (canBreakToTargetUnadvanced(curr.block, target)) {
+              return true;
+            }
+            if (curr.handler && canBreakToTargetUnadvanced(curr.handler.body, target)) {
+              return true;
+            }
+            if (curr.finalizer && canBreakToTargetUnadvanced(curr.finalizer, target)) {
+              return true;
+            }
+            return false;
+          }
+
+          if (curr.type === AST_NODE_TYPES.SwitchStatement) {
+            for (const c of curr.cases) {
+              for (const s of c.consequent) {
+                if (canBreakToTargetUnadvanced(s, target)) {
+                  return true;
+                }
+                if (!canFallThroughUnadvanced(s, true, false, new Set())) {
+                  break;
+                }
+              }
+            }
+            return false;
+          }
+
+          if (curr.type === AST_NODE_TYPES.LabeledStatement) {
+            if (target.type === 'label' && curr.label.name === target.name) {
+              return false;
+            }
+            return canBreakToTargetUnadvanced(curr.body, target);
+          }
+
+          if (isLoopNode(curr)) {
+            return canBreakToTargetUnadvanced(curr.body, target);
+          }
+
+          return false;
+        }
+
+        function sequenceCanFallThroughUnadvanced(
+          stmts: readonly TSESTree.Statement[],
+          nearestIsSwitch: boolean,
+          inNestedLoop: boolean,
+          innerLabels: ReadonlySet<string>,
+        ): boolean {
+          for (const s of stmts) {
+            if (!canFallThroughUnadvanced(s, nearestIsSwitch, inNestedLoop, innerLabels)) {
+              return false;
+            }
+          }
+          return true;
+        }
+
+        function canFallThroughUnadvanced(
+          stmt: TSESTree.Statement,
+          nearestIsSwitch: boolean,
+          inNestedLoop: boolean,
+          innerLabels: ReadonlySet<string>,
+        ): boolean {
+          if (isAdvanceStatement(stmt)) {
+            return false;
+          }
+          if (stmt.type === AST_NODE_TYPES.ReturnStatement || stmt.type === AST_NODE_TYPES.ThrowStatement) {
+            return false;
+          }
+          if (stmt.type === AST_NODE_TYPES.ContinueStatement) {
+            return false;
+          }
+          if (stmt.type === AST_NODE_TYPES.BreakStatement) {
+            if (stmt.label === null) {
+              if (!nearestIsSwitch && !inNestedLoop) {
+                return false;
+              }
+              return true;
+            }
+            if (!innerLabels.has(stmt.label.name)) {
+              return false;
+            }
+            return true;
+          }
+          if (stmt.type === AST_NODE_TYPES.BlockStatement) {
+            return sequenceCanFallThroughUnadvanced(stmt.body, nearestIsSwitch, inNestedLoop, innerLabels);
+          }
+          if (stmt.type === AST_NODE_TYPES.LabeledStatement) {
+            const nextLabels = new Set(innerLabels);
+            nextLabels.add(stmt.label.name);
+            if (canBreakToTargetUnadvanced(stmt.body, { type: 'label', name: stmt.label.name })) {
+              return true;
+            }
+            return canFallThroughUnadvanced(stmt.body, nearestIsSwitch, inNestedLoop, nextLabels);
+          }
+          if (stmt.type === AST_NODE_TYPES.IfStatement) {
+            if (!stmt.alternate) {
+              return true;
+            }
+            return (
+              canFallThroughUnadvanced(stmt.consequent, nearestIsSwitch, inNestedLoop, innerLabels) ||
+              canFallThroughUnadvanced(stmt.alternate, nearestIsSwitch, inNestedLoop, innerLabels)
+            );
+          }
+          if (stmt.type === AST_NODE_TYPES.SwitchStatement) {
+            if (!stmt.cases.some((c) => c.test === null)) {
+              return true;
+            }
+            const switchLabels = new Set<string>();
+            let p: TSESTree.Node | undefined = stmt.parent;
+            while (p && p.type === AST_NODE_TYPES.LabeledStatement) {
+              switchLabels.add(p.label.name);
+              p = p.parent;
+            }
+            const target: BreakTarget = { type: 'switch', switchLabels };
+
+            for (let idx = 0; idx < stmt.cases.length; idx++) {
+              let caseSafe = false;
+              for (let k = idx; k < stmt.cases.length; k++) {
+                let broken = false;
+                for (const s of stmt.cases[k].consequent) {
+                  if (canBreakToTargetUnadvanced(s, target)) {
+                    return true;
+                  }
+                  if (!canFallThroughUnadvanced(s, true, inNestedLoop, innerLabels)) {
+                    caseSafe = true;
+                    broken = true;
+                    break;
+                  }
+                }
+                if (broken) {
+                  break;
+                }
+              }
+              if (!caseSafe) {
+                return true;
+              }
+            }
+            return false;
+          }
+          if (stmt.type === AST_NODE_TYPES.TryStatement) {
+            if (
+              stmt.finalizer &&
+              !canFallThroughUnadvanced(stmt.finalizer, nearestIsSwitch, inNestedLoop, innerLabels)
+            ) {
+              return false;
+            }
+            return (
+              canFallThroughUnadvanced(stmt.block, nearestIsSwitch, inNestedLoop, innerLabels) ||
+              (stmt.handler ?
+                canFallThroughUnadvanced(stmt.handler.body, nearestIsSwitch, inNestedLoop, innerLabels)
+              : false)
+            );
+          }
+          return true;
+        }
+
         // Case 1: missingAdvance
-        if (allAdvances.length === 0) {
+        if (canFallThroughUnadvanced(node.body, false, false, new Set())) {
           const suggest =
-            node.body.type === AST_NODE_TYPES.BlockStatement ?
+            allAdvances.length === 0 && node.body.type === AST_NODE_TYPES.BlockStatement ?
               [
                 {
                   messageId: 'suggestAdvanceFirst' as const,
@@ -219,7 +433,6 @@ export default createRule<RuleOptions, MessageIds>({
         }
 
         // Case 2: continueBeforeAdvance
-        const loopLabels = getLoopLabels(node);
         const targetContinues: TSESTree.ContinueStatement[] = [];
 
         function walkForContinues(curr: TSESTree.Node, inNestedLoop: boolean) {
@@ -261,16 +474,44 @@ export default createRule<RuleOptions, MessageIds>({
         }
         walkForContinues(node.body, false);
 
-        const firstAdvance = allAdvances[0];
+        function isContinueDominatedByAdvance(continueStmt: TSESTree.ContinueStatement): boolean {
+          let child: TSESTree.Node = continueStmt;
+          let parent: TSESTree.Node | undefined = child.parent;
+          while (child !== node.body && parent) {
+            if (parent.type === AST_NODE_TYPES.BlockStatement) {
+              const idx = parent.body.indexOf(child as TSESTree.Statement);
+              if (idx > 0 && !sequenceCanFallThroughUnadvanced(parent.body.slice(0, idx), false, false, new Set())) {
+                return true;
+              }
+            } else if (parent.type === AST_NODE_TYPES.SwitchCase) {
+              const idx = parent.consequent.indexOf(child as TSESTree.Statement);
+              if (
+                idx > 0 &&
+                !sequenceCanFallThroughUnadvanced(parent.consequent.slice(0, idx), true, false, new Set())
+              ) {
+                return true;
+              }
+            }
+            child = parent;
+            parent = child.parent;
+          }
+          return false;
+        }
+
+        const firstAdvance = allAdvances[0] as TSESTree.ExpressionStatement | undefined;
         const firstIsTopLevel = topLevelAdvances.length > 0 && topLevelAdvances[0] === firstAdvance;
 
         for (const continueStmt of targetContinues) {
-          const isBefore = continueStmt.range[0] < firstAdvance.range[0];
-          const noTopLevel = topLevelAdvances.length === 0;
+          if (!isContinueDominatedByAdvance(continueStmt)) {
+            const canRelocate =
+              allAdvances.length === 1 &&
+              firstIsTopLevel &&
+              continueStmt.range[0] < firstAdvance.range[0] &&
+              node.body.type === AST_NODE_TYPES.BlockStatement &&
+              node.body.body.length > 0;
 
-          if (isBefore || noTopLevel) {
             const suggest =
-              firstIsTopLevel && node.body.type === AST_NODE_TYPES.BlockStatement && node.body.body.length > 0 ?
+              canRelocate ?
                 [
                   {
                     messageId: 'suggestAdvanceFirst' as const,
