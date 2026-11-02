@@ -462,6 +462,47 @@ cancAsync(function* () {
   }
 });`,
   },
+  {
+    name: 'switch with break before cancel guard does not exit handler',
+    code: `${HEAD}
+declare const code: number;
+declare function log(n: number): void;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    switch (code) { case 1: log(1); break; default: log(2); }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'loop with continue and break before cancel guard does not exit handler',
+    code: `${HEAD}
+declare const items: number[];
+declare const stop: number;
+declare function log(n: number): void;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    for (const item of items) { if (!item) continue; if (item === stop) break; log(item); }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'switch with rejecting return in catch callback does not exit without rethrow',
+    code: `${HEAD}
+declare const code: number;
+new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
+  switch (code) { case 1: return Promise.reject(e); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+});`,
+  },
 ];
 
 const trackedRoot = `${HEAD}
@@ -523,6 +564,69 @@ cancAsync(function* () {
   }
 });`,
     errors: [{ messageId: 'swallowedCancel' }],
+  },
+  {
+    name: 'switch return before cancel guard leaves cancel swallowed',
+    code: `${HEAD}
+declare const code: number;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    switch (code) { case 1: return 1; }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 16, column: 5 }],
+  },
+  {
+    name: 'try-finally return before cancel guard leaves cancel swallowed',
+    code: `${HEAD}
+declare function cleanup(): void;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    try { return 1; } finally { cleanup(); }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 16, column: 5 }],
+  },
+  {
+    name: 'loop return before cancel guard leaves cancel swallowed',
+    code: `${HEAD}
+declare const items: number[];
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    for (const item of items) { if (item) return item; }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 16, column: 5 }],
+  },
+  {
+    name: 'break to outer label before cancel guard leaves cancel swallowed',
+    code: `${HEAD}
+declare const xs: number[];
+declare const code: number;
+cancAsync(function* () {
+  outer: for (const x of xs) {
+    try {
+      yield* cancAwait(load());
+    } catch (e) {
+      switch (code) { case 1: break outer; }
+      if (isCancelError(e)) throw e;
+      toast(e);
+    }
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 18, column: 7 }],
   },
   {
     name: 'boundary in only one branch leaves other branch unguarded',

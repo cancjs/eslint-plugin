@@ -712,7 +712,14 @@ function statementsAllLogOrReturn(statements: TSESTree.Statement[]): boolean {
   return true;
 }
 
-function containsExitWithoutRethrow(node: TSESTree.Node, paramName: string, context: Context): boolean {
+function containsHandlerExit(
+  node: TSESTree.Node,
+  paramName: string,
+  context: Context,
+  inSwitch: boolean,
+  inLoop: boolean,
+  labelsInsideCatch: ReadonlySet<string>,
+): boolean {
   if (
     node.type === AST_NODE_TYPES.FunctionDeclaration ||
     node.type === AST_NODE_TYPES.FunctionExpression ||
@@ -723,16 +730,26 @@ function containsExitWithoutRethrow(node: TSESTree.Node, paramName: string, cont
   if (node.type === AST_NODE_TYPES.ReturnStatement) {
     return !returnsRejection(node, paramName, context);
   }
-  if (node.type === AST_NODE_TYPES.BreakStatement || node.type === AST_NODE_TYPES.ContinueStatement) {
-    return true;
+  if (node.type === AST_NODE_TYPES.BreakStatement) {
+    return node.label !== null ? !labelsInsideCatch.has(node.label.name) : !inSwitch && !inLoop;
+  }
+  if (node.type === AST_NODE_TYPES.ContinueStatement) {
+    return node.label !== null ? !labelsInsideCatch.has(node.label.name) : !inLoop;
+  }
+  if (node.type === AST_NODE_TYPES.LabeledStatement) {
+    const nextLabels = new Set(labelsInsideCatch);
+    nextLabels.add(node.label.name);
+    return containsHandlerExit(node.body, paramName, context, inSwitch, inLoop, nextLabels);
   }
   if (node.type === AST_NODE_TYPES.BlockStatement) {
-    return node.body.some((s) => containsExitWithoutRethrow(s, paramName, context));
+    return node.body.some((s) => containsHandlerExit(s, paramName, context, inSwitch, inLoop, labelsInsideCatch));
   }
   if (node.type === AST_NODE_TYPES.IfStatement) {
     return (
-      containsExitWithoutRethrow(node.consequent, paramName, context) ||
-      (node.alternate ? containsExitWithoutRethrow(node.alternate, paramName, context) : false)
+      containsHandlerExit(node.consequent, paramName, context, inSwitch, inLoop, labelsInsideCatch) ||
+      (node.alternate ?
+        containsHandlerExit(node.alternate, paramName, context, inSwitch, inLoop, labelsInsideCatch)
+      : false)
     );
   }
   if (
@@ -742,35 +759,29 @@ function containsExitWithoutRethrow(node: TSESTree.Node, paramName: string, cont
     node.type === AST_NODE_TYPES.ForInStatement ||
     node.type === AST_NODE_TYPES.ForOfStatement
   ) {
-    return containsExitWithoutRethrow(node.body, paramName, context);
+    return containsHandlerExit(node.body, paramName, context, inSwitch, true, labelsInsideCatch);
   }
   if (node.type === AST_NODE_TYPES.SwitchStatement) {
-    return node.cases.some((c) => c.consequent.some((s) => containsExitWithoutRethrow(s, paramName, context)));
+    return node.cases.some((c) =>
+      c.consequent.some((s) => containsHandlerExit(s, paramName, context, true, inLoop, labelsInsideCatch)),
+    );
   }
   if (node.type === AST_NODE_TYPES.TryStatement) {
     return (
-      containsExitWithoutRethrow(node.block, paramName, context) ||
-      (node.handler ? containsExitWithoutRethrow(node.handler.body, paramName, context) : false) ||
-      (node.finalizer ? containsExitWithoutRethrow(node.finalizer, paramName, context) : false)
+      containsHandlerExit(node.block, paramName, context, inSwitch, inLoop, labelsInsideCatch) ||
+      (node.handler ?
+        containsHandlerExit(node.handler.body, paramName, context, inSwitch, inLoop, labelsInsideCatch)
+      : false) ||
+      (node.finalizer ?
+        containsHandlerExit(node.finalizer, paramName, context, inSwitch, inLoop, labelsInsideCatch)
+      : false)
     );
   }
   return false;
 }
 
 function statementCanExitWithoutRethrow(stmt: TSESTree.Statement, paramName: string, context: Context): boolean {
-  if (stmt.type === AST_NODE_TYPES.ReturnStatement) {
-    return !returnsRejection(stmt, paramName, context);
-  }
-  if (stmt.type === AST_NODE_TYPES.BreakStatement || stmt.type === AST_NODE_TYPES.ContinueStatement) {
-    return true;
-  }
-  if (stmt.type === AST_NODE_TYPES.IfStatement) {
-    return (
-      containsExitWithoutRethrow(stmt.consequent, paramName, context) ||
-      (stmt.alternate ? containsExitWithoutRethrow(stmt.alternate, paramName, context) : false)
-    );
-  }
-  return false;
+  return containsHandlerExit(stmt, paramName, context, false, false, new Set());
 }
 
 /**

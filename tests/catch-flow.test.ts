@@ -402,6 +402,99 @@ catalogSearch.catch(() => 0);`;
     expect(fallbackAnalysis.compliant).toBe(false);
     expect(fallbackAnalysis.via).toBeNull();
   });
+
+  it('rejects switch return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const code: number;
+try {} catch (e) {
+  switch (code) { case 1: return 1; }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects try-finally return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare function cleanup(): void;
+try {} catch (e) {
+  try { return 1; } finally { cleanup(); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects loop return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const items: number[];
+try {} catch (e) {
+  for (const item of items) { if (item) return item; }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects break to outer label before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const xs: number[];
+declare const code: number;
+outer: for (const x of xs) {
+  try {} catch (e) {
+    switch (code) { case 1: break outer; }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('passes switch with break before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const code: number;
+declare function log(n: number): void;
+try {} catch (e) {
+  switch (code) { case 1: log(1); break; default: log(2); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes loop with continue and break before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const items: number[];
+declare const stop: number;
+declare function log(n: number): void;
+try {} catch (e) {
+  for (const item of items) { if (!item) continue; if (item === stop) break; log(item); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes switch with rejecting return in catch callback', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const code: number;
+catalogSearch.catch((e) => {
+  switch (code) { case 1: return Promise.reject(e); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+});`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
 });
 
 type ProbeMessages =
