@@ -80,7 +80,7 @@ export default createRule<RuleOptions, MessageIds>({
     return {
       ForOfStatement(node) {
         let advanceText: string | null = null;
-        let handleName: string | null = null;
+        let handleVariable: TSESLint.Scope.Variable | null = null;
 
         const rightExpr = unwrapParentheses(node.right);
 
@@ -113,8 +113,8 @@ export default createRule<RuleOptions, MessageIds>({
               if (initExpr.type === AST_NODE_TYPES.YieldExpression && initExpr.delegate && initExpr.argument) {
                 const check = isSingleArgForAwaitCall(initExpr.argument, context);
                 if (check.isForAwait) {
-                  handleName = rightExpr.name;
-                  advanceText = `${handleName}.next()`;
+                  handleVariable = variable;
+                  advanceText = `${rightExpr.name}.next()`;
                 }
               }
             }
@@ -138,7 +138,11 @@ export default createRule<RuleOptions, MessageIds>({
           if (refersTo(callee.object, context, 'cancForAwait') || refersTo(callee.object, context, 'forAwait')) {
             return true;
           }
-          if (handleName && callee.object.type === AST_NODE_TYPES.Identifier && callee.object.name === handleName) {
+          if (
+            handleVariable &&
+            callee.object.type === AST_NODE_TYPES.Identifier &&
+            handleVariable.references.some((ref) => ref.identifier === callee.object)
+          ) {
             return true;
           }
           return false;

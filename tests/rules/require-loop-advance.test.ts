@@ -119,6 +119,18 @@ describe('require-loop-advance', () => {
            yield* cancForAwait.next();
          }
        });`,
+
+      // 9. Inline valid: inner block does not shadow loop
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const item of loop) {
+           {
+             yield* loop.next();
+           }
+         }
+       });`,
     ],
 
     invalid: [
@@ -429,6 +441,46 @@ const run = cancAsync(function* (s1: AsyncIterable<number>, s2: AsyncIterable<nu
     for (const y of innerLoop) {
       yield* innerLoop.next();
       yield* cancAwait(save(x, y));
+    }
+  }
+});`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 12. Inline invalid: inner block shadows loop
+      {
+        code: `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+declare const source: AsyncIterable<number>;
+declare const other: { next(): Generator<unknown, void, unknown> };
+const run = cancAsync(function* () {
+  const loop = yield* cancForAwait(source);
+  for (const item of loop) {
+    {
+      const loop = other;
+      yield* loop.next();
+    }
+  }
+});`,
+        errors: [
+          {
+            messageId: 'missingAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [
+              {
+                messageId: 'suggestAdvanceFirst',
+                output: `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+declare const source: AsyncIterable<number>;
+declare const other: { next(): Generator<unknown, void, unknown> };
+const run = cancAsync(function* () {
+  const loop = yield* cancForAwait(source);
+  for (const item of loop) {
+    yield* loop.next();
+    {
+      const loop = other;
+      yield* loop.next();
     }
   }
 });`,
