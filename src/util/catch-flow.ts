@@ -1,5 +1,6 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import ts from 'typescript';
 
 import { isGlobalPromiseIdent } from './adoption.js';
 import {
@@ -13,6 +14,7 @@ import {
 } from './canc-imports.js';
 import { getCancServices, isCancelableExpression, isCancelableType } from './canc-types.js';
 import { unwrapTypeOnly } from './executor.js';
+import { isCancelErrorType } from './failure-types.js';
 import type { ResolvedCancSettings } from './settings.js';
 
 export interface CatchSite {
@@ -712,6 +714,201 @@ function statementsAllLogOrReturn(statements: TSESTree.Statement[]): boolean {
   return true;
 }
 
+const KNOWN_NON_CANCEL_GUARDS = [
+  'isTimeoutError',
+  'isAbortError',
+  'isSupersededError',
+  'isBreakError',
+  'isProcessExitError',
+  'isProcessSpawnError',
+  'isJsonParseError',
+  'isNotImplementedError',
+] as const;
+
+function isDisjointLiteralVal(propName: string, literalNode: TSESTree.Node): boolean {
+  const unwrapped = unwrapTypeOnly(literalNode);
+  if (unwrapped.type !== AST_NODE_TYPES.Literal) {
+    return false;
+  }
+  const val = unwrapped.value;
+  if (propName === 'name') {
+    return typeof val === 'string' && val !== 'CancelError' && val !== 'Error';
+  }
+  if (propName === 'kind' || propName === 'code' || propName === 'tag' || propName === '_tag') {
+    return (
+      (typeof val === 'string' &&
+        val !== 'CancelError' &&
+        val !== 'cancel' &&
+        val !== 'canceled' &&
+        val !== 'cancelled') ||
+      typeof val === 'number'
+    );
+  }
+  return false;
+}
+
+function isDisjointMemberLiteral(memberNode: TSESTree.Node, literalNode: TSESTree.Node, paramName: string): boolean {
+  const member = unwrapTypeOnly(memberNode);
+  if (member.type !== AST_NODE_TYPES.MemberExpression || member.computed) {
+    return false;
+  }
+  if (member.property.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+  const obj = unwrapTypeOnly(member.object);
+  if (obj.type !== AST_NODE_TYPES.Identifier || obj.name !== paramName) {
+    return false;
+  }
+  return isDisjointLiteralVal(member.property.name, literalNode);
+}
+
+function isDisjointErrorCtor(ctorNode: TSESTree.Expression, context: Context): boolean {
+  const ctor = unwrapTypeOnly(ctorNode);
+  if (refersTo(ctor, context, 'CancelError')) {
+    return false;
+  }
+  if (
+    ctor.type === AST_NODE_TYPES.Identifier &&
+    (ctor.name === 'CancelError' || ctor.name === 'Error' || ctor.name === 'Object')
+  ) {
+    return false;
+  }
+  if (ctor.type === AST_NODE_TYPES.MemberExpression && !ctor.computed) {
+    if (ctor.property.type === AST_NODE_TYPES.Identifier) {
+      if (ctor.property.name === 'CancelError') {
+        return false;
+      }
+      const obj = unwrapTypeOnly(ctor.object);
+      if (
+        obj.type === AST_NODE_TYPES.Identifier &&
+        (obj.name === 'globalThis' || obj.name === 'window' || obj.name === 'global') &&
+        (ctor.property.name === 'Error' || ctor.property.name === 'Object')
+      ) {
+        return false;
+      }
+    }
+  }
+  const services = getCancServices(context);
+  if (services?.program) {
+    const checker = services.program.getTypeChecker();
+    const tsNode = services.esTreeNodeToTSNodeMap.get(ctor);
+    const ctorType = checker.getTypeAtLocation(tsNode);
+    const sigs = ctorType.getConstructSignatures();
+    return (
+      sigs.length > 0 &&
+      sigs.every((sig) => {
+        const inst = sig.getReturnType();
+        return (
+          !(inst.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) &&
+          !isCancelErrorType(inst, checker) &&
+          inst.getSymbol()?.name !== 'Error' &&
+          inst.getSymbol()?.name !== 'Object'
+        );
+      })
+    );
+  }
+  return (
+    ctor.type === AST_NODE_TYPES.Identifier ||
+    (ctor.type === AST_NODE_TYPES.MemberExpression &&
+      !ctor.computed &&
+      ctor.property.type === AST_NODE_TYPES.Identifier)
+  );
+}
+
+function isDisjointNonCancelGuard(exprNode: TSESTree.Expression, paramName: string, context: Context): boolean {
+  const expr = unwrapTypeOnly(exprNode);
+  if (expr.type === AST_NODE_TYPES.UnaryExpression) {
+    return false;
+  }
+  if (expr.type === AST_NODE_TYPES.LogicalExpression) {
+    if (expr.operator === '||') {
+      return (
+        isDisjointNonCancelGuard(expr.left, paramName, context) &&
+        isDisjointNonCancelGuard(expr.right, paramName, context)
+      );
+    }
+    if (expr.operator === '&&') {
+      return (
+        isDisjointNonCancelGuard(expr.left, paramName, context) ||
+        isDisjointNonCancelGuard(expr.right, paramName, context)
+      );
+    }
+    return false;
+  }
+  if (expr.type === AST_NODE_TYPES.BinaryExpression) {
+    if (expr.operator === 'instanceof') {
+      const left = unwrapTypeOnly(expr.left);
+      if (left.type === AST_NODE_TYPES.Identifier && left.name === paramName) {
+        return isDisjointErrorCtor(expr.right, context);
+      }
+      return false;
+    }
+    if (expr.operator === '===') {
+      return (
+        isDisjointMemberLiteral(expr.left, expr.right, paramName) ||
+        isDisjointMemberLiteral(expr.right, expr.left, paramName)
+      );
+    }
+    return false;
+  }
+  if (expr.type === AST_NODE_TYPES.CallExpression) {
+    if (expr.arguments.length >= 1 && expr.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement) {
+      const firstArg = unwrapTypeOnly(expr.arguments[0]);
+      if (firstArg.type === AST_NODE_TYPES.Identifier && firstArg.name === paramName) {
+        for (const g of KNOWN_NON_CANCEL_GUARDS) {
+          if (refersTo(expr.callee, context, g)) {
+            return true;
+          }
+        }
+        if (
+          refersTo(expr.callee, context, 'isErrorOf') &&
+          expr.arguments.length >= 2 &&
+          expr.arguments[1]?.type !== AST_NODE_TYPES.SpreadElement
+        ) {
+          return isDisjointErrorCtor(expr.arguments[1], context);
+        }
+        if (
+          expr.callee.type === AST_NODE_TYPES.CallExpression &&
+          refersTo(expr.callee.callee, context, 'createIsError') &&
+          expr.callee.arguments.length >= 1 &&
+          expr.callee.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
+        ) {
+          return isDisjointErrorCtor(expr.callee.arguments[0], context);
+        }
+        const services = getCancServices(context);
+        if (services?.program) {
+          const checker = services.program.getTypeChecker();
+          const tsCall = services.esTreeNodeToTSNodeMap.get(expr);
+          if (ts.isCallExpression(tsCall)) {
+            const sig = checker.getResolvedSignature(tsCall);
+            const pred = sig ? checker.getTypePredicateOfSignature(sig) : undefined;
+            if (
+              pred &&
+              (pred.kind === ts.TypePredicateKind.Identifier || pred.kind === ts.TypePredicateKind.AssertsIdentifier) &&
+              pred.parameterIndex === 0 &&
+              pred.type
+            ) {
+              const parts = pred.type.isUnion() ? pred.type.types : [pred.type];
+              return (
+                parts.length > 0 &&
+                parts.every(
+                  (p) =>
+                    !(p.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) &&
+                    !isCancelErrorType(p, checker) &&
+                    p.getSymbol()?.name !== 'Error' &&
+                    p.getSymbol()?.name !== 'Object',
+                )
+              );
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+  return false;
+}
+
 function containsHandlerExit(
   node: TSESTree.Node,
   paramName: string,
@@ -745,12 +942,16 @@ function containsHandlerExit(
     return node.body.some((s) => containsHandlerExit(s, paramName, context, inSwitch, inLoop, labelsInsideCatch));
   }
   if (node.type === AST_NODE_TYPES.IfStatement) {
-    return (
-      containsHandlerExit(node.consequent, paramName, context, inSwitch, inLoop, labelsInsideCatch) ||
-      (node.alternate ?
+    const isDisjoint = isDisjointNonCancelGuard(node.test, paramName, context);
+    const consequentExits =
+      isDisjoint ? false : (
+        containsHandlerExit(node.consequent, paramName, context, inSwitch, inLoop, labelsInsideCatch)
+      );
+    const alternateExits =
+      node.alternate ?
         containsHandlerExit(node.alternate, paramName, context, inSwitch, inLoop, labelsInsideCatch)
-      : false)
-    );
+      : false;
+    return consequentExits || alternateExits;
   }
   if (
     node.type === AST_NODE_TYPES.WhileStatement ||
@@ -762,9 +963,56 @@ function containsHandlerExit(
     return containsHandlerExit(node.body, paramName, context, inSwitch, true, labelsInsideCatch);
   }
   if (node.type === AST_NODE_TYPES.SwitchStatement) {
-    return node.cases.some((c) =>
-      c.consequent.some((s) => containsHandlerExit(s, paramName, context, true, inLoop, labelsInsideCatch)),
-    );
+    const disc = unwrapTypeOnly(node.discriminant);
+    const isTrueDisc = disc.type === AST_NODE_TYPES.Literal && disc.value === true;
+    const memberProp =
+      (
+        disc.type === AST_NODE_TYPES.MemberExpression &&
+        !disc.computed &&
+        disc.property.type === AST_NODE_TYPES.Identifier &&
+        ['name', 'kind', 'code', 'tag', '_tag'].includes(disc.property.name) &&
+        unwrapTypeOnly(disc.object).type === AST_NODE_TYPES.Identifier &&
+        (unwrapTypeOnly(disc.object) as TSESTree.Identifier).name === paramName
+      ) ?
+        disc.property.name
+      : null;
+
+    const isCaseDisjoint = (c: TSESTree.SwitchCase): boolean => {
+      if (c.test === null) {
+        return false;
+      }
+      if (isTrueDisc) {
+        return isDisjointNonCancelGuard(c.test, paramName, context);
+      }
+      if (memberProp !== null) {
+        return isDisjointLiteralVal(memberProp, c.test);
+      }
+      return false;
+    };
+
+    for (let idx = 0; idx < node.cases.length; idx++) {
+      const caseItem = node.cases[idx];
+      if (isCaseDisjoint(caseItem)) {
+        continue;
+      }
+      const runStmts: TSESTree.Statement[] = [];
+      for (let j = idx; j < node.cases.length; j++) {
+        const targetCase = node.cases[j];
+        runStmts.push(...targetCase.consequent);
+        const last = targetCase.consequent.at(-1);
+        if (
+          last?.type === AST_NODE_TYPES.BreakStatement ||
+          last?.type === AST_NODE_TYPES.ReturnStatement ||
+          last?.type === AST_NODE_TYPES.ThrowStatement
+        ) {
+          break;
+        }
+      }
+      if (runStmts.some((s) => containsHandlerExit(s, paramName, context, true, inLoop, labelsInsideCatch))) {
+        return true;
+      }
+    }
+    return false;
   }
   if (node.type === AST_NODE_TYPES.TryStatement) {
     return (

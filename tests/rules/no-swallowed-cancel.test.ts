@@ -503,6 +503,99 @@ new CancelablePromise<number>((resolve) => resolve(1)).catch((e) => {
   toast(e);
 });`,
   },
+  {
+    name: 'disjoint class guard returns before cancel guard',
+    code: `${HEAD}
+class NotFoundError extends Error {}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof NotFoundError) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'disjoint brand guards return before cancel guard',
+    code: `${HEAD}
+import { isTimeoutError, isAbortError } from '@cancjs/toolbox';
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isTimeoutError(e)) return null;
+    if (isAbortError(e)) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'isErrorOf guard returns before cancel guard',
+    code: `${HEAD}
+import { isErrorOf } from '@cancjs/toolbox';
+class NotFoundError extends Error {}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isErrorOf(e, NotFoundError)) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'name and kind discriminant equality checks return before cancel guard',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if ((e as Error).name === 'NotFoundError') return null;
+    if ((e as { kind?: string }).kind === 'NotFound') return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'chained else-if and logical disjunction error guards return before cancel guard',
+    code: `${HEAD}
+import { isTimeoutError } from '@cancjs/toolbox';
+class NotFoundError extends Error {}
+class RateLimitError extends Error {
+  retryable = true;
+}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof NotFoundError || isTimeoutError(e)) return null;
+    else if (e instanceof RateLimitError && e.retryable) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+  {
+    name: 'switch on discriminant before cancel guard',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    switch ((e as { kind?: string }).kind) {
+      case 'NotFound':
+        return null;
+    }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
 ];
 
 const trackedRoot = `${HEAD}
@@ -627,6 +720,108 @@ cancAsync(function* () {
   }
 });`,
     errors: [{ messageId: 'swallowedCancel', line: 18, column: 7 }],
+  },
+  {
+    name: 'instanceof Error before cancel guard still reports swallowed cancel',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof Error) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 15, column: 5 }],
+  },
+  {
+    name: 'instanceof CancelError return before cancel guard still reports swallowed cancel',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof CancelError) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 15, column: 5 }],
+  },
+  {
+    name: 'negated guard return before cancel guard still reports swallowed cancel',
+    code: `${HEAD}
+class NotFoundError extends Error {}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (!(e instanceof NotFoundError)) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 16, column: 5 }],
+  },
+  {
+    name: 'alternate return after disjoint guard still reports swallowed cancel',
+    code: `${HEAD}
+class NotFoundError extends Error {}
+declare function log(err: unknown): void;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (e instanceof NotFoundError) {
+      log(e);
+    } else {
+      return null;
+    }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 17, column: 5 }],
+  },
+  {
+    name: 'switch default return before cancel guard still reports swallowed cancel',
+    code: `${HEAD}
+declare function log(err: unknown): void;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    switch ((e as { kind?: string }).kind) {
+      case 'NotFound':
+        log(e);
+        break;
+      default:
+        return null;
+    }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 16, column: 5 }],
+  },
+  {
+    name: 'switch fallthrough to return from CancelError case still reports swallowed cancel',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    switch ((e as Error).name) {
+      case 'CancelError':
+      case 'NotFoundError':
+        return null;
+    }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 15, column: 5 }],
   },
   {
     name: 'boundary in only one branch leaves other branch unguarded',
@@ -896,20 +1091,62 @@ const corpusValid: ValidTestCase<Options>[] = validFiles.map((file) => ({
   code: corpus(file),
 }));
 
-const typedInvalid = [...corpusInvalid, ...corpusTypeOnlyInvalid, ...inlineInvalid, ...typeOnlyInvalid];
+const typeOnlyValid: ValidTestCase<Options>[] = [
+  {
+    name: 'typed user type-predicate disjoint guard returns before cancel guard',
+    code: `${HEAD}
+class NotFoundError extends Error {}
+declare function isNotFound(err: unknown): err is NotFoundError;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isNotFound(e)) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
+];
+
+const typedPredicateInvalid: InvalidTestCase<MessageIds, Options>[] = [
+  {
+    name: 'typed user predicate narrowing to general Error before cancel guard',
+    code: `${HEAD}
+declare function isAnyErr(x: unknown): x is Error;
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    if (isAnyErr(e)) return null;
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+    errors: [{ messageId: 'swallowedCancel', line: 16, column: 5 }],
+  },
+];
+
+const typedInvalid = [
+  ...corpusInvalid,
+  ...corpusTypeOnlyInvalid,
+  ...inlineInvalid,
+  ...typeOnlyInvalid,
+  ...typedPredicateInvalid,
+];
 const untypedSilent = [...corpusTypeOnlyInvalid, ...typeOnlyInvalid];
 
 describe('canc/no-swallowed-cancel', () => {
   it('covers every corpus file and at least 20 cases', () => {
     const covered = [...corpusInvalid, ...corpusTypeOnlyInvalid].length;
     expect(covered).toBe(invalidFiles.length);
-    const total = typedInvalid.length + corpusValid.length + inlineValid.length;
+    const total = typedInvalid.length + corpusValid.length + inlineValid.length + typeOnlyValid.length;
     console.log(`no-swallowed-cancel typed cases: ${total} (${typedInvalid.length} invalid)`);
     expect(total).toBeGreaterThanOrEqual(20);
   });
 
   ruleTester({ types: true }).run(RULE_ID, rule, {
-    valid: [...corpusValid, ...inlineValid],
+    valid: [...corpusValid, ...inlineValid, ...typeOnlyValid],
     invalid: typedInvalid,
   });
 
