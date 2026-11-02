@@ -128,6 +128,20 @@ export const run = cancAsync(function* () {
 });`;
 }
 
+function openThreeCatch(catchBody: string): string {
+  return `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error { readonly kind = 'ErrorA'; }
+declare function getOpen(): CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
+export const run = cancAsync(function* () {
+  try {
+    yield* cancAwait(getOpen());
+  } catch (e) {
+    ${catchBody}
+  }
+});`;
+}
+
 function nestedCatch(innerBody: string, outerBody: string): string {
   return `import { cancAsync, cancAwait } from '@cancjs/coroutine';
 import type CancelablePromise from '@cancjs/promise';
@@ -563,6 +577,13 @@ export const run = cancAsync(function* () {
                  }
                });`,
         options: [{ exclude: ['AssertionError'] }],
+      },
+      // Open 3+ constituent intersection with fallback disabled
+      {
+        code: openThreeCatch(`if (e instanceof ErrorA) {
+      console.log(e);
+    }`),
+        options: [{ requireUnlistedFallback: false }],
       },
     ],
     invalid: [
@@ -1155,6 +1176,41 @@ cancAsync(function* () {
         options: [{ genCoroutineFactories: ['onlyMine'] }],
         output: null,
         errors: [{ messageId: 'unhandledFailure' as const, line: 12, data: { names: 'TimeoutError' } }],
+      },
+      // Open 3+ constituent intersection requires fallback under default options
+      {
+        code: openThreeCatch(`if (e instanceof ErrorA) {
+      console.log(e);
+    }`),
+        output: null,
+        errors: [
+          {
+            messageId: 'missingUnlistedFallback',
+            line: 8,
+            suggestions: [
+              {
+                messageId: 'missingUnlistedFallback',
+                output: withThrow(
+                  openThreeCatch(`if (e instanceof ErrorA) {
+      console.log(e);
+    }`),
+                ),
+              },
+            ],
+          },
+        ],
+      },
+      // Unguarded open 3+ constituent intersection reports unhandledFailure without marker
+      {
+        code: openThreeCatch(`console.log(e);`),
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            line: 8,
+            data: { names: 'ErrorA & { readonly meta: string; }' },
+          },
+        ],
       },
     ],
   });

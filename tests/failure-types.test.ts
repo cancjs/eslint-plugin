@@ -219,6 +219,8 @@ export interface UnlistedCopy { readonly _cancUnlisted: true }
 export interface UnlistedWrongLiteral { readonly _cancUnlisted: false }
 export type CopyOpen = CancelablePromise<number, Unlisted | UnlistedCopy>;
 export type IntersectionOpen = CancelablePromise<number, Unlisted & UnlistedCopy>;
+export class ErrorA extends Error {}
+export type ThreeConstituents = CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
 export type OrNull = CancelablePromise<string, FooError> | null;
 `,
     };
@@ -272,6 +274,12 @@ export type OrNull = CancelablePromise<string, FooError> | null;
       const res = getFailureMembers(virtualType('b3-unlisted.ts', 'IntersectionOpen'), virtualChecker);
       expect(res.open).toBe(true);
       expect(res.listed.map((t) => virtualChecker.typeToString(t))).toEqual(['Unlisted']);
+    });
+
+    it('marker on a 3+ constituent intersection keeps constituents intact and sets open true', () => {
+      const res = getFailureMembers(virtualType('b3-unlisted.ts', 'ThreeConstituents'), virtualChecker);
+      expect(res.open).toBe(true);
+      expect(res.listed.length).toBe(1);
     });
 
     it('union filter: a null branch does not make a carrier union undefined', () => {

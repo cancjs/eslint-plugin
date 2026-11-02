@@ -71,6 +71,16 @@ describe('no-failure-widening (typed lane)', () => {
        declare const p: CancelablePromise<string, ErrorA>;
        export const open = p as CancelablePromise<string, ErrorA | Unlisted>;`,
 
+      // Intersected failure member beside unlisted marker kept intact
+      `import type CancelablePromise from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare const p: CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
+       export const keptExact = p as CancelablePromise<string, ErrorA & { readonly meta: string }>;`,
+      `import type CancelablePromise from '@cancjs/promise';
+       class ErrorA extends Error {}
+       declare const p: CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
+       export const keptSub = p as CancelablePromise<string, ErrorA>;`,
+
       // Variable annotation default: allowVariableAnnotationWidening: true (silent)
       `import type CancelablePromise from '@cancjs/promise';
        class UserNotFoundError extends Error {}
@@ -392,6 +402,33 @@ export const u = withFailure<UserNotFoundError>()(getUser());`,
             ],
           },
         ],
+      },
+
+      // 13. Intersected failure member widening tests
+      {
+        code: `import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error {}
+class ErrorB extends Error {}
+declare const p: CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
+export const c = p as CancelablePromise<string, ErrorB>;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 5, data: { position: 'cast' } }],
+      },
+      {
+        code: `import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const p: CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
+export const c = p as CancelablePromise<string, never>;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'cast' } }],
+      },
+      {
+        code: `import type CancelablePromise from '@cancjs/promise';
+class ErrorA extends Error {}
+declare const q: CancelablePromise<string, ErrorA | { readonly meta: string }>;
+export const c = q as CancelablePromise<string, ErrorA & { readonly meta: string }>;`,
+        output: null,
+        errors: [{ messageId: 'failureWidening', line: 4, data: { position: 'cast' } }],
       },
     ],
   });
