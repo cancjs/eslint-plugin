@@ -704,6 +704,7 @@ function switchCaseTypes(
   bindingName: string,
   checker: ts.TypeChecker,
   nodeMap: NodeMap,
+  allowedLabels?: ReadonlySet<string>,
 ): ts.Type[] {
   const discriminant = node.discriminant;
   if (
@@ -724,7 +725,11 @@ function switchCaseTypes(
   }
   const labels = new Set<string>();
   for (const c of node.cases) {
-    if (c.test?.type === AST_NODE_TYPES.Literal && typeof c.test.value === 'string') {
+    if (
+      c.test?.type === AST_NODE_TYPES.Literal &&
+      typeof c.test.value === 'string' &&
+      (!allowedLabels || allowedLabels.has(c.test.value))
+    ) {
       labels.add(c.test.value);
     }
   }
@@ -739,6 +744,25 @@ function switchCaseTypes(
     const propType = checker.getTypeOfSymbolAtLocation(prop, tsObject);
     return propType.isStringLiteral() && labels.has(propType.value);
   });
+}
+
+export function collectHandledSwitchLabels(
+  node: TSESTree.SwitchStatement,
+  bindingName: string,
+  allowedLabels: ReadonlySet<string>,
+  context: Context,
+): ts.Type[] {
+  const services = getCancServices(context);
+  if (!services?.program || allowedLabels.size === 0) {
+    return [];
+  }
+  return switchCaseTypes(
+    node,
+    bindingName,
+    services.program.getTypeChecker(),
+    services.esTreeNodeToTSNodeMap,
+    allowedLabels,
+  );
 }
 
 export function collectHandledCatchTypes(root: TSESTree.Node, bindingName: string, context: Context): ts.Type[] {

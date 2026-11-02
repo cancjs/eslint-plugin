@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   collectHandledCatchTypes,
+  collectHandledSwitchLabels,
   getFailureMembers,
   getProgramFailureSymbols,
   isCancelErrorCtorNode,
@@ -512,6 +513,108 @@ class ErrorB extends Error {}`,
           kindClasses,
         ),
       ).toEqual([]);
+    });
+  });
+
+  describe('collectHandledSwitchLabels', () => {
+    it('returns only the union constituents whose kind is in allowedLabels', () => {
+      const kindCode = `class ErrorA extends Error { readonly kind = 'ErrorA'; }
+class ErrorB extends Error { readonly kind = 'ErrorB'; }
+class ErrorC extends Error { readonly kind = 'ErrorC'; }
+export function probe(): void {
+  try {
+    throw new Error('x');
+  } catch (e) {
+    switch ((e as ErrorA | ErrorB | ErrorC).kind) {
+      case 'ErrorA':
+        break;
+      case 'ErrorB':
+        break;
+      case 'ErrorC':
+        break;
+    }
+  }
+}
+`;
+      const { program: probeProgram, dir } = createVirtualProgram({ 'switch-labels-probe.ts': kindCode });
+      const filePath = path.resolve(dir, 'src', 'switch-labels-probe.ts');
+      const { ast, services } = parseAndGenerateServices(kindCode, {
+        filePath,
+        programs: [probeProgram],
+        range: true,
+        loc: true,
+      });
+      const fn = ast.body.find((n) => n.type === AST_NODE_TYPES.ExportNamedDeclaration);
+      const decl = fn?.type === AST_NODE_TYPES.ExportNamedDeclaration ? fn.declaration : null;
+      let switchStmt: TSESTree.SwitchStatement | undefined;
+      if (decl?.type === AST_NODE_TYPES.FunctionDeclaration) {
+        const tryStmt = decl.body.body[0];
+        if (tryStmt.type === AST_NODE_TYPES.TryStatement && tryStmt.handler) {
+          const first = tryStmt.handler.body.body[0];
+          if (first?.type === AST_NODE_TYPES.SwitchStatement) {
+            switchStmt = first;
+          }
+        }
+      }
+      if (!switchStmt) {
+        throw new Error('switch statement not found');
+      }
+      const context = {
+        sourceCode: { ast, parserServices: services },
+        settings: {},
+      } as unknown as TSESLint.RuleContext<string, readonly unknown[]>;
+      const types = collectHandledSwitchLabels(switchStmt, 'e', new Set(['ErrorA', 'ErrorC']), context);
+      expect(types.map((t) => t.getSymbol()?.name ?? '?')).toEqual(['ErrorA', 'ErrorC']);
+
+      const empty = collectHandledSwitchLabels(switchStmt, 'e', new Set(), context);
+      expect(empty).toEqual([]);
+    });
+
+    it('returns only the union constituents whose name literal is in allowedLabels', () => {
+      const nameCode = `class ErrorA extends Error { readonly name = 'ErrorA' as const; }
+class ErrorB extends Error { readonly name = 'ErrorB' as const; }
+export function probe(): void {
+  try {
+    throw new Error('x');
+  } catch (e) {
+    switch ((e as ErrorA | ErrorB).name) {
+      case 'ErrorA':
+        break;
+      case 'ErrorB':
+        break;
+    }
+  }
+}
+`;
+      const { program: probeProgram, dir } = createVirtualProgram({ 'switch-name-labels-probe.ts': nameCode });
+      const filePath = path.resolve(dir, 'src', 'switch-name-labels-probe.ts');
+      const { ast, services } = parseAndGenerateServices(nameCode, {
+        filePath,
+        programs: [probeProgram],
+        range: true,
+        loc: true,
+      });
+      const fn = ast.body.find((n) => n.type === AST_NODE_TYPES.ExportNamedDeclaration);
+      const decl = fn?.type === AST_NODE_TYPES.ExportNamedDeclaration ? fn.declaration : null;
+      let switchStmt: TSESTree.SwitchStatement | undefined;
+      if (decl?.type === AST_NODE_TYPES.FunctionDeclaration) {
+        const tryStmt = decl.body.body[0];
+        if (tryStmt.type === AST_NODE_TYPES.TryStatement && tryStmt.handler) {
+          const first = tryStmt.handler.body.body[0];
+          if (first?.type === AST_NODE_TYPES.SwitchStatement) {
+            switchStmt = first;
+          }
+        }
+      }
+      if (!switchStmt) {
+        throw new Error('switch statement not found');
+      }
+      const context = {
+        sourceCode: { ast, parserServices: services },
+        settings: {},
+      } as unknown as TSESLint.RuleContext<string, readonly unknown[]>;
+      const types = collectHandledSwitchLabels(switchStmt, 'e', new Set(['ErrorB']), context);
+      expect(types.map((t) => t.getSymbol()?.name ?? '?')).toEqual(['ErrorB']);
     });
   });
 
