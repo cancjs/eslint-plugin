@@ -21,6 +21,8 @@ const REQUIRED_MESSAGE_IDS: Record<string, string[]> = {
     'instanceofCancPromise',
     'abortErrorWrongLayer',
     'preferIsAbortError',
+    'instanceofBrandedError',
+    'nameCheckBrandedError',
   ],
 };
 
