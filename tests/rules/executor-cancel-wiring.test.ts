@@ -101,6 +101,22 @@ const opts = { shield: true } as const;
 new CancelablePromise((resolve, reject) => {
   save('a').then(resolve, reject);
 }, opts);`,
+    `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { shield: false, shield: true });`,
+    `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+declare const rest: Record<string, unknown>;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { ...rest, shield: true as const });`,
+    `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { shield: true, label: 'op' });`,
   ],
   invalid: [
     {
@@ -197,6 +213,23 @@ declare const rest: Record<string, unknown>;
 new CancelablePromise((resolve, reject) => {
   save('a').then(resolve, reject);
 }, { shield: true, ...rest });`,
+      errors: [{ messageId: 'noCancelWiring' as const, line: 4, column: 23 }],
+    },
+    {
+      code: `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { shield: true, shield: false });`,
+      errors: [{ messageId: 'noCancelWiring' as const, line: 3, column: 23 }],
+    },
+    {
+      code: `import CancelablePromise from '@cancjs/promise';
+declare function save(id: string): Promise<void>;
+declare const key: string;
+new CancelablePromise((resolve, reject) => {
+  save('a').then(resolve, reject);
+}, { shield: true, [key]: false });`,
       errors: [{ messageId: 'noCancelWiring' as const, line: 4, column: 23 }],
     },
   ],
