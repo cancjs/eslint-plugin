@@ -204,6 +204,17 @@ const run = cancAsync(function* (ids: string[]) {
     state!.cur = yield* cancAwait(load(id, state));
   }
 });`,
+
+      // Accumulator dependency preserved with satisfies expression
+      `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function step(acc: number, id: string): Promise<number>;
+const run = cancAsync(function* (ids: string[]) {
+  let acc = 0;
+  for (const id of ids) {
+    acc = yield* (cancAwait(step(acc, id)) satisfies Generator<unknown, number, unknown>);
+  }
+  return acc;
+});`,
     ],
     invalid: [
       {
@@ -300,6 +311,24 @@ declare function load(id: string): Promise<string>;
 const run = cancAsync(function* (ids: string[]) {
   for (const id of ids) {
     yield* (cancAwait(load(id)) as any);
+  }
+});`,
+        errors: [
+          {
+            messageId: 'serializedSteps' as const,
+            line: 5,
+            column: 5,
+          },
+        ],
+      },
+
+      // Satisfies-wrapped cancAwait call with loop var
+      {
+        code: `import { cancAsync, cancAwait } from '@cancjs/coroutine';
+declare function load(id: string): Promise<string>;
+const run = cancAsync(function* (ids: string[]) {
+  for (const id of ids) {
+    yield* (cancAwait(load(id)) satisfies Generator<unknown, unknown, unknown>);
   }
 });`,
         errors: [

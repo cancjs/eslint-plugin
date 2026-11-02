@@ -589,14 +589,7 @@ export default createRule<RuleOptions, MessageIds>({
           return;
         }
 
-        let arg: TSESTree.Node = node.argument;
-        while (
-          arg.type === AST_NODE_TYPES.TSAsExpression ||
-          arg.type === AST_NODE_TYPES.TSTypeAssertion ||
-          arg.type === AST_NODE_TYPES.TSNonNullExpression
-        ) {
-          arg = arg.expression;
-        }
+        const arg = unwrapTypeOnly(node.argument);
 
         if (arg.type !== AST_NODE_TYPES.CallExpression) {
           return;
