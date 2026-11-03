@@ -302,7 +302,7 @@ export function getFailureMembers(
     const listedMap = new Map<string, ts.Type>();
     for (const r of results) {
       for (const t of r.listed) {
-        const id = checker.typeToString(t);
+        const id = strippedTypeString(t, checker);
         if (!listedMap.has(id)) {
           listedMap.set(id, t);
         }
@@ -687,7 +687,7 @@ export function formatTypeNames(types: ts.Type[], checker: ts.TypeChecker): stri
 function strippedTypeString(t: ts.Type, checker: ts.TypeChecker): string {
   if (t.isIntersection() && t.types.some((c) => isUnlistedMarker(c, checker))) {
     return stripUnlistedConstituents(t, checker)
-      .map((c) => formatTypeNames([c], checker))
+      .map((c) => checker.typeToString(c))
       .join(' & ');
   }
   return checker.typeToString(t);
@@ -922,7 +922,11 @@ export function analyzeCatchFailures(
                 failures.open = true;
               }
               for (const m of arg0Failures.listed) {
-                if (!failures.listed.some((existing) => checker.typeToString(existing) === checker.typeToString(m))) {
+                if (
+                  !failures.listed.some(
+                    (existing) => strippedTypeString(existing, checker) === strippedTypeString(m, checker),
+                  )
+                ) {
                   failures.listed.push(m);
                 }
               }

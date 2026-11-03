@@ -10,6 +10,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   collectHandledCatchTypes,
   collectHandledSwitchLabels,
+  formatTypeNames,
   getFailureMembers,
   getProgramFailureSymbols,
   isCancelErrorCtorNode,
@@ -222,6 +223,7 @@ export type CopyOpen = CancelablePromise<number, Unlisted | UnlistedCopy>;
 export type IntersectionOpen = CancelablePromise<number, Unlisted & UnlistedCopy>;
 export class ErrorA extends Error {}
 export type ThreeConstituents = CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
+export type ThreeUnion = CancelablePromise<string, ErrorA & { readonly meta: string }> | CancelablePromise<string, (ErrorA & { readonly meta: string }) & { readonly _cancUnlisted: true }>;
 export type OrNull = CancelablePromise<string, FooError> | null;
 `,
     };
@@ -281,6 +283,14 @@ export type OrNull = CancelablePromise<string, FooError> | null;
       const res = getFailureMembers(virtualType('b3-unlisted.ts', 'ThreeConstituents'), virtualChecker);
       expect(res.open).toBe(true);
       expect(res.listed.length).toBe(1);
+    });
+
+    it('union of listed and unlisted 3+ constituent intersections deduplicates listed members', () => {
+      const res = getFailureMembers(virtualType('b3-unlisted.ts', 'ThreeUnion'), virtualChecker);
+      expect(res.defined).toBe(true);
+      expect(res.open).toBe(true);
+      expect(res.listed.length).toBe(1);
+      expect(formatTypeNames(res.listed, virtualChecker)).toBe('ErrorA & { readonly meta: string; }');
     });
 
     it('union filter: a null branch does not make a carrier union undefined', () => {
