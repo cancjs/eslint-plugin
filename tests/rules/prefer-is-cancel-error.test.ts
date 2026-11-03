@@ -49,6 +49,10 @@ const invalid18Path = path.resolve(
   __dirname,
   '../fixtures/corpus/error-handling/invalid/18-prefer-is-cancel-error-branded-instanceof.ts',
 );
+const invalid19Path = path.resolve(
+  __dirname,
+  '../fixtures/corpus/error-handling/invalid/19-prefer-is-cancel-error-branded-name.ts',
+);
 
 const valid04Path = path.resolve(__dirname, '../fixtures/corpus/error-handling/valid/04-prefer-is-cancel-error.ts');
 const valid05Path = path.resolve(
@@ -927,6 +931,7 @@ describe('prefer-is-cancel-error typed corpus lane', () => {
       invalid15Path,
       invalid16Path,
       invalid18Path,
+      invalid19Path,
       valid04Path,
       valid05Path,
       valid06Path,

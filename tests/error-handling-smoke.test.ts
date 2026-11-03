@@ -145,7 +145,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
   });
 
   it('matches markers on invalid error-handling fixtures under recommended and strict presets', async () => {
-    expect(invalidFiles.length).toBe(9);
+    expect(invalidFiles.length).toBe(10);
 
     for (const linter of [eslintRecommended, eslintStrict]) {
       const results = await linter.lintFiles(invalidFiles);
@@ -249,6 +249,7 @@ describe('error handling rules phase smoke over built artifacts', () => {
       'error-handling/invalid/15-prefer-is-cancel-error-negated-instanceof.ts',
       'error-handling/invalid/16-prefer-is-cancel-error-name-aborterror.ts',
       'error-handling/invalid/18-prefer-is-cancel-error-branded-instanceof.ts',
+      'error-handling/invalid/19-prefer-is-cancel-error-branded-name.ts',
     ]);
   }, 20000);
 });
