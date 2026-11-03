@@ -190,6 +190,39 @@ describe('require-loop-advance', () => {
            }
          }
        });`,
+
+      // 14. Inline valid: non-null assertion on handle advance receiver
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           yield* loop!.next();
+           void x;
+         }
+       });`,
+
+      // 15. Inline valid: type assertion on handle advance receiver
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           yield* (loop as typeof loop).next();
+           void x;
+         }
+       });`,
+
+      // 16. Inline valid: satisfies expressions on handle init, loop right, and advance receiver
+      `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       const run = cancAsync(function* () {
+         const loop = yield* (cancForAwait(source) satisfies ReturnType<typeof cancForAwait>);
+         for (const x of loop satisfies typeof loop) {
+           yield* (loop satisfies typeof loop).next();
+           void x;
+         }
+       });`,
     ],
 
     invalid: [

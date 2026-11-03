@@ -12,6 +12,7 @@ function unwrapParentheses(node: TSESTree.Expression): TSESTree.Expression {
   while (
     curr.type === AST_NODE_TYPES.ChainExpression ||
     curr.type === AST_NODE_TYPES.TSAsExpression ||
+    curr.type === AST_NODE_TYPES.TSSatisfiesExpression ||
     curr.type === AST_NODE_TYPES.TSTypeAssertion ||
     curr.type === AST_NODE_TYPES.TSNonNullExpression
   ) {
@@ -142,13 +143,14 @@ export default createRule<RuleOptions, MessageIds>({
           if (callee.type !== AST_NODE_TYPES.MemberExpression || callee.computed) return false;
           if (callee.property.type !== AST_NODE_TYPES.Identifier || callee.property.name !== 'next') return false;
 
-          if (refersTo(callee.object, context, 'cancForAwait') || refersTo(callee.object, context, 'forAwait')) {
+          const calleeObj = unwrapParentheses(callee.object);
+          if (refersTo(calleeObj, context, 'cancForAwait') || refersTo(calleeObj, context, 'forAwait')) {
             return true;
           }
           if (
             handleVariable &&
-            callee.object.type === AST_NODE_TYPES.Identifier &&
-            handleVariable.references.some((ref) => ref.identifier === callee.object)
+            calleeObj.type === AST_NODE_TYPES.Identifier &&
+            handleVariable.references.some((ref) => ref.identifier === calleeObj)
           ) {
             return true;
           }
