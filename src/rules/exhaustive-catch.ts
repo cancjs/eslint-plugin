@@ -169,15 +169,26 @@ function keptGuardTypes(
   return handled;
 }
 
+function trailingStmt(stmt: TSESTree.Statement | undefined): TSESTree.Statement | undefined {
+  let cur = stmt;
+  while (cur?.type === AST_NODE_TYPES.BlockStatement) {
+    cur = cur.body.at(-1);
+  }
+  return cur;
+}
+
 /** Statements a switch case runs, through the following cases until one ends with a jump. */
 function fallThroughBody(cases: TSESTree.SwitchCase[]): TSESTree.Statement[] {
   const run: TSESTree.Statement[] = [];
   for (const c of cases) {
     run.push(...c.consequent);
-    const last = c.consequent.at(-1);
+    const last = trailingStmt(c.consequent.at(-1));
     if (
       last &&
-      (last.type === AST_NODE_TYPES.BreakStatement || isReturn(last) || last.type === AST_NODE_TYPES.ThrowStatement)
+      (last.type === AST_NODE_TYPES.BreakStatement ||
+        last.type === AST_NODE_TYPES.ContinueStatement ||
+        last.type === AST_NODE_TYPES.ReturnStatement ||
+        last.type === AST_NODE_TYPES.ThrowStatement)
     ) {
       break;
     }
@@ -186,7 +197,7 @@ function fallThroughBody(cases: TSESTree.SwitchCase[]): TSESTree.Statement[] {
 }
 
 function isReturn(stmt: TSESTree.Statement): boolean {
-  return stmt.type === AST_NODE_TYPES.ReturnStatement;
+  return trailingStmt(stmt)?.type === AST_NODE_TYPES.ReturnStatement;
 }
 
 /** Whether the binding is rethrown anywhere under the statement, outside nested functions. */
@@ -207,7 +218,7 @@ function subtreeRethrows(stmt: TSESTree.Statement, bindingName: string, context:
 }
 
 function endsWithExit(stmt: TSESTree.Statement): boolean {
-  const last = stmt.type === AST_NODE_TYPES.BlockStatement ? stmt.body.at(-1) : stmt;
+  const last = trailingStmt(stmt);
   return (
     last?.type === AST_NODE_TYPES.ReturnStatement ||
     last?.type === AST_NODE_TYPES.BreakStatement ||

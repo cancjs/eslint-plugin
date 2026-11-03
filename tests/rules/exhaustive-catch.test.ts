@@ -626,6 +626,29 @@ export const run = cancAsync(function* () {
     switch ((e as ErrorA).kind) { case 'ErrorA': return 'a'; } throw e;
   }
 });`,
+      // Unbraced partial nested discriminant switch keeps unhandled outer errors
+      nestedCatch(
+        "switch ((inner as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; } throw inner;",
+        'if (e instanceof ErrorB) { console.log(e); }',
+      ),
+      // Block-scoped partial nested discriminant switch keeps unhandled outer errors
+      nestedCatch(
+        "switch ((inner as ErrorA | ErrorB).kind) { case 'ErrorA': { const out = 'a'; return out; } } throw inner;",
+        'if (e instanceof ErrorB) { console.log(e); }',
+      ),
+      // Block-scoped nested switch(true) keeps unhandled outer errors
+      nestedCatch(
+        "switch (true) { case inner instanceof ErrorA: { { return 'a'; } } } throw inner;",
+        'if (e instanceof ErrorB) { console.log(e); }',
+      ),
+      // Block-scoped break in default before returning case
+      unionCatch(
+        "switch ((e as ErrorA | ErrorB).kind) { default: { break; } case 'ErrorA': { return 'a'; } } throw e;",
+      ),
+      // Loop-enclosed block-scoped continue in default before returning case
+      unionCatch(
+        "for (const k of [1]) { switch ((e as ErrorA | ErrorB).kind) { default: { void k; continue; } case 'ErrorA': return 'a'; } } throw e;",
+      ),
     ],
     invalid: [
       // Discriminant switch missing a case drops the unmatched failure
@@ -1099,6 +1122,106 @@ export const run = cancAsync(function* () {
         output: null,
         errors: [{ messageId: 'unhandledFailure', data: { names: 'ErrorA, ErrorB' } }],
       },
+      // Open 3+ constituent intersection requires fallback under default options
+      {
+        code: openThreeCatch(`if (e instanceof ErrorA) {
+      console.log(e);
+    }`),
+        output: null,
+        errors: [
+          {
+            messageId: 'missingUnlistedFallback',
+            line: 8,
+            suggestions: [
+              {
+                messageId: 'missingUnlistedFallback',
+                output: withThrow(
+                  openThreeCatch(`if (e instanceof ErrorA) {
+      console.log(e);
+    }`),
+                ),
+              },
+            ],
+          },
+        ],
+      },
+      // Unguarded open 3+ constituent intersection reports unhandledFailure without marker
+      {
+        code: openThreeCatch(`console.log(e);`),
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            line: 8,
+            data: { names: 'ErrorA & { readonly meta: string; }' },
+          },
+        ],
+      },
+      // Guarded switch with default return swallows unhandled failure
+      {
+        code: unionCatch(
+          "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; default: return 'other'; } throw e;",
+        ),
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: withThrow(
+                  unionCatch(
+                    "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; default: return 'other'; } throw e;",
+                  ),
+                ),
+              },
+            ],
+          },
+        ],
+      },
+      // Unguarded switch before throw e can exit for any error
+      {
+        code: unionCatch("switch (otherFlag) { case 1: return 'a'; } throw e;"),
+        output: null,
+        errors: [
+          {
+            messageId: 'unhandledFailure',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorA, ErrorB' },
+          },
+        ],
+      },
+      // Guarded switch with block-scoped default return swallows unhandled failure
+      {
+        code: unionCatch(
+          "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': { return 'a'; } default: { return 'other'; } } throw e;",
+        ),
+        output: null,
+        errors: [
+          {
+            messageId: 'noRethrow',
+            line: 13,
+            column: 5,
+            data: { names: 'ErrorB', handled: 'ErrorA' },
+            suggestions: [
+              {
+                messageId: 'noRethrow',
+                data: { names: 'ErrorB', handled: 'ErrorA' },
+                output: withThrow(
+                  unionCatch(
+                    "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': { return 'a'; } default: { return 'other'; } } throw e;",
+                  ),
+                ),
+              },
+            ],
+          },
+        ],
+      },
     ],
   });
 });
@@ -1255,80 +1378,6 @@ cancAsync(function* () {
         options: [{ genCoroutineFactories: ['onlyMine'] }],
         output: null,
         errors: [{ messageId: 'unhandledFailure' as const, line: 12, data: { names: 'TimeoutError' } }],
-      },
-      // Open 3+ constituent intersection requires fallback under default options
-      {
-        code: openThreeCatch(`if (e instanceof ErrorA) {
-      console.log(e);
-    }`),
-        output: null,
-        errors: [
-          {
-            messageId: 'missingUnlistedFallback',
-            line: 8,
-            suggestions: [
-              {
-                messageId: 'missingUnlistedFallback',
-                output: withThrow(
-                  openThreeCatch(`if (e instanceof ErrorA) {
-      console.log(e);
-    }`),
-                ),
-              },
-            ],
-          },
-        ],
-      },
-      // Unguarded open 3+ constituent intersection reports unhandledFailure without marker
-      {
-        code: openThreeCatch(`console.log(e);`),
-        output: null,
-        errors: [
-          {
-            messageId: 'unhandledFailure',
-            line: 8,
-            data: { names: 'ErrorA & { readonly meta: string; }' },
-          },
-        ],
-      },
-      // Guarded switch with default return swallows unhandled failure
-      {
-        code: unionCatch(
-          "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; default: return 'other'; } throw e;",
-        ),
-        output: null,
-        errors: [
-          {
-            messageId: 'noRethrow',
-            line: 13,
-            column: 5,
-            data: { names: 'ErrorB', handled: 'ErrorA' },
-            suggestions: [
-              {
-                messageId: 'noRethrow',
-                data: { names: 'ErrorB', handled: 'ErrorA' },
-                output: withThrow(
-                  unionCatch(
-                    "switch ((e as ErrorA | ErrorB).kind) { case 'ErrorA': return 'a'; default: return 'other'; } throw e;",
-                  ),
-                ),
-              },
-            ],
-          },
-        ],
-      },
-      // Unguarded switch before throw e can exit for any error
-      {
-        code: unionCatch("switch (otherFlag) { case 1: return 'a'; } throw e;"),
-        output: null,
-        errors: [
-          {
-            messageId: 'unhandledFailure',
-            line: 13,
-            column: 5,
-            data: { names: 'ErrorA, ErrorB' },
-          },
-        ],
       },
     ],
   });
