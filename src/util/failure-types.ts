@@ -138,6 +138,10 @@ export function isUnlistedMarker(type: ts.Type, checker: ts.TypeChecker): boolea
   return Boolean(memberType.flags & ts.TypeFlags.BooleanLiteral) && checker.typeToString(memberType) === 'true';
 }
 
+function stripUnlistedConstituents(type: ts.Type, checker: ts.TypeChecker): ts.Type[] {
+  return type.isIntersection() ? type.types.filter((c) => !isUnlistedMarker(c, checker)) : [type];
+}
+
 /** Whether a branch is a promise or thenable, which claims an open failure set of its own. */
 function isThenableType(type: ts.Type, checker: ts.TypeChecker): boolean {
   const sym = checker.getPropertyOfType(checker.getApparentType(type), 'then');
@@ -227,9 +231,13 @@ function extractFromFailureType(failureType: ts.Type, checker: ts.TypeChecker): 
       const nonMarkers = part.types.filter((c) => !isUnlistedMarker(c, checker));
       if (nonMarkers.length < part.types.length) {
         open = true;
-        for (const nm of nonMarkers) {
-          if (!isCancelErrorType(nm, checker)) {
-            listed.push(nm);
+        if (nonMarkers.length === 1) {
+          if (!isCancelErrorType(nonMarkers[0], checker)) {
+            listed.push(nonMarkers[0]);
+          }
+        } else if (nonMarkers.length > 1) {
+          if (!isCancelErrorType(part, checker) && nonMarkers.every((nm) => !isCancelErrorType(nm, checker))) {
+            listed.push(part);
           }
         }
       } else if (!isCancelErrorType(part, checker)) {
@@ -294,7 +302,7 @@ export function getFailureMembers(
     const listedMap = new Map<string, ts.Type>();
     for (const r of results) {
       for (const t of r.listed) {
-        const id = checker.typeToString(t);
+        const id = strippedTypeString(t, checker);
         if (!listedMap.has(id)) {
           listedMap.set(id, t);
         }
@@ -375,6 +383,33 @@ export function getFailureMembers(
 export function isClassOrSubclass(t: ts.Type, h: ts.Type, checker: ts.TypeChecker): boolean {
   if (t === h) {
     return true;
+  }
+  if (h.isIntersection()) {
+    const hBrand = getBrandName(h, checker);
+    if (hBrand !== undefined && getBrandName(t, checker) !== hBrand) {
+      return false;
+    }
+    const hParts = stripUnlistedConstituents(h, checker);
+    const tParts = stripUnlistedConstituents(t, checker);
+    return (
+      hParts.length > 0 &&
+      hParts.every((hc) =>
+        tParts.some(
+          (tc) =>
+            isClassOrSubclass(tc, hc, checker) ||
+            (!(hc.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) &&
+              hc.getSymbol()?.name !== 'Error' &&
+              hc.getSymbol()?.name !== 'Object' &&
+              checker.isTypeAssignableTo(tc, hc)),
+        ),
+      )
+    );
+  } else if (t.isIntersection()) {
+    const tBrand = getBrandName(t, checker);
+    if (tBrand !== undefined && getBrandName(h, checker) !== tBrand) {
+      return false;
+    }
+    return stripUnlistedConstituents(t, checker).some((tc) => isClassOrSubclass(tc, h, checker));
   }
   const symT = (t as { symbol?: ts.Symbol }).symbol;
   const symH = (h as { symbol?: ts.Symbol }).symbol;
@@ -639,9 +674,23 @@ export function formatTypeNames(types: ts.Type[], checker: ts.TypeChecker): stri
           return match[1];
         }
       }
+      if (t.isIntersection() && t.types.some((c) => isUnlistedMarker(c, checker))) {
+        return stripUnlistedConstituents(t, checker)
+          .map((c) => formatTypeNames([c], checker))
+          .join(' & ');
+      }
       return checker.typeToString(t);
     })
     .join(', ');
+}
+
+function strippedTypeString(t: ts.Type, checker: ts.TypeChecker): string {
+  if (t.isIntersection() && t.types.some((c) => isUnlistedMarker(c, checker))) {
+    return stripUnlistedConstituents(t, checker)
+      .map((c) => checker.typeToString(c))
+      .join(' & ');
+  }
+  return checker.typeToString(t);
 }
 
 const DISCRIMINANT_PROPERTIES = new Set(['kind', 'name']);
@@ -655,6 +704,7 @@ function switchCaseTypes(
   bindingName: string,
   checker: ts.TypeChecker,
   nodeMap: NodeMap,
+  allowedLabels?: ReadonlySet<string>,
 ): ts.Type[] {
   const discriminant = node.discriminant;
   if (
@@ -675,7 +725,11 @@ function switchCaseTypes(
   }
   const labels = new Set<string>();
   for (const c of node.cases) {
-    if (c.test?.type === AST_NODE_TYPES.Literal && typeof c.test.value === 'string') {
+    if (
+      c.test?.type === AST_NODE_TYPES.Literal &&
+      typeof c.test.value === 'string' &&
+      (!allowedLabels || allowedLabels.has(c.test.value))
+    ) {
       labels.add(c.test.value);
     }
   }
@@ -690,6 +744,25 @@ function switchCaseTypes(
     const propType = checker.getTypeOfSymbolAtLocation(prop, tsObject);
     return propType.isStringLiteral() && labels.has(propType.value);
   });
+}
+
+export function collectHandledSwitchLabels(
+  node: TSESTree.SwitchStatement,
+  bindingName: string,
+  allowedLabels: ReadonlySet<string>,
+  context: Context,
+): ts.Type[] {
+  const services = getCancServices(context);
+  if (!services?.program || allowedLabels.size === 0) {
+    return [];
+  }
+  return switchCaseTypes(
+    node,
+    bindingName,
+    services.program.getTypeChecker(),
+    services.esTreeNodeToTSNodeMap,
+    allowedLabels,
+  );
 }
 
 export function collectHandledCatchTypes(root: TSESTree.Node, bindingName: string, context: Context): ts.Type[] {
@@ -849,7 +922,11 @@ export function analyzeCatchFailures(
                 failures.open = true;
               }
               for (const m of arg0Failures.listed) {
-                if (!failures.listed.some((existing) => checker.typeToString(existing) === checker.typeToString(m))) {
+                if (
+                  !failures.listed.some(
+                    (existing) => strippedTypeString(existing, checker) === strippedTypeString(m, checker),
+                  )
+                ) {
                   failures.listed.push(m);
                 }
               }
@@ -872,7 +949,7 @@ export function analyzeCatchFailures(
 
     for (const member of failures.listed) {
       if (!isCancelErrorType(member, checker, settings)) {
-        const id = member.getSymbol()?.name ?? checker.typeToString(member);
+        const id = member.getSymbol()?.name ?? strippedTypeString(member, checker);
         if (!allListedMap.has(id)) {
           allListedMap.set(id, member);
         }
@@ -898,7 +975,7 @@ export function analyzeCatchFailures(
         isClassOrSubclass(t, h, checker) ||
         (symbol && symbol === h.getSymbol()) ||
         (symbol?.name && symbol.name === h.getSymbol()?.name) ||
-        checker.typeToString(t) === checker.typeToString(h),
+        strippedTypeString(t, checker) === strippedTypeString(h, checker),
     );
   };
 

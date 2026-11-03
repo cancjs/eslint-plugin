@@ -402,6 +402,340 @@ catalogSearch.catch(() => 0);`;
     expect(fallbackAnalysis.compliant).toBe(false);
     expect(fallbackAnalysis.via).toBeNull();
   });
+
+  it('rejects switch return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const code: number;
+try {} catch (e) {
+  switch (code) { case 1: return 1; }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects try-finally return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare function cleanup(): void;
+try {} catch (e) {
+  try { return 1; } finally { cleanup(); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects loop return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const items: number[];
+try {} catch (e) {
+  for (const item of items) { if (item) return item; }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects break to outer label before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const xs: number[];
+declare const code: number;
+outer: for (const x of xs) {
+  try {} catch (e) {
+    switch (code) { case 1: break outer; }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('passes switch with break before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const code: number;
+declare function log(n: number): void;
+try {} catch (e) {
+  switch (code) { case 1: log(1); break; default: log(2); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes loop with continue and break before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const items: number[];
+declare const stop: number;
+declare function log(n: number): void;
+try {} catch (e) {
+  for (const item of items) { if (!item) continue; if (item === stop) break; log(item); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes switch with rejecting return in catch callback', () => {
+    const code = `${IMPORT_PREAMBLE}
+declare const code: number;
+catalogSearch.catch((e) => {
+  switch (code) { case 1: return Promise.reject(e); }
+  if (isCancelError(e)) throw e;
+  toast(e);
+});`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes disjoint error ctor return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+class NotFoundError extends Error {}
+try {} catch (e) {
+  if (e instanceof NotFoundError) return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes known non-cancel brand guards before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+import { isTimeoutError, isAbortError } from '@cancjs/toolbox';
+try {} catch (e) {
+  if (isTimeoutError(e)) return null;
+  if (isAbortError(e)) return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes isErrorOf and createIsError guards before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+import { isErrorOf } from '@cancjs/toolbox';
+class NotFoundError extends Error {}
+try {} catch (e) {
+  if (isErrorOf(e, NotFoundError)) return null;
+  if (createIsError(NotFoundError)(e)) return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes name and kind discriminant equality checks before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  if ((e as Error).name === 'NotFoundError') return null;
+  if ((e as { kind?: string }).kind === 'NotFound') return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes logical combinations of disjoint error guards before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+import { isTimeoutError } from '@cancjs/toolbox';
+class NotFoundError extends Error {}
+class RateLimitError extends Error { retryable = true; }
+try {} catch (e) {
+  if (e instanceof NotFoundError || isTimeoutError(e)) return null;
+  else if (e instanceof RateLimitError && e.retryable) return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('passes switch on discriminant before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as { kind?: string }).kind) {
+    case 'NotFound':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+    expect(analysis.via).toBe('guard');
+  });
+
+  it('rejects general Error instanceof before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  if (e instanceof Error) return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects CancelError instanceof before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+import { CancelError } from '@cancjs/promise';
+try {} catch (e) {
+  if (e instanceof CancelError) return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects negated disjoint guard before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+class NotFoundError extends Error {}
+try {} catch (e) {
+  if (!(e instanceof NotFoundError)) return null;
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects alternate return after disjoint guard before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+class NotFoundError extends Error {}
+try {} catch (e) {
+  if (e instanceof NotFoundError) {
+    toast(e);
+  } else {
+    return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects switch default return before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as { kind?: string }).kind) {
+    case 'NotFound':
+      toast(e);
+      break;
+    default:
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('rejects switch fallthrough from CancelError case before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as Error).name) {
+    case 'CancelError':
+    case 'NotFoundError':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
+
+  it('accepts switch case with block-scoped break before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as Error).name) {
+    case 'CancelError': {
+      const msg = (e as Error).message;
+      toast(msg);
+      break;
+    }
+    case 'NotFoundError':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+
+    const nestedCode = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as Error).name) {
+    case 'CancelError': {
+      {
+        break;
+      }
+    }
+    case 'NotFoundError':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const nestedAnalysis = parseAndAnalyze(nestedCode);
+    expect(nestedAnalysis.compliant).toBe(true);
+  });
+
+  it('accepts switch case with loop-wrapped continue before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  for (const attempt of [1, 2]) {
+    switch ((e as Error).name) {
+      case 'CancelError': {
+        continue;
+      }
+      case 'NotFoundError':
+        return null;
+    }
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+  });
+
+  it('rejects switch case block without trailing jump falling through to return', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as Error).name) {
+    case 'CancelError': {
+      toast(e);
+    }
+    case 'NotFoundError':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
 });
 
 type ProbeMessages =

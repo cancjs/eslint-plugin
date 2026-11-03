@@ -14,7 +14,7 @@ import {
 import createRule from '../util/create-rule.js';
 import { unwrapTypeOnly } from '../util/executor.js';
 import { analyzeCatchSteps, type CatchStep, isTypePredicateCall } from '../util/failure-checker-exhaustive-catch.js';
-import { collectHandledCatchTypes } from '../util/failure-types.js';
+import { collectHandledCatchTypes, collectHandledSwitchLabels } from '../util/failure-types.js';
 
 export type MessageIds = 'unhandledFailure' | 'noRethrow' | 'missingUnlistedFallback';
 
@@ -93,29 +93,22 @@ function innerHandledTypes(handler: TSESTree.CatchClause, context: Context): ts.
   if (rethrowAt === -1) {
     return keptGuardTypes(body, bindingName, context);
   }
-  const handled: ts.Type[] = [];
-  for (const stmt of body.slice(0, rethrowAt)) {
-    if (
-      stmt.type === AST_NODE_TYPES.IfStatement &&
-      !stmt.alternate &&
-      isRecognizedGuard(stmt.test, bindingName, context) &&
-      endsWithExit(stmt.consequent)
-    ) {
-      // the collector walks any node; only the guard test names the kept types
-      handled.push(...collectHandledCatchTypes(stmt.test, bindingName, context));
-    }
-  }
-  return handled;
+  return keptGuardTypes(body.slice(0, rethrowAt), bindingName, context, true);
 }
 
 /**
  * Guard types of the branches that keep the binding: the branch never rethrows it, and either exits or no later
  * statement can rethrow it.
  */
-function keptGuardTypes(body: TSESTree.Statement[], bindingName: string, context: Context): ts.Type[] {
+function keptGuardTypes(
+  body: TSESTree.Statement[],
+  bindingName: string,
+  context: Context,
+  trailingRethrow = false,
+): ts.Type[] {
   const handled: ts.Type[] = [];
   body.forEach((stmt, i) => {
-    const laterRethrow = body.slice(i + 1).some((s) => subtreeRethrows(s, bindingName, context));
+    const laterRethrow = trailingRethrow || body.slice(i + 1).some((s) => subtreeRethrows(s, bindingName, context));
     const keep = (
       test: TSESTree.Expression,
       branch: TSESTree.Statement[],
@@ -148,16 +141,40 @@ function keptGuardTypes(body: TSESTree.Statement[], bindingName: string, context
         branch = branch.alternate;
       }
     } else if (stmt.type === AST_NODE_TYPES.SwitchStatement) {
-      const guarded = hasGuardCases(stmt, bindingName, context);
-      stmt.cases.forEach((c, at) => {
-        if (c.test) {
-          // a case without break falls through, so the following cases run as part of it
-          keep(c.test, fallThroughBody(stmt.cases.slice(at)), guarded, isReturn);
-        }
-      });
+      if (isBindingMember(stmt.discriminant, bindingName)) {
+        const keptLabels = new Set<string>();
+        stmt.cases.forEach((c, at) => {
+          if (c.test?.type === AST_NODE_TYPES.Literal && typeof c.test.value === 'string') {
+            const branch = fallThroughBody(stmt.cases.slice(at));
+            const last = branch.at(-1);
+            if (
+              !branch.some((s) => subtreeRethrows(s, bindingName, context)) &&
+              (!laterRethrow || (last !== undefined && isReturn(last)))
+            ) {
+              keptLabels.add(c.test.value);
+            }
+          }
+        });
+        handled.push(...collectHandledSwitchLabels(stmt, bindingName, keptLabels, context));
+      } else {
+        const guarded = hasGuardCases(stmt, bindingName, context);
+        stmt.cases.forEach((c, at) => {
+          if (c.test) {
+            keep(c.test, fallThroughBody(stmt.cases.slice(at)), guarded, isReturn);
+          }
+        });
+      }
     }
   });
   return handled;
+}
+
+function trailingStmt(stmt: TSESTree.Statement | undefined): TSESTree.Statement | undefined {
+  let cur = stmt;
+  while (cur?.type === AST_NODE_TYPES.BlockStatement) {
+    cur = cur.body.at(-1);
+  }
+  return cur;
 }
 
 /** Statements a switch case runs, through the following cases until one ends with a jump. */
@@ -165,10 +182,13 @@ function fallThroughBody(cases: TSESTree.SwitchCase[]): TSESTree.Statement[] {
   const run: TSESTree.Statement[] = [];
   for (const c of cases) {
     run.push(...c.consequent);
-    const last = c.consequent.at(-1);
+    const last = trailingStmt(c.consequent.at(-1));
     if (
       last &&
-      (last.type === AST_NODE_TYPES.BreakStatement || isReturn(last) || last.type === AST_NODE_TYPES.ThrowStatement)
+      (last.type === AST_NODE_TYPES.BreakStatement ||
+        last.type === AST_NODE_TYPES.ContinueStatement ||
+        last.type === AST_NODE_TYPES.ReturnStatement ||
+        last.type === AST_NODE_TYPES.ThrowStatement)
     ) {
       break;
     }
@@ -177,7 +197,7 @@ function fallThroughBody(cases: TSESTree.SwitchCase[]): TSESTree.Statement[] {
 }
 
 function isReturn(stmt: TSESTree.Statement): boolean {
-  return stmt.type === AST_NODE_TYPES.ReturnStatement;
+  return trailingStmt(stmt)?.type === AST_NODE_TYPES.ReturnStatement;
 }
 
 /** Whether the binding is rethrown anywhere under the statement, outside nested functions. */
@@ -198,7 +218,7 @@ function subtreeRethrows(stmt: TSESTree.Statement, bindingName: string, context:
 }
 
 function endsWithExit(stmt: TSESTree.Statement): boolean {
-  const last = stmt.type === AST_NODE_TYPES.BlockStatement ? stmt.body.at(-1) : stmt;
+  const last = trailingStmt(stmt);
   return (
     last?.type === AST_NODE_TYPES.ReturnStatement ||
     last?.type === AST_NODE_TYPES.BreakStatement ||
@@ -423,6 +443,14 @@ function hasSwallowingExit(node: TSESTree.Node, bindingName: string, context: Co
   if (node.type === AST_NODE_TYPES.IfStatement && isRecognizedGuard(node.test, bindingName, context)) {
     // an exit under a guard leaves only for the errors the guard matches
     return node.alternate ? hasSwallowingExit(node.alternate, bindingName, context, nested) : false;
+  }
+  if (node.type === AST_NODE_TYPES.SwitchStatement && hasGuardCases(node, bindingName, context)) {
+    const defaultCase = node.cases.find((c) => c.test === null);
+    if (!defaultCase) {
+      return false;
+    }
+    const defaultAt = node.cases.indexOf(defaultCase);
+    return fallThroughBody(node.cases.slice(defaultAt)).some((s) => hasSwallowingExit(s, bindingName, context, true));
   }
   const childNested = nested || LOOP_OR_SWITCH.has(node.type);
   let found = false;

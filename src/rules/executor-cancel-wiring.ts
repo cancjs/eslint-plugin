@@ -44,32 +44,25 @@ function isShielded(node: TSESTree.NewExpression, context: TSESLint.RuleContext<
     return false;
   }
 
-  let foundShieldIndex = -1;
-  for (let i = 0; i < objExpr.properties.length; i++) {
-    const prop = objExpr.properties[i];
-    if (
-      prop.type === AST_NODE_TYPES.Property &&
-      !prop.computed &&
-      ((prop.key.type === AST_NODE_TYPES.Identifier && prop.key.name === 'shield') ||
-        (prop.key.type === AST_NODE_TYPES.Literal && prop.key.value === 'shield')) &&
-      prop.value.type === AST_NODE_TYPES.Literal &&
-      prop.value.value === true
-    ) {
-      foundShieldIndex = i;
+  let shielded = false;
+  for (const prop of objExpr.properties) {
+    if (prop.type === AST_NODE_TYPES.SpreadElement) {
+      shielded = false;
+      continue;
+    }
+    if (prop.computed) {
+      shielded = false;
+      continue;
+    }
+    const isShieldKey =
+      (prop.key.type === AST_NODE_TYPES.Identifier && prop.key.name === 'shield') ||
+      (prop.key.type === AST_NODE_TYPES.Literal && prop.key.value === 'shield');
+    if (isShieldKey) {
+      const val = unwrapTypeOnly(prop.value);
+      shielded = val.type === AST_NODE_TYPES.Literal && val.value === true;
     }
   }
-
-  if (foundShieldIndex === -1) {
-    return false;
-  }
-
-  for (let i = foundShieldIndex + 1; i < objExpr.properties.length; i++) {
-    if (objExpr.properties[i].type === AST_NODE_TYPES.SpreadElement) {
-      return false;
-    }
-  }
-
-  return true;
+  return shielded;
 }
 
 export default createRule<RuleOptions, MessageIds>({
