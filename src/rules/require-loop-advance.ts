@@ -476,6 +476,16 @@ export default createRule<RuleOptions, MessageIds>({
         }
         walkForContinues(node.body, false);
 
+        function isEnclosingSwitchBeforeBody(startNode: TSESTree.Node): boolean {
+          let p: TSESTree.Node | undefined = startNode.parent;
+          while (p && p !== node.body) {
+            if (p.type === AST_NODE_TYPES.SwitchStatement) return true;
+            if (isLoopNode(p)) return false;
+            p = p.parent;
+          }
+          return false;
+        }
+
         function isContinueDominatedByAdvance(continueStmt: TSESTree.ContinueStatement): boolean {
           let child: TSESTree.Node = continueStmt;
           let parent: TSESTree.Node | undefined = child.parent;
@@ -493,6 +503,13 @@ export default createRule<RuleOptions, MessageIds>({
               ) {
                 return true;
               }
+            } else if (
+              parent.type === AST_NODE_TYPES.TryStatement &&
+              child !== parent.finalizer &&
+              parent.finalizer &&
+              !canFallThroughUnadvanced(parent.finalizer, isEnclosingSwitchBeforeBody(parent), false, new Set())
+            ) {
+              return true;
             }
             child = parent;
             parent = child.parent;

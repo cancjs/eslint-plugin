@@ -223,6 +223,40 @@ describe('require-loop-advance', () => {
            void x;
          }
        });`,
+
+      // 17. Inline valid: continue in try with advance in finally
+      `import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       declare function save(x: number): Promise<void>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           try {
+             if (x === 0) continue;
+             yield* cancAwait(save(x));
+           } finally {
+             yield* loop.next();
+           }
+         }
+       });`,
+
+      // 18. Inline valid: continue in catch with advance in finally
+      `import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
+       declare const source: AsyncIterable<number>;
+       declare function save(x: number): Promise<void>;
+       const run = cancAsync(function* () {
+         const loop = yield* cancForAwait(source);
+         for (const x of loop) {
+           try {
+             yield* cancAwait(save(x));
+           } catch (e) {
+             if (x === 0) continue;
+             throw e;
+           } finally {
+             yield* loop.next();
+           }
+         }
+       });`,
     ],
 
     invalid: [
@@ -705,6 +739,59 @@ const run = cancAsync(function* () {
 });`,
               },
             ],
+          },
+        ],
+      },
+
+      // 13. Inline invalid: continue inside finally before advance in finally
+      {
+        code: `import { cancAsync, cancForAwait, cancAwait } from '@cancjs/coroutine';
+declare const source: AsyncIterable<number>;
+declare function save(x: number): Promise<void>;
+const run = cancAsync(function* () {
+  const loop = yield* cancForAwait(source);
+  for (const x of loop) {
+    try {
+      yield* cancAwait(save(x));
+    } finally {
+      if (x === 0) continue;
+      yield* loop.next();
+    }
+  }
+});`,
+        errors: [
+          {
+            messageId: 'continueBeforeAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [],
+          },
+        ],
+      },
+
+      // 14. Inline invalid: continue in try when advance is after try/finally
+      {
+        code: `import { cancAsync, cancForAwait } from '@cancjs/coroutine';
+declare const source: AsyncIterable<number>;
+const run = cancAsync(function* () {
+  const loop = yield* cancForAwait(source);
+  for (const x of loop) {
+    try {
+      if (x === 0) continue;
+    } finally {
+      void x;
+    }
+    if (x > 0) {
+      yield* loop.next();
+    } else {
+      yield* loop.next();
+    }
+  }
+});`,
+        errors: [
+          {
+            messageId: 'continueBeforeAdvance',
+            data: { advance: 'loop.next()' },
+            suggestions: [],
           },
         ],
       },
