@@ -596,6 +596,28 @@ cancAsync(function* () {
   }
 });`,
   },
+  {
+    name: 'switch with block-scoped break before cancel guard',
+    code: `${HEAD}
+cancAsync(function* () {
+  try {
+    yield* cancAwait(load());
+  } catch (e) {
+    switch ((e as Error).name) {
+      case 'CancelError': {
+        const msg = (e as Error).message;
+        toast(msg);
+        break;
+      }
+      case 'NotFoundError': {
+        return null;
+      }
+    }
+    if (isCancelError(e)) throw e;
+    toast(e);
+  }
+});`,
+  },
 ];
 
 const trackedRoot = `${HEAD}

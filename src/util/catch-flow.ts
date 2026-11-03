@@ -999,9 +999,13 @@ function containsHandlerExit(
       for (let j = idx; j < node.cases.length; j++) {
         const targetCase = node.cases[j];
         runStmts.push(...targetCase.consequent);
-        const last = targetCase.consequent.at(-1);
+        let last = targetCase.consequent.at(-1);
+        while (last?.type === AST_NODE_TYPES.BlockStatement) {
+          last = last.body.at(-1);
+        }
         if (
           last?.type === AST_NODE_TYPES.BreakStatement ||
+          last?.type === AST_NODE_TYPES.ContinueStatement ||
           last?.type === AST_NODE_TYPES.ReturnStatement ||
           last?.type === AST_NODE_TYPES.ThrowStatement
         ) {

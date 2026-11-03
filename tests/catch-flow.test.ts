@@ -664,6 +664,78 @@ try {} catch (e) {
     const analysis = parseAndAnalyze(code);
     expect(analysis.compliant).toBe(false);
   });
+
+  it('accepts switch case with block-scoped break before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as Error).name) {
+    case 'CancelError': {
+      const msg = (e as Error).message;
+      toast(msg);
+      break;
+    }
+    case 'NotFoundError':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+
+    const nestedCode = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as Error).name) {
+    case 'CancelError': {
+      {
+        break;
+      }
+    }
+    case 'NotFoundError':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const nestedAnalysis = parseAndAnalyze(nestedCode);
+    expect(nestedAnalysis.compliant).toBe(true);
+  });
+
+  it('accepts switch case with loop-wrapped continue before cancel guard', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  for (const attempt of [1, 2]) {
+    switch ((e as Error).name) {
+      case 'CancelError': {
+        continue;
+      }
+      case 'NotFoundError':
+        return null;
+    }
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(true);
+  });
+
+  it('rejects switch case block without trailing jump falling through to return', () => {
+    const code = `${IMPORT_PREAMBLE}
+try {} catch (e) {
+  switch ((e as Error).name) {
+    case 'CancelError': {
+      toast(e);
+    }
+    case 'NotFoundError':
+      return null;
+  }
+  if (isCancelError(e)) throw e;
+  toast(e);
+}`;
+    const analysis = parseAndAnalyze(code);
+    expect(analysis.compliant).toBe(false);
+  });
 });
 
 type ProbeMessages =
